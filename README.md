@@ -72,7 +72,7 @@ The project has not published the first release yet. Until then, [build the file
 
 On the first start, the settings window opens on the **Pad** tab. The app does not start with Windows until you select **Start with Windows**.
 
-**Go back:** [Back to the stock firmware](docs/stock-firmware.md) · **Problems:** [Troubleshooting](docs/troubleshooting.md) · **Questions:** [FAQ](docs/faq.md)
+**Go back:** [Back to the stock firmware](docs/stock-firmware.md) · **Problems:** [Fix a problem](docs/troubleshooting.md) · **Questions:** [FAQ](docs/faq.md)
 
 ## How to use the pad
 

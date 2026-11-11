@@ -7,7 +7,7 @@
 - [Does it need administrator rights?](#does-it-need-administrator-rights)
 - [What does the app store, and where?](#what-does-the-app-store-and-where)
 - [Does the app use the network?](#does-the-app-use-the-network)
-- [Why does an `open:` key show a User Account Control prompt?](#why-does-an-open-key-show-a-user-account-control-prompt)
+- [Why does an `open:` key ask for administrator rights?](#why-does-an-open-key-ask-for-administrator-rights)
 - [What is the BOOT message?](#what-is-the-boot-message)
 - [How do I uninstall the app?](#how-do-i-uninstall-the-app)
 - [How do I go back to the stock firmware?](#how-do-i-go-back-to-the-stock-firmware)
@@ -64,9 +64,9 @@ No. The app has no network code, and it does not connect to the internet. It doe
 
 There is one exception that you control: an `open:` key with a web address (for example `open:https://example.com`). The app gives the address to Windows, and Windows opens it in your web browser.
 
-## Why does an `open:` key show a User Account Control prompt?
+## Why does an `open:` key ask for administrator rights?
 
-The app starts the target of an `open:` key as your normal user. Some programs need administrator rights. For such a program, Windows shows a User Account Control prompt.
+The app starts the target of an `open:` key as your normal user. Some programs need administrator rights. For such a program, Windows shows a prompt of User Account Control (UAC).
 
 This is correct. The app cannot answer the prompt for you, and it does not try. If you do not want the prompt, select a target that does not need administrator rights.
 

@@ -149,7 +149,7 @@ Other users of this pad report these errors. This project did not see them.
 
 | Cause | Fix |
 |---|---|
-| The target program needs administrator rights. | This is correct. See [faq.md](faq.md#why-does-an-open-key-show-a-user-account-control-prompt). |
+| The target program needs administrator rights. | This is correct. See [faq.md](faq.md#why-does-an-open-key-ask-for-administrator-rights). |
 
 ## Windows warnings
 

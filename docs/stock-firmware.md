@@ -67,11 +67,11 @@ Status: **from the seller's documentation, not tested here**. The QMK readme als
 
 This project does not know where the button is on the board. This project has no photo of it.
 
-### Way 3: a RESET key that you set with an old VIA version
+### Way 3: a RESET key that you set with an old `VIA` version
 
 Status: **from the seller's documentation, not tested here**.
 
-The seller says: install VIA 1.3.1 and its file `KB16-01.json`, give one key the RESET key code, and push that key.
+The seller says: install version 1.3.1 of the configurator program `VIA`. Load its file `KB16-01.json`. Give one key the RESET key code. Then push that key.
 This way needs the configurator programs from the seller's page. This project did not use them and cannot tell you more.
 
 ### How to know that the pad is in the bootloader
@@ -192,7 +192,7 @@ Status: **not tested**.
    ```
 
    The product name in quotes comes from the stock firmware. `KB16-01` is what the author's pad showed with the community Vial firmware. The factory firmware can show a different name.
-4. If you used a configurator program before (VIA or Vial), open it. Make sure that it finds the pad and shows your old key settings.
+4. If you used a configurator program before (`VIA` or `Vial`), open it. Make sure that it finds the pad and shows your old key settings.
 
 ## Other sources of a stock image
 
