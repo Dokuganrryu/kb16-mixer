@@ -1,7 +1,7 @@
 //! Where every control of the window goes, and which of them the open tab shows.
 
 use super::checks::CHANNEL_NAME_LEN;
-use super::choices::{KNOB_NAMES, ROW_NAMES};
+use super::choices::{BRIGHTNESS_PERCENT, KNOB_NAMES, ROW_NAMES};
 use super::controls::{BUILDING, CONTROLS, button, combo, control, label, scale, show};
 use super::ids::*;
 use super::{HIDDEN, PANE, PANE_BRUSH, STATUS_IDLE, TAB, TABS, Tab};
@@ -124,7 +124,7 @@ pub fn build(hwnd: HWND) {
     send(name, EM_LIMITTEXT, kb16_mixer_protocol::LOGO_NAME_LEN, 0);
     label(hwnd, "1 to 10 letters, digits or spaces", 404, 50, 250);
     let bar = control(hwnd, w!("msctls_trackbar32"), "", WS_TABSTOP.0, 226, 84, 250, 30, ID_BRIGHTNESS);
-    send(bar, TBM_SETRANGE, 1, (100 << 16) | 10);
+    send(bar, TBM_SETRANGE, 1, (BRIGHTNESS_PERCENT.1 << 16) | BRIGHTNESS_PERCENT.0);
     combo(hwnd, ID_STEP, 232, 122, 180);
     combo(hwnd, ID_DUCK, 232, 158, 180);
     combo(hwnd, ID_SHIFT, 232, 194, 180);

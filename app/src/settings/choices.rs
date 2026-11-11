@@ -52,6 +52,9 @@ pub const MINUTES: &[(&str, i64)] = &[
     ("1 hour", 60),
     ("Never", 0),
 ];
+/// The brightness slider's range, in percent: the lights never go fully dark from it.
+pub const BRIGHTNESS_PERCENT: (isize, isize) = (10, 100);
+
 pub const ROW_NAMES: [&str; 4] = ["Row 1 (top)", "Row 2", "Row 3", "Row 4 (bottom)"];
 pub const KNOB_NAMES: [&str; 3] = ["Small knob, left", "Small knob, right", "Big knob"];
 
@@ -247,5 +250,124 @@ mod tests {
         }
         assert_eq!(kind_entries().len(), 4);
         assert!(kind_about(2).contains("microphone"));
+    }
+
+    /// Every dropdown's entries as (label shown, value stored). A changed label or value must
+    /// show up here as a deliberate edit, never by accident.
+    #[test]
+    fn the_option_tables_are_exactly_these() {
+        fn owned(list: &[(&str, &str)]) -> Vec<(String, String)> {
+            list.iter().map(|(l, v)| (l.to_string(), v.to_string())).collect()
+        }
+        let (keys, at) = key_choices(&KeyAction::Mute, "mute");
+        assert_eq!(at, 0);
+        assert_eq!(
+            keys,
+            owned(&[
+                ("Mute", "mute"),
+                ("Focus", "focus"),
+                ("Talk (hold)", "talk"),
+                ("Move app", "move"),
+                ("Switch page", "page"),
+                ("Play / pause", "play"),
+                ("Next track", "next"),
+                ("Previous track", "prev"),
+                ("Next (hold: prev)", "next|prev"),
+                ("Stop", "stop"),
+                ("F13", "F13"),
+                ("F14", "F14"),
+                ("F15", "F15"),
+                ("F16", "F16"),
+                ("F17", "F17"),
+                ("F18", "F18"),
+                ("F19", "F19"),
+                ("F20", "F20"),
+                ("F21", "F21"),
+                ("F22", "F22"),
+                ("F23", "F23"),
+                ("F24", "F24"),
+                ("Nothing", "none"),
+                ("Shortcut...", "\u{1}shortcut"),
+                ("Open...", "\u{1}open"),
+            ])
+        );
+        assert_eq!(
+            knob_choices(&config::defaults()),
+            owned(&[
+                ("Mic", "Mic"),
+                ("Chat", "Chat"),
+                ("Game", "Game"),
+                ("Media", "Media"),
+                ("Master volume", "master"),
+                ("Microphone", "mic"),
+                ("App in front", "focused"),
+                ("Focused channel", "selected"),
+            ])
+        );
+        assert_eq!(BRIGHTNESS_PERCENT, (10, 100));
+        assert_eq!(
+            STEPS,
+            [
+                ("1% per click", 1.0),
+                ("2% per click", 2.0),
+                ("3% per click", 3.0),
+                ("5% per click", 5.0),
+                ("10% per click", 10.0)
+            ]
+        );
+        assert_eq!(
+            DUCKS,
+            [
+                ("Almost silent (10%)", 0.1),
+                ("A quarter (25%)", 0.25),
+                ("Half (50%)", 0.5),
+                ("Three quarters (75%)", 0.75)
+            ]
+        );
+        assert_eq!(
+            shift_entries(),
+            owned(&[
+                ("0 px down", "0"),
+                ("1 px down", "1"),
+                ("2 px down", "2"),
+                ("3 px down", "3"),
+                ("4 px down", "4"),
+                ("5 px down", "5"),
+                ("6 px down", "6"),
+            ])
+        );
+        // The screen-off and dim-lights dropdowns share this list.
+        assert_eq!(
+            MINUTES,
+            [
+                ("1 minute", 1),
+                ("2 minutes", 2),
+                ("5 minutes", 5),
+                ("10 minutes", 10),
+                ("30 minutes", 30),
+                ("1 hour", 60),
+                ("Never", 0),
+            ]
+        );
+        assert_eq!(
+            kind_entries(),
+            owned(&[
+                ("These apps", "apps"),
+                ("Everything else", "other"),
+                ("Microphone", "mic"),
+                ("App in front", "focused")
+            ])
+        );
+        assert_eq!(
+            (0..4).map(kind_about).collect::<Vec<_>>(),
+            [
+                "The apps in this list:",
+                "Every app no other channel takes. Moved here:",
+                "Your microphone, the one chat apps use.",
+                "Whatever app is in front. Moved here:",
+            ]
+        );
+        assert_eq!(ROW_NAMES, ["Row 1 (top)", "Row 2", "Row 3", "Row 4 (bottom)"]);
+        assert_eq!(KNOB_NAMES, ["Small knob, left", "Small knob, right", "Big knob"]);
     }
 }

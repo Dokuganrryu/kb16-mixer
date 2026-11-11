@@ -105,7 +105,7 @@ fn number_setting(id: i32, picked: &str) -> Option<(&'static str, f64)> {
 
 /// The slider's position as the config's brightness (0.1 to 1).
 fn slider_brightness(position: isize) -> f64 {
-    position.clamp(10, 100) as f64 / 100.0
+    position.clamp(BRIGHTNESS_PERCENT.0, BRIGHTNESS_PERCENT.1) as f64 / 100.0
 }
 
 fn change_number(id: i32) -> Outcome {
