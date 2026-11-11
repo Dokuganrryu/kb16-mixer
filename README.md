@@ -16,7 +16,7 @@ It is not a driver, and it does not route audio. The app uses no keyboard hooks 
 
 - A knob turn changes the volume of a **channel**: a named list of programs, for example "Chat" or "Media".
 - A knob press selects one program in the channel. The next turns change only that program.
-- A key mutes a channel. A key turns the other channels down (Focus). A held key unmutes your microphone (Talk).
+- A key mutes a channel. A key turns the other channels down (Focus). While you hold a key, the microphone mute changes (Talk).
 - The key lights show the live sound level of each channel. The screen shows names, levels and volumes.
 - Other keys type F13–F24, media keys or key combinations, as a normal USB keyboard.
 - A second page of keys is a number pad. A key can also open a program, a file, a folder or a web address.
@@ -40,7 +40,7 @@ Do these checks before you change anything. If one check does not agree, **stop 
 
 1. The model is **KB16-01** (16 keys, 2 small knobs, 1 big knob, a screen, a cable, no battery). The wireless KB16B-02 is not supported.
 2. Device Manager shows the USB ID `VID_D010&PID_1601`.
-3. `kb16-mixer.exe --check` shows `pad  WARN  A pad with other firmware is connected (USB D010:1601, ...)`.
+3. On the `pad` line, `kb16-mixer.exe --check` shows `WARN  A pad with other firmware is connected (USB D010:1601, ...)`.
 4. In the bootloader, Windows shows `Maple 003` with the USB ID `1EAF:0003`. A rev1 pad shows a different bootloader.
 
 The full check, with the steps, is in [docs/install.md](docs/install.md#2-check-your-pad).
@@ -101,7 +101,7 @@ This is page 2 (the keypad page) with the default settings:
 | Knob, turn | Changes the volume of the knob target. One detent is 2 % (setting `step`). |
 | Knob, press | Selects the next knob target: the whole channel, then each program that plays in the channel, then the whole channel again. After 8 seconds without a touch, the knob goes back to the whole channel. |
 | Mute | Mutes or unmutes the channel of its column. A muted column shows amber lights. |
-| Focus, tap | Turns all other channels down (to 25 %, setting `duck`). Tap again to stop. |
+| Focus, tap | Turns all other channels down (to 25 % of their level, setting `duck`). Tap again to stop. |
 | Focus, hold | The same as a tap, but Focus stops when you release the key. |
 | Talk, hold | Changes the microphone mute while you hold the key. |
 | Switch page, tap | Changes to the other page. The screen shows `MIXER` or `KEYS`. |
@@ -166,7 +166,7 @@ The project has one tested pad (KB16-01 rev2, Windows 11). This table shows what
 The full record, with the dates and the firmware versions, is in [docs/testing.md](docs/testing.md#verified-on-the-real-pad).
 The table shows the state on the date of the last change. Report your results, good or bad, in an issue.
 
-Safeguards: the firmware never writes the bootloader region. Three ways lead into the bootloader while this firmware runs. Both flashers check the device and the image before they write. See [Recovery](docs/flashing.md#recovery).
+Safeguards: the firmware writes the flash only in two reserved pages, and never in the bootloader region. Three ways lead into the bootloader while this firmware runs. Both flashers check the image before they write. `flash.ps1` also checks the device and asks you to type `YES`. See [Recovery](docs/flashing.md#recovery).
 
 ## Repository map
 

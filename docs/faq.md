@@ -31,6 +31,7 @@ These are the facts about the code:
 - The app moves only the volume sliders and the mute switches of the Windows volume mixer. It also changes the level and the mute of your microphone.
 - The app has no driver. It uses no keyboard hooks. It does not inject input.
 - The app does not open or read other processes. It gets the names of programs from a system snapshot only.
+- For the Move key and a `focused` channel, the app asks Windows which program has the foreground window.
 - Keys that type (media keys, F13–F24, shortcuts, digits) come from the pad itself, as real USB keyboard input.
 - An `open:` key starts its target through the Windows shell, as a double-click in Explorer does.
 

@@ -19,9 +19,9 @@ If your problem is not here, open an issue. Paste the output of `kb16-mixer.exe 
 
 | Cause | Fix |
 |---|---|
-| The app is a Windows program without its own console. In some shells, its output goes nowhere. | Run `kb16-mixer.exe --check | more` in a command prompt (`cmd`). |
+| The app is a Windows program without its own console. In some shells, its output goes nowhere. | Run `kb16-mixer.exe --check \| more` in a command prompt (`cmd`). |
 
-### `pad  FAIL  No pad found. Check the USB cable and port.`
+### pad: `FAIL  No pad found. Check the USB cable and port.`
 
 | Cause | Fix |
 |---|---|
@@ -29,51 +29,51 @@ If your problem is not here, open an issue. Paste the output of `kb16-mixer.exe 
 | The USB port or hub does not work. | Connect the pad directly to a different USB port of the PC. |
 | The pad has firmware with a different USB ID. | Look in Device Manager for the USB ID. See [install.md](install.md#how-to-find-the-usb-id). If it is not `D010:1601` or `1EAF:0003`, this project does not support the pad. |
 
-### `pad  FAIL  The pad is in bootloader mode (USB 1EAF:0003). Unplug it and plug it in again.`
+### pad: `FAIL  The pad is in bootloader mode (USB 1EAF:0003). Unplug it and plug it in again.`
 
 | Cause | Fix |
 |---|---|
 | The pad is still in the bootloader after a flash or a backup. | Disconnect the pad. Connect it again. |
 | The pad goes back to the bootloader after each connection. The firmware possibly did not start. | Flash the firmware again. See [install.md](install.md#6-flash-the-firmware). |
 
-### `pad  WARN  A pad with other firmware is connected (USB D010:1601, product "...")`
+### pad: `WARN  A pad with other firmware is connected (USB D010:1601, product "...")`
 
 | Cause | Fix |
 |---|---|
 | The pad has its stock firmware or a different firmware. | Flash this project's firmware. See [install.md](install.md). |
 | You wrote your stock backup back. | This is correct. The app does not work with the stock firmware. |
 
-### `pad  WARN  <n> pads are connected (...). The app uses only one. Connect only one pad.`
+### pad: `WARN  <n> pads are connected (...). The app uses only one. Connect only one pad.`
 
 | Cause | Fix |
 |---|---|
 | More than one pad, or one pad and one bootloader, is connected. | Disconnect all pads except one. |
 
-### `pad  OK  KB16 Mixer, firmware unknown (an early build)`
+### pad: `OK    KB16 Mixer, firmware unknown (an early build)`
 
 | Cause | Fix |
 |---|---|
 | The pad has an early build of this firmware, without a version number. | Flash the current firmware. |
 
-### `settings  FAIL  config.toml, line <n>, column <m>: ...`
+### settings: `FAIL  config.toml, line <n>, column <m>: ...`
 
 | Cause | Fix |
 |---|---|
 | A mistake in `config.toml`, for example after an edit by hand. The app keeps the last correct settings. | Open `%APPDATA%\kb16-mixer\config.toml`. Go to the line and the column in the message. Correct the mistake. Then click **Reload config file** in the tray menu. See [configuration.md](configuration.md). |
 
-### `settings  FAIL  config.toml cannot be read (...)`
+### settings: `FAIL  config.toml cannot be read (...)`
 
 | Cause | Fix |
 |---|---|
 | A different program has the file open, or the file has no read permission. | Close the other program. Make sure that your user can read the folder `%APPDATA%\kb16-mixer`. |
 
-### `audio  FAIL  No audio output device is active.` or `audio  WARN  No default output device is set.`
+### audio: `FAIL  No audio output device is active.` or `WARN  No default output device is set.`
 
 | Cause | Fix |
 |---|---|
 | Windows has no active speaker or headset, or no default device. | Open **Settings > System > Sound**. Select an output device. |
 
-### `audio  FAIL  Core Audio does not answer (error 0x...).`
+### audio: `FAIL  Core Audio does not answer (error 0x...).`
 
 | Cause | Fix |
 |---|---|
@@ -88,7 +88,7 @@ Each `REFUSED` message means that the script wrote nothing to the pad.
 | `REFUSED: dfu-util not found` | The script cannot find `dfu-util`. | Copy `dfu-util-static.exe` into the `tools` folder next to `flash.ps1`. See [install.md](install.md#14-get-dfu-util). Or give `-DfuUtil <path>`. |
 | `REFUSED: No firmware image found` | The firmware file is not in the `firmware` folder next to the script. | Unzip the release again, with its folders. Or give `-Firmware <path>`. |
 | `REFUSED: The image ... is empty`, `... is too small` | The file is not firmware. | Download the release again. Check it. See [install.md](install.md#12-check-the-download). |
-| `REFUSED: The image is <n> bytes. The limit is 119808 bytes` | The image is too large for the firmware area of this project. A full stock backup also has this size. | To write a stock backup back, see [stock-firmware.md](stock-firmware.md#write-the-backup-back-restore). |
+| `REFUSED: The image is <n> bytes. The limit is 119808 bytes` | The image is too large for the firmware area of this project. A full stock backup (122880 bytes) is larger than this limit. | To write a stock backup back, see [stock-firmware.md](stock-firmware.md#write-the-backup-back-restore). |
 | `REFUSED: The first word ... is not a stack pointer in RAM` or `The second word ... is not a reset vector` | The file is not an image for this pad. For example, it is a web page saved as `.bin`. | Do not flash the file. |
 | `REFUSED: No pad in bootloader mode (USB 1EAF:0003) was found` | The pad is not in the bootloader, or the bootloader has no driver. | Put the pad into the bootloader. See [install.md](install.md#3-put-the-pad-into-the-bootloader). Look at Device Manager. See [Maple 003 has a warning sign](#maple-003-has-a-warning-sign). |
 | `REFUSED: <n> devices with the USB ID 1EAF:0003 are connected` | More than one device is in the bootloader. | Disconnect all devices except the pad. |
@@ -143,7 +143,7 @@ Other users of this pad report these errors. This project did not see them.
 
 | Cause | Fix |
 |---|---|
-| The case hides some pixel rows of the screen. | Increase `oled_top` in the settings. See [configuration.md](configuration.md). |
+| The case hides some pixel rows of the screen. | On the **Pad** tab, increase **Screen shift** (`oled_top` in `config.toml`). See [configuration.md](configuration.md#general-settings). |
 
 ### A key of the `open:` type shows a "User Account Control" prompt
 

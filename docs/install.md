@@ -127,7 +127,7 @@ Do this check before you change anything. If one item does not agree, **STOP. Do
 | 1 | The model name on the box, the shop page or the label | `KB16-01`, also sold as "Megalodon Triple Knob Macro Pad" | STOP. `KB16B-02` (wireless) and other DOIO models are not supported. |
 | 2 | The pad | 16 keys, 2 small knobs, 1 big knob, a screen, a USB cable, no battery | STOP. |
 | 3 | The USB ID in Device Manager (see below) | `VID_D010&PID_1601` | STOP. |
-| 4 | `kb16-mixer.exe --check` (see below) | `pad WARN A pad with other firmware is connected (USB D010:1601, ...)` | See below. |
+| 4 | `kb16-mixer.exe --check` (see below) | The `pad` line shows `WARN  A pad with other firmware is connected (USB D010:1601, ...)` | See below. |
 | 5 | The USB ID in the bootloader (step 3) | `VID_1EAF&PID_0003`, name `Maple 003` | STOP. A rev1 pad shows an Atmel DFU device. |
 
 Items 3 and 4 cannot tell rev1 from rev2: QMK gives both revisions the USB ID `D010:1601`. Only item 5 tells rev2 with certainty.
@@ -262,7 +262,10 @@ Do this step. Without a backup, you possibly cannot go back to your stock firmwa
 
 **You see:** a line `backup: 122880 bytes, SHA-256 ...`, then `DRY RUN complete: all checks passed. Nothing was written.`
 
-**If you do not see it:** read the line that starts with `REFUSED`. Do not flash. See [troubleshooting.md](troubleshooting.md).
+**If you do not see it:**
+
+- A line that starts with `REFUSED`: read the reason. Do not flash. See [troubleshooting.md](troubleshooting.md).
+- `No pad in bootloader mode (USB 1EAF:0003) is connected.`: the script made no backup. Put the pad into the bootloader (step 3). Then run the command again.
 
 Write down the SHA-256 value. Copy `stock-backup.bin` to a second place. For the details, see [stock-firmware.md](stock-firmware.md#make-a-backup-of-the-stock-firmware).
 
@@ -292,7 +295,9 @@ After `Download done`, the line `dfu-util exit 74` is normal.
 - `FAILED: dfu-util did not show "Download done"`: do not disconnect the pad. Run the script again.
 
 The script writes only the firmware area (`0x08002000`). It does not write the bootloader. It does not write unless you type `YES`.
-If the pad is not in the bootloader when the script starts, the script tells you what to do and waits 120 seconds.
+
+If the pad is not in the bootloader when the script starts, the script asks: "Restart it into its bootloader with kb16-mixer.exe? (y/N)". Type `y` only if the pad has this firmware already. For the stock firmware, press Enter. The script then tells you what to do. It waits for the bootloader for 120 seconds at most.
+When you type `y`, the script stops `kb16-mixer.exe` if it runs. It starts the app again after the write.
 
 ## 7. Restart the pad
 
