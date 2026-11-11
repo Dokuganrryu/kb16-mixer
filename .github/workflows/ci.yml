@@ -179,7 +179,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       # Each check runs also when an earlier check failed, so that one run shows all problems.
       - name: Unit tests of the scripts
-        run: python3 -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py
+        run: python3 -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py scripts/test_flash_scripts.py
       - name: STE check of all Markdown files
         if: ${{ !cancelled() }}
         run: python3 scripts/ste-lint.py
