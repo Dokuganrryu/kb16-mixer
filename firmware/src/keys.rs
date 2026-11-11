@@ -77,6 +77,8 @@ pub async fn scan(mut s: Scanner) {
     let mut count = [[0u8; COLS]; ROWS];
     let read = |(a, b): &(Input<'static>, Input<'static>)| a.is_high() as u8 | (b.is_high() as u8) << 1;
     let mut knobs = [Knob::new(read(&s.knobs[0])), Knob::new(read(&s.knobs[1])), Knob::new(read(&s.knobs[2]))];
+    // Detents not yet queued, per knob (+ clockwise).
+    let mut turns = [0i8; 3];
     let mut combo_ms = 0u16;
     let mut ticker = Ticker::every(Duration::from_millis(1));
 
@@ -91,11 +93,15 @@ pub async fn scan(mut s: Scanner) {
                     count[row][col] = 0;
                     continue;
                 }
-                count[row][col] += 1;
-                if count[row][col] >= DEBOUNCE_MS {
+                count[row][col] = count[row][col].saturating_add(1);
+                // A change counts as seen only once it is queued: with the queue full it is
+                // tried again on the next scan, so a release is never lost (a lost release of a
+                // shortcut would leave Ctrl or Shift held on the PC).
+                if count[row][col] >= DEBOUNCE_MS
+                    && EVENTS.try_send(Event::Key { row: row as u8, col: col as u8, pressed: raw }).is_ok()
+                {
                     count[row][col] = 0;
                     stable[row][col] = raw;
-                    let _ = EVENTS.try_send(Event::Key { row: row as u8, col: col as u8, pressed: raw });
                 }
             }
             s.rows[row].set_as_input(Pull::Up);
@@ -104,7 +110,11 @@ pub async fn scan(mut s: Scanner) {
 
         for (i, pins) in s.knobs.iter().enumerate() {
             if let Some(cw) = knobs[i].update(read(pins)) {
-                let _ = EVENTS.try_send(Event::Turn { knob: i as u8, cw });
+                // Bounded, so a long stall cannot replay a whole spin afterwards.
+                turns[i] = (turns[i] + if cw { 1 } else { -1 }).clamp(-8, 8);
+            }
+            if turns[i] != 0 && EVENTS.try_send(Event::Turn { knob: i as u8, cw: turns[i] > 0 }).is_ok() {
+                turns[i] -= turns[i].signum();
             }
         }
 

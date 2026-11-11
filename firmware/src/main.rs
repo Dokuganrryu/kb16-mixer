@@ -22,6 +22,7 @@ mod name;
 mod oled;
 mod state;
 
+use core::sync::atomic::{AtomicBool, Ordering};
 use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Flex, Input, Level, Output, Pull, Speed};
 use embassy_stm32::i2c::{self, I2c};
@@ -164,16 +165,30 @@ const KEY_PGUP: u8 = 0x4B;
 const KEY_PGDN: u8 = 0x4E;
 const KEY_HOME: u8 = 0x4A;
 
+/// Set when the bus is suspended, reset or switched off: whatever the PC thought was held, the
+/// pad lets go of too, and tells it so once the bus is back.
+static LET_GO: AtomicBool = AtomicBool::new(false);
+
 /// Tracks USB suspend so the pad goes dark with the PC.
 struct BusState;
 
 impl embassy_usb::Handler for BusState {
+    fn enabled(&mut self, enabled: bool) {
+        if !enabled {
+            LET_GO.store(true, Ordering::Relaxed);
+        }
+    }
+
     fn suspended(&mut self, suspended: bool) {
-        state::SUSPENDED.store(suspended, core::sync::atomic::Ordering::Relaxed);
+        state::SUSPENDED.store(suspended, Ordering::Relaxed);
+        if suspended {
+            LET_GO.store(true, Ordering::Relaxed);
+        }
     }
 
     fn reset(&mut self) {
-        state::SUSPENDED.store(false, core::sync::atomic::Ordering::Relaxed);
+        state::SUSPENDED.store(false, Ordering::Relaxed);
+        LET_GO.store(true, Ordering::Relaxed);
     }
 }
 
@@ -240,6 +255,15 @@ impl Keyboard {
 
 /// A long press on a media key with a second function.
 const HOLD: Duration = Duration::from_millis(400);
+/// How long one report may wait for the bus.
+const SEND: Duration = Duration::from_millis(50);
+/// How often a report the PC is owed is tried again, and `LET_GO` looked at.
+const RETRY: Duration = Duration::from_millis(100);
+
+/// Sends one report; false if the bus did not take it in time.
+async fn put<const N: usize>(w: &mut HidWriter<'static, UsbDriver, N>, report: &[u8]) -> bool {
+    matches!(with_timeout(SEND, w.write(report)).await, Ok(Ok(())))
+}
 
 #[embassy_executor::task]
 async fn input(
@@ -247,12 +271,37 @@ async fn input(
     mut media: HidWriter<'static, UsbDriver, 2>,
     mut raw: hid::HidWriter<'static, UsbDriver, 32>,
 ) {
-    let send = Duration::from_millis(50);
     let mut keyboard = Keyboard { held: [(0, 0); 6] };
     // What each key did when it went down, so its release always matches, whatever changed since.
     let mut down: [Option<(Key, embassy_time::Instant)>; 16] = [None; 16];
+    // Reports the PC is owed because the bus did not take them (not ready, suspended): the
+    // keyboard state, a media key's release, and the releases of keys the PC app handles. Until
+    // they get through, the PC would think those keys are still held.
+    let mut kbd_owed = false;
+    let mut media_owed = false;
+    let mut ups_owed = 0u16;
     loop {
-        let ev = keys::EVENTS.receive().await;
+        if LET_GO.swap(false, Ordering::Relaxed) {
+            keyboard.held = [(0, 0); 6];
+            kbd_owed = true;
+            media_owed = true;
+            // The bus went away: the PC app saw the pad go and let go of its keys itself.
+            ups_owed = 0;
+        }
+        if !state::suspended() {
+            if kbd_owed {
+                kbd_owed = !put(&mut kbd, &keyboard.report(0)).await;
+            }
+            if media_owed {
+                media_owed = !put(&mut media, &[0, 0]).await;
+            }
+            for i in 0..16u8 {
+                if ups_owed & 1 << i != 0 && put(&mut raw, &PadMsg::KeyUp { row: i / 4, col: i % 4 }.encode()).await {
+                    ups_owed &= !(1 << i);
+                }
+            }
+        }
+        let Ok(ev) = with_timeout(RETRY, keys::EVENTS.receive()).await else { continue };
         let now = embassy_time::Instant::now();
         let (alive, mixer_keys, keymap) = state::with(|s| {
             s.activity = now;
@@ -266,20 +315,19 @@ async fn input(
         // Sends a media usage and its release.
         macro_rules! tap_media {
             ($usage:expr) => {{
-                let _ = with_timeout(send, media.write(&($usage as u16).to_le_bytes())).await;
-                let _ = with_timeout(send, media.write(&[0, 0])).await;
+                put(&mut media, &($usage as u16).to_le_bytes()).await;
+                media_owed = !put(&mut media, &[0, 0]).await;
             }};
         }
         macro_rules! tap_key {
             ($code:expr) => {{
-                let _ = with_timeout(send, kbd.write(&keyboard.report($code))).await;
-                let _ = with_timeout(send, kbd.write(&keyboard.report(0))).await;
+                put(&mut kbd, &keyboard.report($code)).await;
+                kbd_owed = !put(&mut kbd, &keyboard.report(0)).await;
             }};
         }
         match ev {
             Event::Turn { knob, cw } if alive => {
-                let r = PadMsg::Turn { knob, delta: if cw { 1 } else { -1 } }.encode();
-                let _ = with_timeout(send, raw.write(&r)).await;
+                put(&mut raw, &PadMsg::Turn { knob, delta: if cw { 1 } else { -1 } }.encode()).await;
             }
             Event::Turn { knob, cw } => match (knob, cw) {
                 (1, true) => tap_key!(KEY_PGUP),
@@ -295,7 +343,7 @@ async fn input(
                     continue;
                 }
                 if alive {
-                    let _ = with_timeout(send, raw.write(&PadMsg::Press { knob: row }.encode())).await;
+                    put(&mut raw, &PadMsg::Press { knob: row }.encode()).await;
                 } else {
                     match row {
                         0 => tap_media!(CONSUMER_PLAY),
@@ -314,11 +362,12 @@ async fn input(
                 down[i] = Some((action, now));
                 match action {
                     Key::Host => {
-                        let _ = with_timeout(send, raw.write(&PadMsg::KeyDown { row, col }.encode())).await;
+                        ups_owed &= !(1 << i);
+                        put(&mut raw, &PadMsg::KeyDown { row, col }.encode()).await;
                     }
                     Key::Keyboard { code, mods } => {
                         keyboard.press(code, mods);
-                        let _ = with_timeout(send, kbd.write(&keyboard.report(0))).await;
+                        kbd_owed = !put(&mut kbd, &keyboard.report(0)).await;
                     }
                     Key::Media { tap, hold: 0 } => tap_media!(tap),
                     Key::Media { .. } | Key::Nothing => {}
@@ -329,11 +378,13 @@ async fn input(
                 let Some((action, since)) = down[i].take() else { continue };
                 match action {
                     Key::Host => {
-                        let _ = with_timeout(send, raw.write(&PadMsg::KeyUp { row, col }.encode())).await;
+                        if !put(&mut raw, &PadMsg::KeyUp { row, col }.encode()).await {
+                            ups_owed |= 1 << i;
+                        }
                     }
                     Key::Keyboard { code, .. } => {
                         keyboard.release(code);
-                        let _ = with_timeout(send, kbd.write(&keyboard.report(0))).await;
+                        kbd_owed = !put(&mut kbd, &keyboard.report(0)).await;
                     }
                     Key::Media { tap, hold } if hold != 0 => {
                         let long = now.saturating_duration_since(since) >= HOLD;
