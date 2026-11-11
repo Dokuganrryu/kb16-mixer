@@ -980,11 +980,14 @@ mod tests {
     /// A slider in a pretend Windows mixer; clones share it, as two looks at one session do.
     /// Reading it can be made to fail, as a Core Audio call can.
     #[derive(Clone)]
-    struct Fake(Rc<Cell<f32>>, Rc<Cell<bool>>);
+    struct Fake(Rc<Cell<f32>>, Rc<Cell<bool>>, Rc<Cell<bool>>);
 
     impl Fake {
         fn at(level: f32) -> Fake {
-            Fake(Rc::new(Cell::new(level)), Rc::new(Cell::new(true)))
+            Fake(Rc::new(Cell::new(level)), Rc::new(Cell::new(true)), Rc::new(Cell::new(false)))
+        }
+        fn is_muted(&self) -> bool {
+            self.2.get()
         }
         fn get(&self) -> f32 {
             self.0.get()
@@ -1002,9 +1005,11 @@ mod tests {
             self.0.set(v);
         }
         fn muted(&self) -> Option<bool> {
-            Some(false)
+            Some(self.2.get())
         }
-        fn set_muted(&self, _: bool) {}
+        fn set_muted(&self, muted: bool) {
+            self.2.set(muted);
+        }
     }
 
     const MEDIA: usize = 0;
@@ -1174,6 +1179,54 @@ mod tests {
         assert!(close(a.get(), 0.175), "still turned down: {}", a.get());
         m.set_focus(None, &channels());
         assert!(close(a.get(), 0.7), "the change survives Focus: {}", a.get());
+    }
+
+    #[test]
+    fn an_app_goes_where_it_was_moved_then_to_the_first_list_that_names_it_then_to_other() {
+        let ch = |name: &str, target| ChannelCfg { name: name.into(), color: [0; 3], target };
+        let apps = |list: &[&str]| ChannelTarget::Apps(list.iter().map(|a| a.to_string()).collect());
+        let channels = vec![
+            ch("Mic", ChannelTarget::Mic),
+            ch("Chat", apps(&["Discord.exe"])),
+            ch("Game", ChannelTarget::Other),
+            ch("Media", apps(&["spotify.exe", "discord.exe"])),
+        ];
+        let moved: HashMap<String, String> = [("spotify.exe", "game"), ("game.exe", "Mic"), ("old.exe", "Gone")]
+            .map(|(e, c)| (e.into(), c.into()))
+            .into();
+        let at = |exe: &str| assign(&channels, &moved, exe, 1, None);
+        assert_eq!(at("spotify.exe"), Some(2), "moved by hand beats the lists, by name in any case");
+        assert_eq!(at("discord.exe"), Some(1), "the first list that names it, in any case");
+        assert_eq!(at("game.exe"), Some(2), "never moved into the microphone");
+        assert_eq!(at("old.exe"), Some(2), "moved to a channel that is gone: the usual rule");
+        assert_eq!(at("anything.exe"), Some(2), "the rest go to Other");
+        assert_eq!(assign(&channels[..2], &moved, "anything.exe", 1, None), None, "no Other: nowhere");
+    }
+
+    #[test]
+    fn a_channel_turned_under_focus_plays_down_and_keeps_its_new_real_level() {
+        let (a, b) = (Fake::at(0.5), Fake::at(0.5));
+        let mut m = mixer([0.5, 0.5]);
+        m.trims.insert("b.exe".into(), 0.5);
+        m.faders[MEDIA].touched = Some(Instant::now());
+        m.follow(windows_has(&[("a", "a.exe", &a, MEDIA), ("b", "b.exe", &b, MEDIA)]), &channels(), true);
+        m.set_focus(Some(GAME), &channels());
+        let r = m.change_channel(MEDIA, Some(10.0), &channels());
+        assert_eq!((r.volume, r.live), (60, true), "the readout shows the real level");
+        assert!(close(a.get(), 0.15) && close(b.get(), 0.075), "turned down: {} {}", a.get(), b.get());
+        let r = m.change_channel(MEDIA, None, &channels());
+        assert!(r.muted && a.is_muted() && b.is_muted(), "the mute key mutes the whole channel");
+        assert!(close(a.get(), 0.15) && close(m.faders[MEDIA].volume, 0.6), "and leaves every level as it is");
+        m.set_focus(None, &channels());
+        assert!(close(a.get(), 0.6) && close(b.get(), 0.3), "real levels back: {} {}", a.get(), b.get());
+    }
+
+    #[test]
+    fn names_and_meter_steps() {
+        assert_eq!((pretty("discord.exe"), pretty("x"), pretty("")), ("Discord".into(), "X".into(), String::new()));
+        assert_eq!((to_level(0.0), to_level(1.0)), (0, 255));
+        assert_eq!(to_level(10f32.powf(-24.0 / 20.0)), 127, "-24 dBFS is half way on the -48..0 dB scale");
+        assert_eq!(to_level(0.001), 0, "below -48 dBFS");
     }
 
     /// The desktop and taskbar (explorer.exe, pid 100) started Spotify (200) and a game (300).
