@@ -58,7 +58,7 @@ The project has not published the first release yet. Until then, [build the file
 5. Flash the firmware with `flash.ps1`. Then disconnect the pad, and connect it again. See [Flash the firmware](docs/install.md#6-flash-the-firmware).
 6. Start `kb16-mixer.exe`. Then run `kb16-mixer.exe --check`. See [Start the app](docs/install.md#8-start-the-app).
 
-On the first start, the settings window opens on the **Pad** tab. The app does not start with Windows until you select **Start with Windows**.
+On the first start, the settings window opens on the **Pad** tab. The app does not start with Windows until you turn on **Start with Windows**.
 
 **Go back:** [Back to the stock firmware](docs/stock-firmware.md) · **Problems:** [Fix a problem](docs/troubleshooting.md) · **Questions:** [FAQ](docs/faq.md)
 

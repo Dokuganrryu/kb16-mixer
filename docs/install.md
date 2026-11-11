@@ -371,7 +371,7 @@ The bootloader starts the new firmware only after a power cycle.
 2. If SmartScreen shows a warning, see [Warnings](#warnings-from-windows-and-from-antivirus-programs).
 
 **You see:** the settings window opens on the **Pad** tab. The window tells you where the tray icon is.
-The app does not start with Windows. To start it with Windows, select **Start with Windows** on the **Pad** tab.
+The app does not start with Windows. To start it with Windows, turn on **Start with Windows** on the **Pad** tab.
 
 **If you do not see it:** look for the tray icon. Windows can hide it under the arrow near the clock. Click the icon to open the settings window.
 
