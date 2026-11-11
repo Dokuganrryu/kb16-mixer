@@ -383,9 +383,10 @@ def tokens(sentence: str) -> list[str]:
 # ---------------------------------------------------------------- rules
 
 
-def first_word(sentence: str) -> str:
-    words = tokens(sentence)
-    return words[0].lower() if words else ""
+def first_word(words: list[str]) -> str:
+    """The first real word: a placeholder for bold text or code is not a verb."""
+    real = [w for w in words if w not in PLACEHOLDERS]
+    return real[0].lower() if real else ""
 
 
 def is_participle(word: str) -> bool:
@@ -429,7 +430,7 @@ def check_two_instructions(sentence: str, words: list[str]) -> str | None:
             return match.group(1).lower()
         if match.group(2) and match.group(2).lower() in IMPERATIVES:
             return f"then {match.group(2).lower()}"
-    if words and words[0].lower() in IMPERATIVES:
+    if first_word(words) in IMPERATIVES:
         lower = [w.lower() for w in words]
         for i, w in enumerate(lower[1:-1], 1):
             if w == "and" and lower[i + 1] in SECOND_ACTIONS:
@@ -483,7 +484,7 @@ def check_unit(path: str, unit: Unit) -> list[Finding]:
         def hit(rule: str, detail: str = "") -> None:
             found.append(Finding(path, line, rule, detail, sentence))
 
-        is_step = unit.is_item and first_word(sentence) in IMPERATIVES
+        is_step = unit.is_item and first_word(words) in IMPERATIVES
         if is_step and len(words) > MAX_STEP_WORDS:
             hit("step-length", f"{len(words)} words")
         elif len(words) > MAX_WORDS:

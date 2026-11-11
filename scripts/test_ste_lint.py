@@ -103,6 +103,9 @@ class TwoInstructions(unittest.TestCase):
     def test_one_instruction_passes(self):
         self.assertEqual(rules("Unplug the pad. Plug it in again.\n"), [])
 
+    def test_bold_label_is_not_a_verb(self):
+        self.assertEqual(rules("- **Local access.** A program can open the pad and send data.\n"), [])
+
     def test_description_with_and_passes(self):
         self.assertEqual(rules("The app reads and writes the file.\n"), [])
 
