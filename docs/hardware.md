@@ -21,6 +21,17 @@ Only one unit was examined and tested. Other production runs can be different.
 | Key lights | 16 WS2812 LEDs, one under each key |
 | Screen | SSD1306 OLED, 128 x 32 pixels, on I2C, address `0x3C` |
 
+### rev1 and rev2
+
+The QMK board definition gives both revisions the same USB ID, `D010:1601`. Thus the USB ID of the firmware cannot tell them apart.
+
+| Revision | Chip | Bootloader (QMK board definition) | Supported |
+|---|---|---|---|
+| rev1 | ATmega32U4 | Atmel DFU | No |
+| rev2 | APM32F103CBT6 | stm32duino, USB ID `1EAF:0003` | Yes |
+
+The bootloader tells the two revisions apart. See [install.md](install.md#2-check-your-pad).
+
 ## Layout
 
 The 4 x 4 keys are on the left. On the right, the two small knobs are at the top, the screen is below them, and the big knob is at the bottom.
@@ -39,7 +50,7 @@ The 4 x 4 keys are on the left. On the right, the two small knobs are at the top
   +---------------------------------------------------+
 ```
 
-The QMK readme for this board also names a reset button on the back of the PCB. This project did not test it.
+The seller and the QMK readme name a reset button on the board, under the bottom cover. This project did not test it. See [stock-firmware.md](stock-firmware.md#way-2-the-reset-button-under-the-bottom-cover).
 
 ## Pin table
 
@@ -116,6 +127,8 @@ The bootloader reads the backup register `BKP_DR10` after each reset:
 
 Backup registers keep their values through a reset, but not through a power cycle.
 After a power cycle, the bootloader finds no "stay" mark and starts the firmware.
+
+The public source code of the stm32duino bootloader starts the firmware only if the first word at `0x08002000` (or `0x08005000`) is a stack pointer in RAM. Otherwise it stays in DFU mode. This project does not know if the bootloader in this pad has the same code.
 
 After a download, the bootloader does not start the new firmware. It waits for a power cycle.
 Thus each flash ends with one disconnect and one connect of the pad.
