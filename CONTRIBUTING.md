@@ -1,106 +1,108 @@
 # Contributing
 
-Thank you for your help. This document tells you how to build and test the project, which rules the code follows, and how to report a bug.
+Thank you for your help. This document tells you how to make your first contribution.
+For the definition of each term, see [docs/glossary.md](docs/glossary.md).
+All contributors follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Repository layout
 
 | Folder | Contents |
 |---|---|
 | `protocol/` | `kb16-mixer-protocol`: the raw HID wire format and the version format, shared by the firmware and the app |
+| `pad-core/` | `kb16-mixer-pad-core`: the firmware logic that needs no hardware. Its tests run on the PC. |
 | `firmware/` | `kb16-mixer-firmware`: the Embassy firmware for the pad |
 | `app/` | `kb16-mixer`: the Windows tray app |
-| `scripts/` | Build, flash and notice scripts |
+| `scripts/` | Build, flash, notice and STE scripts |
 | `docs/` | Documentation |
-| `.github/workflows/` | CI (`ci.yml`) and releases (`release.yml`) |
+| `.github/` | CI, releases, and the templates for issues and pull requests |
 
 Each crate has its own `Cargo.toml` and `Cargo.lock`. There is no Cargo workspace.
 
-## Build and test
+## Your first contribution
 
-For the tools that you need, see [docs/flashing.md](docs/flashing.md#prerequisites).
-CI (`.github/workflows/ci.yml`) runs the same commands as below. Run them before you open a pull request.
-In CI, a Clippy warning fails the protocol and the app jobs. The firmware Clippy step is advisory: it shows the warnings, but it does not fail the job.
+1. Find an issue, or open one that describes your change.
+2. Fork the repository on GitHub.
+3. Make a branch for your change.
+4. Do the setup for your type of change. See the next sections.
+5. Make the change.
+6. Run the checks for each part that you changed.
+7. Open a pull request. Complete the template.
 
-### Protocol
+### Setup for documentation
 
-```sh
-cd protocol
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-```
+You need Python 3 and a text editor. You do not need Rust or a pad.
+Write in ASD-STE100 Simplified Technical English. See [Documentation](#documentation).
 
-### Firmware
+### Setup for the app
 
-```sh
-cd firmware
-cargo fmt --check
-cargo clippy --release --locked
-cd ..
-sh scripts/build-firmware.sh
-```
-
-The firmware has no unit tests. CI builds the image and checks it.
-
-To add start-up stage markers to the crash log page, build with `sh scripts/build-firmware.sh --diag`.
-This writes `firmware/target/kb16-mixer-firmware-diag.bin`.
-
-### App (Windows only)
+You need Windows 10 or 11 and the Rust toolchain. For the steps, see [docs/build-from-source.md](docs/build-from-source.md).
+You do not need a pad. To try the app without a change to your real settings, use a test folder:
 
 ```sh
-cd app
-cargo fmt --check
-cargo clippy --all-targets --locked -- -D warnings
-cargo test --locked
-cd ..
-sh scripts/build-app.sh
+KB16_MIXER_DIR="$TEMP/kb16-test" ./app/target/release/kb16-mixer.exe --no-pad
 ```
 
-To try the app without a change to your real settings, set `KB16_MIXER_DIR` to an empty test folder.
-With `--no-pad`, a second copy can run next to the copy that has the pad.
+`KB16_MIXER_DIR` replaces the settings folder. With `--no-pad`, the copy never looks for the pad.
+Thus it can run next to the copy that has the pad.
 
-### Screen assets
+### Setup for the firmware
 
-`firmware/src/assets.rs` and `firmware/src/font.rs` are generated files. Do not edit them.
-To make them again, run `firmware/gen_assets.py`. It needs Python 3 and Pillow:
+You need the Rust toolchain with the `thumbv7m-none-eabi` target and `llvm-tools`. For the steps, see [docs/build-from-source.md](docs/build-from-source.md).
+You can change and test most firmware logic in `pad-core/` without a pad.
+To test on hardware, you need a KB16-01 rev2. Read [docs/flashing.md](docs/flashing.md) before you write an image to a pad.
+
+## Checks
+
+For a full list of the test suites, see [docs/testing.md](docs/testing.md).
+CI runs the same checks. Run them before you open a pull request.
+
+| Part | Commands |
+|---|---|
+| Protocol | `cd protocol`, then `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` |
+| Firmware logic | `cd pad-core`, then `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` |
+| Firmware image | `cd firmware`, then `cargo fmt --check`, `cargo clippy --release --locked`. Then, in the root folder: `sh scripts/build-firmware.sh` |
+| App | `cd app`, then `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`. Then, in the root folder: `sh scripts/build-app.sh` |
+| End-to-end audio test | `cd app`, then `cargo test --test audio_e2e -- --ignored`. CI does not run it. |
+| Documentation | `python scripts/ste-lint.py`, and `python -m unittest scripts/test_ste_lint.py` if you changed the checker |
+
+## Documentation
+
+The documents use ASD-STE100 Simplified Technical English (STE). These are the most important rules:
+
+- Write 20 words or fewer in a procedure step. Write 25 words or fewer in other sentences.
+- Write one instruction in each sentence.
+- Use the active voice and the simple present tense.
+- Do not use contractions or semicolons.
+- Do not put more than three nouns in a row.
+- Use one word for one thing. The definitions are in [docs/glossary.md](docs/glossary.md).
+- Do not write that a function works if nobody tested it. Write "not tested" instead.
+
+`scripts/ste-lint.py` finds many breaks of these rules:
 
 ```sh
-uv run --with pillow python firmware/gen_assets.py
+python scripts/ste-lint.py               # all Markdown files
+python scripts/ste-lint.py docs/faq.md   # one file
+python scripts/ste-lint.py --summary     # counts for each rule and each file
 ```
 
-The script also writes `firmware/assets/preview.png`, a preview of the screen at 4 times the size.
-An optional argument sets the name in the preview only. The pad draws the name that the app sends.
+The exit code is 1 when the checker finds a problem.
+The checker is a heuristic helper. It is not a certified STE checker. It can miss a problem, and it can show a problem where there is none.
+A person must still read the text.
 
-### Third-party notices
-
-`THIRD_PARTY_NOTICES.md` is a generated file. Do not edit it.
-It holds the copyright notices and the full licence texts of all third-party code in the firmware image and in the app.
-The release workflow attaches it to each release.
-
-When you add, remove or update a dependency, run this command from the repository root:
-
-```sh
-cargo install cargo-about --version 0.9.3 --locked --features cli   # one time only
-python scripts/third-party-notices.py
-```
-
-The script uses `cargo-about` with the settings in `scripts/about.toml`.
-It fails if a dependency has a licence that is not in the `accepted` list of that file.
-Use only dependencies with permissive licences.
-CI fails if `THIRD_PARTY_NOTICES.md` is not the same as the output of the script.
+If the checker shows a problem that is not real, rewrite the sentence. Add an exception to `scripts/ste-lint.allow` only for a quotation, a standard text or a technical name that cannot change. Each exception needs a reason.
 
 ## The image check and why it exists
 
-`scripts/build-firmware.sh` checks each firmware image before it writes it. It rejects the image if:
+`scripts/build-firmware.sh` checks each firmware image before it writes it. It rejects the image if one of these is true:
 
-- the initial stack pointer is not in RAM.
-- the reset vector is not in the firmware region (above `0x08002000`).
-- the TIM2, USB, I2C2 or DMA1 channel 4 interrupt goes to `DefaultHandler`.
-- the image is larger than 117 KB (`0x1D400` bytes). It then overlaps the name page at `0x0801F400` and the crash log after it.
+- The initial stack pointer is not in RAM.
+- The reset vector is not in the firmware region (above `0x08002000`).
+- The TIM2, USB, I2C2 or DMA1 channel 4 interrupt goes to `DefaultHandler`.
+- The image is larger than 117 KB (`0x1D400` bytes). It then overlaps the name page at `0x0801F400` and the crash log after it.
 
 The interrupt check exists because of a real failure.
 Without the `rt` feature of embassy-stm32, all interrupts go to `DefaultHandler`, also with `default-features = false`.
-Such an image builds without an error. On the pad, it stops at the first timer interrupt, with no lights.
+The build of such an image shows no error. On the pad, the image stops at the first timer interrupt, with no lights.
 The check finds this problem before the image gets to a pad.
 
 Do not remove or weaken the check. If you add an interrupt that the firmware needs, add it to the check.
@@ -114,14 +116,14 @@ The app must stay out of the way of other software. Thus these rules are strict:
 
 - Do not add keyboard hooks or mouse hooks.
 - Do not inject input (for example `SendInput`). Keys that type come only from the pad, as USB keyboard input.
-- Do not enable the `Win32_UI_Input_KeyboardAndMouse` feature of the `windows` crate. A test in `app/src/main.rs` fails if it is enabled.
+- Do not enable the `Win32_UI_Input_KeyboardAndMouse` feature of the `windows` crate. A test fails if somebody enables it.
 - Do not add or load a driver.
 - Do not open, read or write other processes. Get program names only from the Toolhelp snapshot.
 - Do not route, capture or record audio. Change only volume and mute through Core Audio.
 - Do not add network access.
 - Start an `open:` target only through the Windows shell, without elevation.
 
-A pull request that breaks one of these rules will not be merged.
+The project does not merge a pull request that breaks one of these rules.
 
 ### Protocol
 
@@ -133,50 +135,84 @@ A pull request that breaks one of these rules will not be merged.
 ### Firmware
 
 - Never write the bootloader region (`0x08000000` to `0x08001FFF`).
-- Keep the three ways into the bootloader (top-left key at start, four corner keys, the bootloader message).
+- Keep the three ways into the bootloader: the top-left key at start, the four corner keys, and the bootloader message.
 - Keep the watchdog and the crash counter.
 - Do not write flash more often than necessary. The name page has a limit of one write each minute, and of 8 writes for each power-up.
+- Put logic that needs no register into `pad-core/`. Add a test there.
+- Give each `unsafe` block a `// SAFETY:` comment.
 
 ### All code
 
 - Format the code with `cargo fmt`. The settings are in `rustfmt.toml`.
-- Fix all Clippy warnings in the protocol and the app. Do not add Clippy warnings to the firmware.
+- Fix all Clippy warnings in each crate that you change.
+- Do not use `unwrap()` or `expect()` on a path that can fail at run time. Tests can use them.
+- Write comments that say why, not what.
 - Keep build-machine paths out of release binaries. The build scripts do this with `scripts/remap-paths.sh`.
+
+### Screen assets
+
+A script makes `pad-core/src/assets.rs` and `pad-core/src/font.rs`. Do not edit these files.
+To make them again, run `firmware/gen_assets.py`. It needs Python 3 and Pillow:
+
+```sh
+uv run --with pillow python firmware/gen_assets.py
+```
+
+The script also writes `firmware/assets/preview.png`, a preview of the screen at 4 times the size.
+
+## Dependencies and licences
+
+Use only dependencies with a permissive licence: MIT, Apache-2.0, BSD, ISC, 0BSD, Zlib or CC0. Fonts can also use the OFL.
+Do not copy code from a source with the GPL, the LGPL or an unknown licence.
+Give the reason for a new dependency in the commit message.
+
+`THIRD_PARTY_NOTICES.md` is a generated file. Do not edit it.
+It holds the copyright notices and the full licence texts of all third-party code in the firmware image and in the app.
+When you add, remove or update a dependency, run these commands in the root folder:
+
+```sh
+cargo install cargo-about --version 0.9.3 --locked --features cli   # one time only
+python scripts/third-party-notices.py
+```
+
+The script uses `cargo-about` with the settings in `scripts/about.toml`.
+It fails if a dependency has a licence that is not in the `accepted` list of that file.
+CI fails if `THIRD_PARTY_NOTICES.md` is not the same as the output of the script.
+
+## Personal data
+
+Do not put personal data into the repository. Personal data includes real names, e-mail addresses, user names, machine names, serial numbers, and paths that contain a user name (for example `C:\Users\<name>\...`).
+This rule is for files, screenshots, test data, logs and commit messages.
+Use neutral examples, for example the pad name `DESK PC`.
+Do not attach your own `config.toml`, `log.txt` or `selftest.txt` to a pull request.
+
+## Commits and pull requests
+
+- Make small commits. Each commit has one purpose.
+- Write the subject line of a commit in the imperative, for example "Add a test for the trim rule".
+- Make one pull request for each change.
+- In the pull request, say what you tested on hardware and what you did not test. For example: "Flashed on a KB16-01 rev2, Windows 11. Tested knob turns and mute keys. Not tested: Focus, Move."
+- If you did not test on hardware, say so.
+- Update the documentation and `CHANGELOG.md` in the same pull request.
 
 ## Versions and releases
 
 The app and the firmware each take their version from their `Cargo.toml`.
-The firmware sends its version as the USB device release number. Thus the major version must be 0–99, and the minor and patch versions must be 0–9.
+The firmware sends its version as the USB release number. Thus the major version must be 0 to 99. The minor version and the patch version must be 0 to 9.
 
-`.github/workflows/release.yml` runs when you push a tag that starts with `v` (for example `v0.1.0`). It does these steps:
+The maintainer makes each release:
 
-1. It makes sure that the tag is the same as the versions in `app/Cargo.toml` and `firmware/Cargo.toml`.
-2. It runs the same checks as CI, and builds the firmware image and the app.
-3. It makes a GitHub release with the firmware image, the app, `LICENSE`, `THIRD_PARTY_NOTICES.md` and `SHA256SUMS.txt`.
+1. Set the same version in `app/Cargo.toml` and `firmware/Cargo.toml`.
+2. Move the entries of the "Unreleased" section of `CHANGELOG.md` to a new version section.
+3. Push a tag that starts with `v`, for example `v0.1.0`.
 
-No release exists yet. A first release follows after more tests on hardware.
-
-## Pull requests
-
-In each pull request, say what you tested on hardware and what you did not test.
-For example: "Flashed on a KB16-01 rev2, Windows 11. Tested knob turns and mute keys. Not tested: Focus, Move."
-If you did not test on hardware, say so. The pull request template asks for this.
+The tag starts `.github/workflows/release.yml`. The workflow runs the checks, builds the firmware image and the app, and makes a draft release.
+The maintainer examines the draft. If it is correct, the maintainer publishes it. For the full steps, see [docs/releasing.md](docs/releasing.md).
 
 ## Report a bug
 
-Open an issue with the bug report template. Give this information:
-
-1. The versions. The first line of the tray menu shows them, for example `KB16 mixer 0.1.0: pad connected, firmware 0.1.0`. The **Pad** tab of the settings window shows them too.
-2. The release tag or the git commit, if you built from source.
-3. The hardware: the pad model and revision (for example KB16-01 rev2).
-4. The Windows version.
-5. The steps that cause the problem, what you expected, and what occurred.
-6. The log file of the app: `log.txt` in the settings folder (`%APPDATA%\kb16-mixer`).
-7. If the problem is about channels or levels: run `kb16-mixer.exe --selftest`, then attach `selftest.txt` from the settings folder.
-8. If you changed the config file: attach `config.toml` from the settings folder.
-
-> **CAUTION:** `selftest.txt` lists the names of the programs that play sound, with their process IDs. `config.toml` and `log.txt` can contain program names and paths (for example of `open:` targets).
-> Read the files before you attach them, and remove what you do not want to share.
+Open an issue with the "Pad does not work" form or the bug report template.
+The form asks for the output of `kb16-mixer.exe --check`. That report contains no personal data.
 
 For a firmware crash, the pad keeps a crash log in flash. See [docs/hardware.md](docs/hardware.md#crash-log).
 
