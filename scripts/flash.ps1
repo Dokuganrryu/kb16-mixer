@@ -220,8 +220,9 @@ if ($found.Count -eq 0) {
             $restart = @(Get-Process -Name kb16-mixer -ErrorAction SilentlyContinue |
                     ForEach-Object { $_.Path } | Where-Object { $_ } | Sort-Object -Unique)
             Get-Process -Name kb16-mixer -ErrorAction SilentlyContinue | Stop-Process -Force
-            & $app --bootloader
-            if ($LASTEXITCODE -eq 0) { Write-Host 'The pad was told to enter its bootloader.' }
+            # The app is a GUI program: "&" does not wait for it and does not set $LASTEXITCODE.
+            $request = Start-Process -FilePath $app -ArgumentList '--bootloader' -Wait -PassThru -WindowStyle Hidden
+            if ($request.ExitCode -eq 0) { Write-Host 'The pad was told to enter its bootloader.' }
             else { Write-Host 'The pad did not answer. It possibly has other firmware.' -ForegroundColor Yellow; $asked = $false }
         }
     }
