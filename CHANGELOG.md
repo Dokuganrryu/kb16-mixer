@@ -13,7 +13,13 @@ This section lists the work of the quality round after the first independent rev
 - The `pad-core` crate holds the firmware logic that needs no hardware. Its tests run on the PC and in CI.
 - A flash guard in the firmware. The firmware writes flash only in the name page and in the crash log. It also reads the error flags of the flash controller after each write (PGERR and WRPRTERR).
 - An end-to-end audio test for the app: `cargo test --test audio_e2e -- --ignored`. It needs a Windows PC with an audio output device. CI does not run it.
-- A release workflow that builds one zip file, `SHA256SUMS` and a build attestation for each version tag.
+- A release workflow. For a version tag, it checks the versions and the changelog, and builds one zip file, `SHA256SUMS` and a build attestation. It makes only a draft pre-release. It never publishes a release. Nobody ran it for a tag yet.
+- `scripts/package-release.py` makes the release zip. It refuses a bad firmware image or exe. The zip is reproducible.
+- `scripts/check-privacy.py` finds e-mail addresses, paths with a user name, account SIDs and tokens in the repository, and other addresses than noreply addresses in the commits.
+- `scripts/check-links.py` checks the relative links and the anchors in the Markdown files.
+- `app/tests/forbidden_apis.rs` fails if the app names a hook, an input injection, a process access or a network API.
+- `deny.toml` for `cargo deny`: licences, advisories, sources (crates.io only) and the network crates.
+- Dependabot opens grouped update pull requests each week for the crates and the GitHub Actions.
 - `scripts/flash.ps1`, a flash script for Windows PowerShell.
 - `scripts/ste-lint.py`, a checker for the mechanical rules of Simplified Technical English in the documents.
 - New documents in `docs/`:
@@ -28,6 +34,10 @@ This section lists the work of the quality round after the first independent rev
 
 ### Changed
 
+- CI runs for pull requests and for pushes to `main`, not for each branch push. A new push to a pull request stops the older run.
+- CI pins each third-party action to a full commit SHA, and gives the workflow only read access.
+- CI runs Clippy on the firmware with warnings as errors. It runs the `pad-core` tests also in the release profile.
+- CI has new jobs: a smoke test of the app with `--check`, the script checks, `cargo deny`, and a dry run of the release zip.
 - The app is now a library and a small program, so that tests can use the library.
 - The documents follow the rules of Simplified Technical English more strictly.
 - `SECURITY.md` describes the threat model. It says that the bootloader marker `BOOT` never changes and is not a secret.
