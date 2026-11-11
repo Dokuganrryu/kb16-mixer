@@ -64,10 +64,14 @@ const RUN_KEY: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
 const RUN_VALUE: PCWSTR = w!("kb16-mixer");
 /// The autostart value written before the app was renamed.
 const OLD_RUN_VALUE: PCWSTR = w!("kb16-knobs");
-/// Meter rate while something is playing or being touched, and the idle rate otherwise.
+/// Meter rate while the pad was touched in the last `STAY_ACTIVE`, programme audio is playing, or
+/// a meter is up at `LOUD`; the idle rate otherwise.
 const FRAME: Duration = Duration::from_millis(33);
 const IDLE_FRAME: Duration = Duration::from_millis(200);
 const STAY_ACTIVE: Duration = Duration::from_secs(3);
+/// About -30 dBFS on the meters' -48..0 dB scale: a voice into the microphone or an app starting
+/// to play. An open microphone in a quiet room stays below it, and must not keep the fast rate.
+const LOUD: u8 = 95;
 /// Colors and names are sent on connect and on a config change; this is only a safety resync.
 const META_RESYNC: Duration = Duration::from_secs(30);
 const SAVE_AFTER: Duration = Duration::from_secs(3);
@@ -230,6 +234,7 @@ fn worker(
     let mut last_frame = [0u8; 32];
     let mut last_tick = Instant::now();
     let mut last_active = Instant::now();
+    let mut playing = false;
     let mut mic_muted = false;
     let mut mic_checked: Option<Instant> = None;
     let mut audible = Audible::default();
@@ -243,7 +248,7 @@ fn worker(
     let mut names: Vec<String> = Vec::new();
 
     loop {
-        let every = if last_active.elapsed() < STAY_ACTIVE { FRAME } else { IDLE_FRAME };
+        let every = if playing || last_active.elapsed() < STAY_ACTIVE { FRAME } else { IDLE_FRAME };
         let deadline = last_tick + every;
         let mut batch = Vec::new();
         match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
@@ -302,7 +307,10 @@ fn worker(
         let mut closing: Option<Sender<()>> = None;
         let mut popup: Option<Show> = None;
         let is_paused = paused.load(Ordering::Relaxed);
-        if !batch.is_empty() {
+        let touched = batch.iter().any(|e| {
+            matches!(e, PadEvent::Turn { .. } | PadEvent::Press { .. } | PadEvent::Key { .. } | PadEvent::KeyUp { .. })
+        });
+        if touched {
             last_active = Instant::now();
         }
         let now = Instant::now();
@@ -489,12 +497,12 @@ fn worker(
                 mic_checked = Some(Instant::now());
             }
             let (levels, heard) = mixer.levels(channels);
-            if levels.iter().any(|&l| l > 0) {
+            if levels.iter().any(|&l| l >= LOUD) {
                 last_active = Instant::now();
             }
             // Computed every tick and part of the frame, so a change is always sent; while it
             // stays the same, the heartbeat tells the pad it still holds.
-            let playing = audible.update(heard, Instant::now());
+            playing = audible.update(heard, Instant::now());
             let mut volumes = [0u8; 4];
             let mut mutes = 0u8;
             for (i, f) in mixer.faders.iter().take(4).enumerate() {
