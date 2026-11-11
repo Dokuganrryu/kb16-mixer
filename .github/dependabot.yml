@@ -1,25 +1,11 @@
-# Weekly update pull requests for the four Rust crates and for the GitHub Actions.
+# Weekly update pull requests for the GitHub Actions only.
+# The crates get no Dependabot updates: an update changes THIRD_PARTY_NOTICES.md (the "notices"
+# job fails until somebody runs scripts/third-party-notices.py), and a firmware crate update can
+# need a newer Rust than the one in rust-toolchain.toml. `cargo deny` in CI reports advisories;
+# a maintainer updates the crates by hand (see docs/testing.md, "Dependency check").
 # Updates wait 14 days after a release (cooldown), so that a bad release can be pulled first.
-# A Cargo update can change THIRD_PARTY_NOTICES.md: then the "notices" job of CI fails until
-# somebody runs `python scripts/third-party-notices.py` on the branch of the pull request.
 version: 2
 updates:
-  - package-ecosystem: cargo
-    directories:
-      - /protocol
-      - /pad-core
-      - /firmware
-      - /app
-    schedule:
-      interval: weekly
-      day: monday
-    cooldown:
-      default-days: 14
-    open-pull-requests-limit: 3
-    groups:
-      cargo-minor-and-patch:
-        update-types: [minor, patch]
-
   - package-ecosystem: github-actions
     directory: /
     schedule:

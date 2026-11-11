@@ -102,6 +102,13 @@ Do the same for `protocol`, `pad-core` and `firmware`.
 The check accepts only the licences that `scripts/about.toml` accepts, and only crates from crates.io. It refuses the crates for network access.
 `deny.toml` ignores one advisory, RUSTSEC-2026-0110. It tells that the `bare-metal` crate has no maintainer. The firmware gets that crate through `cortex-m` 0.7.10, and no newer release exists.
 
+Dependabot updates only the GitHub Actions (see `.github/dependabot.yml`). It does not update the crates, for two reasons:
+
+- A crate update changes `THIRD_PARTY_NOTICES.md`. The `notices` job fails until somebody runs `python scripts/third-party-notices.py`.
+- A firmware crate update can need a newer Rust than the version in `rust-toolchain.toml`.
+
+To update the crates of one crate folder, run `cargo update` in that folder. Then run `python scripts/third-party-notices.py`, the tests and `cargo deny`. Commit the lock file and the notices together.
+
 ## CI
 
 `.github/workflows/ci.yml` runs for each pull request, for each push to `main`, and when somebody starts it by hand.

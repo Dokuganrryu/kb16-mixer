@@ -19,7 +19,7 @@ This section lists the work of the quality round after the first independent rev
 - `scripts/check-links.py` checks the relative links and the anchors in the Markdown files.
 - `app/tests/forbidden_apis.rs` fails if the app names a hook, an input injection, a process access or a network API.
 - `deny.toml` for `cargo deny`: licences, advisories, sources (crates.io only) and the network crates.
-- Dependabot opens grouped update pull requests each week for the crates and the GitHub Actions.
+- Dependabot opens one grouped update pull request each week for the GitHub Actions. It does not update the crates: `cargo deny` reports advisories, and a maintainer updates the crates by hand.
 - `scripts/flash.ps1`, a flash script for Windows PowerShell. It writes only to the bootloader (USB `1EAF:0003`) and only a valid image. It can make a backup first.
 - `scripts/flash.sh` checks the image as `flash.ps1` does.
 - `scripts/ste-lint.py`, a checker for the mechanical rules of Simplified Technical English in the documents.
