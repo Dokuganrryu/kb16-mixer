@@ -169,6 +169,7 @@ The script also writes `firmware/assets/preview.png`, a preview of the screen at
 ## Dependencies and licences
 
 Use only dependencies with a permissive licence: MIT, Apache-2.0, BSD, ISC, 0BSD, Zlib or CC0. Fonts can also use the OFL.
+`cargo deny` and `scripts/third-party-notices.py` accept only the licences in `scripts/about.toml`. To add a licence from this list, add it to `scripts/about.toml` and `deny.toml` in the same commit.
 Do not copy code from a source with the GPL, the LGPL or an unknown licence.
 Give the reason for a new dependency in the commit message.
 
@@ -220,7 +221,7 @@ The maintainer makes each release. The full checklist is in [docs/releasing.md](
 
 1. Set the same version in the four `Cargo.toml` files.
 2. Move the entries of the "Unreleased" section of `CHANGELOG.md` to a new version section with a date.
-3. Push a tag that starts with `v`, for example `v0.1.0`.
+3. Push a tag of the form `v<major>.<minor>.<patch>`, for example `v0.1.0`. A suffix such as `v0.1.0-rc.1` is also possible.
 
 The tag starts `.github/workflows/release.yml`. The workflow checks the versions, builds the firmware image and the app, and makes a draft pre-release.
 The workflow never publishes a release. The maintainer tests the draft on a pad. If it is correct, the maintainer publishes it.

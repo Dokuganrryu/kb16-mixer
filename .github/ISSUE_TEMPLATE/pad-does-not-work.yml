@@ -1,7 +1,7 @@
 name: Pad does not work
 description: The pad, the app or the flash does not work as the documents say.
 title: "Pad does not work: "
-labels: ["bug", "pad"]
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
@@ -23,7 +23,7 @@ body:
         app        OK    ...
         pad        FAIL  No pad found. Check the USB cable and port.
         ...
-        Result: 1 problem(s)
+        Result: 1 problem
     validations:
       required: true
   - type: dropdown

@@ -11,13 +11,13 @@ The author wrote the steps on Windows 11 with Rust 1.99.1, Python 3.14, the Buil
 |---|---|---|
 | Git for Windows | The source code, and Git Bash. The build scripts are POSIX shell scripts. | https://git-scm.com |
 | Visual Studio Build Tools, workload "Desktop development with C++" | The MSVC linker and the Windows SDK, for the app | https://visualstudio.microsoft.com/downloads/ (Build Tools for Visual Studio). `rustup-init.exe` also offers to install them. |
-| Rust (stable), 1.90 or later | All crates. They use Rust edition 2024. The app needs 1.90. The firmware needs 1.88. | https://rustup.rs (`rustup-init.exe`) |
+| Rust 1.99.1 | All crates. They use Rust edition 2024. The file `rust-toolchain.toml` sets the version, and `rustup` installs it in the repository folder. | https://rustup.rs (`rustup-init.exe`) |
 | The firmware target `thumbv7m-none-eabi` | The firmware runs on a Cortex-M3 chip. | `rustup target add thumbv7m-none-eabi` |
 | `llvm-tools` | `objcopy` and `nm` for the firmware image | `rustup component add llvm-tools` |
 | `rustfmt` and `clippy` | The checks of CI | `rustup component add rustfmt clippy` |
 | Python 3 | The image check in `scripts/build-firmware.sh`, and `scripts/third-party-notices.py` | https://www.python.org |
 | Pillow (Python) | Only if you change the screen fonts or bitmaps (`firmware/gen_assets.py`) | `python -m pip install pillow` |
-| `cargo-about` 0.9 | Only if you change a dependency: it writes `THIRD_PARTY_NOTICES.md` | `cargo install cargo-about --locked --features cli` |
+| `cargo-about` 0.9.3 | Only if you change a dependency: it writes `THIRD_PARTY_NOTICES.md` | `cargo install cargo-about --version 0.9.3 --locked --features cli` |
 
 You do not need a pad to build. You need a pad only to flash.
 
@@ -46,6 +46,8 @@ You do not need a pad to build. You need a pad only to flash.
    git clone https://github.com/Dokuganrryu/kb16-mixer.git
    cd kb16-mixer
    ```
+
+In the repository folder, the first `cargo` or `rustc` command installs Rust 1.99.1 with the firmware target, `llvm-tools`, `rustfmt` and `clippy`. The file `rust-toolchain.toml` tells `rustup` to do this. Thus steps 5 and 6 are necessary only outside the repository.
 
 ### Check the setup
 
@@ -135,7 +137,7 @@ Before the first flash, make a backup of the stock firmware. See [stock-firmware
 
 Do this only if you add, remove or update a dependency of the firmware or the app.
 
-1. Install `cargo-about` 0.9 (see [What you need](#what-you-need)).
+1. Install `cargo-about` 0.9.3 (see [What you need](#what-you-need)).
 2. Run:
 
    ```sh
