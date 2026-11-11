@@ -159,8 +159,10 @@ pub fn handle_report(r: &[u8]) -> After {
         match msg {
             HostMsg::Popup(p) => {
                 let volume = if p.volume == NOTICE { NOTICE } else { p.volume.min(100) };
+                // Not activity: a readout of the user's own knob or key comes right after that
+                // input, which already counted, and a notice nobody asked for ("Config loaded")
+                // must not keep the pad awake.
                 s.popup = Some(Popup { at: now, volume, muted: p.muted, name: p.name });
-                s.activity = now;
             }
             HostMsg::Settings(c) => {
                 m.n = c.channels.min(NCH as u8);
