@@ -51,8 +51,16 @@ pub fn label(cv: &mut Canvas, r: R, text: &str, l: &Label) {
         Some(q) if q == text => (Font::Small, Tok::Text3),
         _ => (l.font, l.color),
     };
-    let flags = if l.wrap { DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL | DT_END_ELLIPSIS } else { one_line(l.align) };
-    cv.text(r, text, font(fnt), c(color), flags);
+    if l.wrap {
+        // As many whole lines as the box holds, give or take a quarter line: the font's own
+        // line height grows a little faster than the design's 16 px with the scale.
+        let lh = super::line_of(fnt);
+        let lines = ((r.h + lh / 4) / lh).max(1);
+        let at = R::new(r.x, r.y, r.w, lines * lh);
+        cv.text(at, text, font(fnt), c(color), DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL | DT_END_ELLIPSIS);
+    } else {
+        cv.text(r, text, font(fnt), c(color), one_line(l.align));
+    }
 }
 
 pub fn card(cv: &mut Canvas, r: R) {
@@ -262,7 +270,7 @@ pub fn status(cv: &mut Canvas, r: R, text: &str, warn: bool) {
         (t.get(Tok::Text2), r.x)
     };
     let w = r.right() - x;
-    let lines = px(16) * 3;
+    let lines = super::line_of(Font::Small) * 3;
     let h = super::canvas::measure(text, fnt, Some(w)).cy.min(lines);
     let at = R::new(x, r.y + (r.h - h) / 2, w, h);
     cv.text(at, text, fnt, ink, DT_WORDBREAK | DT_NOPREFIX | DT_EDITCONTROL | DT_END_ELLIPSIS);

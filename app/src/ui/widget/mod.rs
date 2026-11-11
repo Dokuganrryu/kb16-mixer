@@ -21,10 +21,12 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 mod input;
 mod paint;
+mod tip;
 
 pub use input::restyle;
 use input::{dress_dropdown, scrollbar_theme, sub};
 use paint::*;
+pub use tip::tooltips;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Kind {
@@ -319,6 +321,10 @@ pub fn parent_msg(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> Optio
             }
             WM_NOTIFY => {
                 let hdr = &*(lparam.0 as *const NMHDR);
+                if hdr.code == TTN_GETDISPINFOW {
+                    tip::text(&mut *(lparam.0 as *mut NMTTDISPINFOW));
+                    return Some(LRESULT(0));
+                }
                 if hdr.code != NM_CUSTOMDRAW || kind(hdr.hwndFrom).is_none() {
                     return None;
                 }

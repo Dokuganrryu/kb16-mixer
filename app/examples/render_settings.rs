@@ -131,27 +131,17 @@ fn render(out: &Path, what: Preview, o: &Options, suffix: &str) {
     }
 }
 
-const WORST_CONFIG: &str = r#"name = "DESK PC"
-[[channel]]
-name = "Mic"
-target = "mic"
-[[channel]]
-name = "Chat"
-apps = ["DiscordCanary.exe", "Discord.exe", "ts3client_win64.exe", "Teams.exe", "Zoom.exe"]
-[[channel]]
-name = "Game"
-target = "other"
-[[channel]]
-name = "Media"
-apps = ["Spotify.exe"]
-[keys]
-page1 = [
-  ["page", "prev", "play", "next|prev"],
-  ["move", "win+shift+s", "F13", "open:C:\\Tools\\a-very-long-program-name.exe"],
-  ["talk", "focus", "focus", "focus"],
-  ["mute", "mute", "mute", "mute"],
-]
-"#;
+/// The default config with the longest real texts: a shortcut, a long "open:" target, the
+/// longest app name first in a list, and a pad name of 7 letters.
+fn worst_config() -> String {
+    kb16_mixer::config::DEFAULT
+        .replace(
+            r#"row2 = ["move", "win+shift+s", "F13",   "F14"]"#,
+            r#"row2 = ["move", "win+shift+s", "F13",   "open:C:\\Tools\\a-very-long-program-name.exe"]"#,
+        )
+        .replace(r#"apps = ["Discord.exe", "#, r#"apps = ["DiscordCanary.exe", "Discord.exe", "#)
+        .replace(r#"name = "KB16""#, r#"name = "DESK PC""#)
+}
 
 const PROBLEM: &str = "config.toml has a problem, so the settings in force stay as they are and nothing is saved until it is fixed (Open config file on the Pad tab): TOML parse error at line 21, column 14: invalid float, expected a digit after the decimal point in the brightness entry";
 
@@ -235,7 +225,7 @@ fn main() {
             }
         }
         "worst" => {
-            let _ = std::fs::write(&config, WORST_CONFIG);
+            let _ = std::fs::write(&config, worst_config());
             for dpi in [96, 144] {
                 let o = Options { dpi, look: Some(Look::Dark), ..Default::default() };
                 for t in tabs {

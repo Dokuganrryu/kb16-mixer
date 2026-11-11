@@ -38,6 +38,8 @@ const FONT_SIZES: [(i32, i32); 4] = [(13, 400), (13, 600), (12, 400), (12, 600)]
 thread_local! {
     static DPI: Cell<i32> = const { Cell::new(96) };
     static FONTS: Cell<[HFONT; 4]> = const { Cell::new([HFONT(std::ptr::null_mut()); 4]) };
+    /// Each font's line height (its TEXTMETRIC height), measured when it is made.
+    static LINES: Cell<[i32; 4]> = const { Cell::new([16; 4]) };
     /// How many windows use the fonts (the settings window, a dialog over it).
     static USERS: Cell<u32> = const { Cell::new(0) };
 }
@@ -65,6 +67,11 @@ pub fn font(f: Font) -> HFONT {
     FONTS.get()[f as usize]
 }
 
+/// The height of one line of `f`.
+pub fn line_of(f: Font) -> i32 {
+    LINES.get()[f as usize]
+}
+
 fn make_fonts() {
     let mut metrics = NONCLIENTMETRICSW { cbSize: size_of::<NONCLIENTMETRICSW>() as u32, ..Default::default() };
     // SAFETY: the struct carries its own size and outlives the call.
@@ -77,7 +84,9 @@ fn make_fonts() {
         );
     }
     let face = metrics.lfMessageFont.lfFaceName;
-    FONTS.set(FONT_SIZES.map(|(size, weight)| canvas::font(&face, px(size), weight)));
+    let fonts = FONT_SIZES.map(|(size, weight)| canvas::font(&face, px(size), weight));
+    FONTS.set(fonts);
+    LINES.set(fonts.map(canvas::line_height));
 }
 
 fn free_fonts() {

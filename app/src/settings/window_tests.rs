@@ -9,6 +9,7 @@ use super::{PAGE, TAB, create, scene, window};
 use crate::win::send;
 use std::path::PathBuf;
 use windows::Win32::System::Threading::{GR_GDIOBJECTS, GR_USEROBJECTS, GetCurrentProcess, GetGuiResources};
+use windows::Win32::UI::Controls::{NMTTDISPINFOW, TTN_GETDISPINFOW};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const CB_SETCURSEL: u32 = 0x014E;
@@ -131,6 +132,30 @@ fn the_window_applies_and_saves_each_change_as_before() {
     // Start with Windows stays off for a test copy, as before.
     command(ID_AUTOSTART, BN_CLICKED);
     assert!(text_of(ID_STATUS).contains("stays off"), "{}", text_of(ID_STATUS));
+
+    // A status line too long for three lines gets the whole text as a tooltip; one that fits
+    // gets none.
+    let tip = |id: i32| {
+        let mut d = NMTTDISPINFOW::default();
+        d.hdr.code = TTN_GETDISPINFOW;
+        d.hdr.idFrom = child(id).0 as usize;
+        send(hwnd, WM_NOTIFY, 0, &raw mut d as isize);
+        // SAFETY: the window pointed lpszText at its own NUL-terminated buffer.
+        unsafe { d.lpszText.to_string() }.unwrap_or_default()
+    };
+    let long = super::fill::problem_text(&"a parse error. ".repeat(12));
+    super::controls::status(&long);
+    assert_eq!(tip(ID_STATUS), long);
+    super::controls::status("Saved and applied.");
+    assert_eq!(tip(ID_STATUS), "");
+    assert_eq!(tip(ID_STEP), "", "5% per click fits its box");
+
+    // Moved to a display at 150 %: every control is made again at that scale.
+    let rect = windows::Win32::Foundation::RECT { left: 0, top: 0, right: 1100, bottom: 700 };
+    send(hwnd, WM_DPICHANGED, 144 << 16 | 144, &raw const rect as isize);
+    assert_eq!(crate::ui::widget::rect_in_parent(child(ID_CLOSE)).x, 608 * 3 / 2, "Close at 150 %");
+    assert_eq!(text_of(ID_STATUS), "Saved and applied.", "the status line stays");
+    assert_eq!(TAB.get(), 2, "and so does the tab");
 
     // Owner-drawn buttons stay owner-drawn when a dialog makes one the default.
     let close = child(ID_CLOSE);

@@ -178,6 +178,16 @@ pub fn build(hwnd: HWND) {
     let status = control_at(hwnd, w!("STATIC"), STATUS_IDLE, SS_OWNERDRAW, at(16, FOOTER + 1, 500, 55), ID_STATUS);
     crate::ui::widget::add(status, crate::ui::widget::Kind::Status, None);
     button(hwnd, "Close", 608, FOOTER + 14, 88, ID_CLOSE);
+
+    // The whole text of a select or the status line, when it does not fit.
+    let mut tools: Vec<HWND> = CONTROLS.with_borrow(|c| {
+        c.iter()
+            .filter(|k| crate::ui::widget::kind(k.0) == Some(crate::ui::widget::Kind::Select))
+            .map(|k| k.0)
+            .collect()
+    });
+    tools.push(status);
+    crate::ui::widget::tooltips(hwnd, &tools);
 }
 
 /// Remove sits where Add is when a channel has no Add button.
