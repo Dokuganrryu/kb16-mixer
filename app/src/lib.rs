@@ -9,33 +9,21 @@
 //! The crate is a library (these modules) and a thin `main.rs`, so that the tests in `tests/`
 //! can drive the real modules. The command line is in `USAGE`.
 
-#[deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+
 pub mod audio;
-#[deny(clippy::undocumented_unsafe_blocks)]
 mod autostart;
-#[deny(clippy::undocumented_unsafe_blocks)]
 mod check;
-#[deny(clippy::undocumented_unsafe_blocks)]
 pub mod config;
-#[deny(clippy::undocumented_unsafe_blocks)]
 mod dialog;
-#[deny(clippy::undocumented_unsafe_blocks)]
 mod keys;
-#[deny(clippy::undocumented_unsafe_blocks)]
 mod open;
-#[deny(clippy::undocumented_unsafe_blocks)]
 mod pad;
-#[deny(clippy::undocumented_unsafe_blocks)]
 pub mod procs;
-#[deny(clippy::undocumented_unsafe_blocks)]
 mod settings;
-#[deny(clippy::undocumented_unsafe_blocks)]
 mod tray;
-#[deny(clippy::undocumented_unsafe_blocks)]
 pub mod trim;
-#[deny(clippy::undocumented_unsafe_blocks)]
 mod win;
-#[deny(clippy::undocumented_unsafe_blocks)]
 mod worker;
 
 pub use autostart::{autostart_enabled, set_autostart};
