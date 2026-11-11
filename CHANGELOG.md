@@ -1,41 +1,72 @@
 # Changelog
 
-All important changes to this project are in this file.
+This file lists all important changes to this project.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The version numbers follow [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased / 0.1.0: first public version
+## [Unreleased]
 
-No release exists yet. Build from source for now.
+This section lists the work of the quality round after the first independent review.
+
+### Added
+
+- `kb16-mixer.exe --check` prints a short report about the app, the pad, the settings, **Start with Windows** and audio. The report contains no personal data, so you can paste it into a bug report.
+- The `pad-core` crate holds the firmware logic that needs no hardware. Its tests run on the PC and in CI.
+- A flash guard in the firmware. The firmware writes flash only in the name page and in the crash log. It also reads the error flags of the flash controller after each write (PGERR and WRPRTERR).
+- An end-to-end audio test for the app: `cargo test --test audio_e2e -- --ignored`. It needs a Windows PC with an audio output device. CI does not run it.
+- A release workflow that builds one zip file, `SHA256SUMS` and a build attestation for each version tag.
+- `scripts/flash.ps1`, a flash script for Windows PowerShell.
+- `scripts/ste-lint.py`, a checker for the mechanical rules of Simplified Technical English in the documents.
+- New documents in `docs/`:
+  - `install.md`, `troubleshooting.md` and `faq.md` for users.
+  - `stock-firmware.md` for the factory firmware of the pad.
+  - `build-from-source.md` with the build steps for Windows.
+  - `glossary.md` with one definition for each term.
+  - `testing.md` with the test suites and the list of hardware tests.
+  - `roadmap.md` and `releasing.md`.
+- `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1).
+- An issue form for a pad that does not work. It asks for the output of `--check`.
+
+### Changed
+
+- The app is now a library and a small program, so that tests can use the library.
+- The documents follow the rules of Simplified Technical English more strictly.
+- `SECURITY.md` describes the threat model. It says that the bootloader marker `BOOT` never changes and is not a secret.
+- The documents say that an `open:` target that needs administrator rights shows the User Account Control (UAC) prompt of Windows. Nobody tested this.
+
+## [0.1.0] - planned
+
+This is the first public version. Nobody released it yet. Until the release, build from source.
 
 ### Firmware
 
-- Embassy firmware for the DOIO KB16-01 rev2 (APM32F103CB). It is written at `0x08002000`. The stm32duino bootloader is never written.
-- USB HID keyboard, media keys and a raw HID interface (usage page `0xFF60`). No driver is necessary.
-- Mixer mode with the app: level meters on the 16 key lights, channel names, levels and volumes on the screen, readouts and notices.
+- Embassy firmware for the DOIO KB16-01 rev2 (APM32F103CB). The firmware starts at `0x08002000`. It never writes the stm32duino bootloader.
+- USB HID keyboard, media keys and a raw HID interface (usage page `0xFF60`). The pad needs no driver.
+- Mixer mode with the app: level meters on the 16 key lights, and channel names, levels and volumes on the screen, with readouts and notices.
 - Keyboard mode without the app: number keys, arrows and media knobs.
 - Two key pages. The screen shows `MIXER` or `KEYS`, and a mark while page 2 is active.
-- A name on the logo screen, kept in its own flash page at `0x0801F400`, so that the pad shows it at power-up. The page is written at most one time each minute and at most 8 times for each power-up.
+- A logo name in its own flash page at `0x0801F400`. Thus the pad shows the name at power-up. The firmware writes the page at most one time each minute, and at most 8 times for each power-up.
 - Idle timers that count only keys, knobs and audible sound as activity. The app decides what is audible.
-- Key releases are never dropped. On USB suspend or reset, the pad releases all typed keys.
-- The firmware version in the USB device release number.
-- Three ways into the bootloader: the top-left key at start, the four corner keys for 2 seconds, and a command from the app.
-- Watchdog and restart after a crash. After three crashed starts in a row, the firmware is designed to stop in the bootloader. This was not tested on the pad.
-- Crash log in the flash page at `0x0801F800`.
+- The firmware never drops a key release. On USB suspend or reset, the pad releases all typed keys.
+- The firmware version in the release number of the USB device.
+- Three ways into the bootloader: the top-left key at start, the four corner keys for 2 seconds, and a message from the app.
+- A watchdog and a restart after a crash. The design stops the firmware in the bootloader after three crashed starts in a row. Nobody tested this on the pad.
+- A crash log in the flash page at `0x0801F800`.
 
 ### App
 
-- Windows tray app that controls the volume and mute of programs in the Windows volume mixer, and the microphone.
+- A Windows tray app that controls the volume and mute of programs in the Windows volume mixer, and the microphone.
 - Up to 4 channels, with names of 1 to 5 characters. A channel is a list of programs, the microphone, all other programs, or the foreground program.
 - A knob press selects one program in a channel. Each program keeps its balance in the channel (trim), also at 0 % and 100 %.
-- Each audio session is tracked separately. Focus gives each session its real level back, also for programs that closed while Focus was on.
-- Key presses and releases are handled in the order in which they arrived.
-- Key actions: Mute, Focus, Talk, Move, Switch page and `open:<target>`. Other keys are typed by the pad.
-- Settings window with the tabs Keys, Channels and Pad, with a shortcut dialog and an open dialog. Text boxes apply on Enter or when you leave the box.
-- `config.toml`. A mistake in the file keeps the last correct settings.
+- The app tracks each audio session separately. Focus gives each session its real level back, also for programs that closed while Focus was on.
+- The app handles key presses and releases in the order of arrival.
+- Key actions: Mute, Focus, Talk, Move, Switch page and `open:<target>`. The pad types all other keys.
+- A settings window with the tabs Keys, Channels and Pad, with a shortcut dialog and an open dialog. A text box applies its value when you press Enter or leave the box.
+- `config.toml`. If the file has a mistake, the app keeps the last correct settings.
 - The versions of the app and the firmware in the tray menu and on the Pad tab.
-- The first start opens the settings window. The app does not start with Windows until you select it.
-- Quit, logoff and shutdown wait (3 seconds at most) until the app has given all levels back.
-- Options `--settings[=keys|channels|pad]`, `--no-pad`, `--bootloader`, `--selftest`, `--help`, and the environment variable `KB16_MIXER_DIR`.
-- No keyboard hooks, no input injection, no driver, and no access to other processes. A test keeps the keyboard and mouse module of the `windows` crate disabled.
+- The first start opens the settings window. The app does not start with Windows until you select that option.
+- At quit, logoff and shutdown, the app gives all levels back. It waits 3 seconds at most.
+- The options `--settings[=keys|channels|pad]`, `--no-pad`, `--bootloader`, `--selftest`, `--help`, and the environment variable `KB16_MIXER_DIR`.
+- No keyboard hooks, no input injection, no driver, and no access to other processes. A test makes sure that the keyboard and mouse module of the `windows` crate stays off.
 
 ### Protocol
 
@@ -43,19 +74,11 @@ No release exists yet. Build from source for now.
 
 ### Build
 
-- CI for the three crates, with an image check for the firmware.
-- A release workflow for `v*` tags. It attaches the firmware image, the app, the licence files and SHA-256 sums.
+- CI for all crates, with an image check for the firmware.
 
-### Tested
+### Tests
 
-- On one KB16-01 rev2 with Windows 11: the mixer, keys, knobs, lights, screen, flashing and recovery (with earlier versions of the firmware).
-- Only by automated tests and builds at the time of writing:
-  - the key pages
-  - the knob press to select one program
-  - the idle rule
-  - the stored name
-  - `open:`
-  - the settings window with three tabs
-- Not tested:
-  - the stop in the bootloader after three crashed starts in a row
-  - a firmware image that does not start at all
+For the full list of hardware tests, see [docs/testing.md](docs/testing.md#verified-on-the-real-pad).
+
+[Unreleased]: https://github.com/Dokuganrryu/kb16-mixer/commits/main
+[0.1.0]: https://github.com/Dokuganrryu/kb16-mixer/releases/tag/v0.1.0

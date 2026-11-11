@@ -1,0 +1,72 @@
+name: Pad does not work
+description: The pad, the app or the flash does not work as the documents say.
+title: "Pad does not work: "
+labels: ["bug", "pad"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report a security problem here. See SECURITY.md.
+
+        **Do not paste personal data.** Personal data includes your name, your e-mail address, your user name, the name of your PC, serial numbers, and paths that contain your user name (for example `C:\Users\<name>\...`). Remove these before you submit the issue.
+
+        First, read `docs/troubleshooting.md`. Many problems have a fix there.
+  - type: textarea
+    id: check
+    attributes:
+      label: Output of kb16-mixer.exe --check
+      description: |
+        Open a command prompt in the folder of `kb16-mixer.exe`. Type `kb16-mixer.exe --check | more` and press Enter. Copy all lines into this box.
+        The report contains no program names, user names or serial numbers. Read it before you paste it.
+      render: text
+      placeholder: |
+        app        OK    ...
+        pad        FAIL  No pad found. Check the USB cable and port.
+        ...
+        Result: 1 problem(s)
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part does not work?
+      options:
+        - The app does not find the pad
+        - Knobs or keys
+        - Screen or key lights
+        - Flash or bootloader
+        - Settings window or config file
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps, expected result and actual result
+      description: Write the steps that cause the problem. Then write what you expected, and what occurred.
+      placeholder: |
+        1. Connect the pad.
+        2. Turn the big knob.
+        Expected: the volume of the game changes.
+        Actual: nothing changes.
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Release tag or git commit
+      description: Write the release tag (for example v0.1.0), or the git commit if you built from source.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Personal data
+      options:
+        - label: I removed all personal data from this issue.
+          required: true

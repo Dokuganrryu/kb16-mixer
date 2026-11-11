@@ -6,6 +6,8 @@ labels: bug
 ---
 
 <!-- Do not report a security problem here. See SECURITY.md. -->
+<!-- If the pad does not work at all, use the "Pad does not work" form. -->
+<!-- Do not paste personal data: names, e-mail addresses, user names, PC names, serial numbers, or paths that contain a user name. -->
 
 ## What occurred
 
@@ -27,6 +29,14 @@ labels: bug
 - Release tag or git commit (if you built from source):
 - Pad model and revision (for example KB16-01 rev2):
 - Windows version:
+
+## Output of `kb16-mixer.exe --check`
+
+<!-- In a command prompt, type: kb16-mixer.exe --check | more -->
+
+```text
+
+```
 
 ## Files
 

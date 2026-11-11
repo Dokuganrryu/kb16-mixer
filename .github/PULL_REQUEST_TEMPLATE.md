@@ -2,22 +2,20 @@
 
 <!-- Describe the change and the reason for it. -->
 
-## Tested on hardware?
+## Tests on hardware
 
-<!-- Answer each line. If you did not test on hardware, write "No". -->
+<!-- Write "No" if you did not test on a pad. -->
 
-- Tested on hardware (yes / no):
-- Pad model and revision:
-- Firmware and app version (first line of the tray menu):
-- Windows version:
-- How you tested (what you did on the pad):
+- Tested on a pad (yes or no):
+- Pad, firmware version and app version:
+- What you tested:
 - What you did not test:
 
 ## Checklist
 
-- [ ] `cargo fmt --check`, `cargo clippy` and `cargo test` pass for each crate that I changed.
-- [ ] `sh scripts/build-firmware.sh` accepts the image (if I changed the firmware or the protocol).
-- [ ] Protocol changes are only in `protocol/`, with tests, and `docs/protocol.md` is updated.
+- [ ] The checks pass for each part that I changed. See CONTRIBUTING.md.
+- [ ] For a change to the documents: `python scripts/ste-lint.py` shows no problem.
+- [ ] The change contains no personal data: no names, e-mail addresses, user names, machine names, serial numbers or paths with a user name.
+- [ ] For a change to a dependency: I ran `python scripts/third-party-notices.py`, and the licence is permissive.
 - [ ] The app still uses no hooks, no input injection, no driver, no process access and no network.
-- [ ] I ran `python scripts/third-party-notices.py` (if I changed a dependency).
-- [ ] I updated the documentation and `CHANGELOG.md`.
+- [ ] I updated the documents and `CHANGELOG.md`.
