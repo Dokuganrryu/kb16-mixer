@@ -15,7 +15,7 @@ use crate::config::{self, ChannelCfg, ChannelTarget, Config, KeyAction, KnobBind
 use crate::{audio, dialog};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, Value, value};
+use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, TableLike, Value, value};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::{
     COLOR_WINDOW, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontIndirectW, CreateSolidBrush, DeleteDC,
@@ -247,12 +247,13 @@ fn edit(change: impl FnOnce(&mut DocumentMut) -> Result<(), String>) -> Result<(
     Ok(())
 }
 
-fn table<'a>(doc: &'a mut DocumentMut, name: &str) -> &'a mut Item {
-    let item = &mut doc[name];
-    if !item.is_table() {
-        *item = Item::Table(Table::new());
+/// The table `name`, written as a section or inline (`knobs = { ... }`); edited as it is, so
+/// its other entries and its form stay. Made if it is missing or not a table.
+fn table<'a>(doc: &'a mut DocumentMut, name: &str) -> &'a mut dyn TableLike {
+    if doc.get(name).and_then(Item::as_table_like).is_none() {
+        doc[name] = Item::Table(Table::new());
     }
-    item
+    doc[name].as_table_like_mut().expect("a table")
 }
 
 /// Sets a value and keeps the comment that followed the old one.
@@ -263,21 +264,31 @@ fn put(item: &mut Item, mut new: Value) {
     *item = Item::Value(new);
 }
 
+/// `put` for an entry that may not exist yet.
+fn put_in(table: &mut dyn TableLike, key: &str, new: Value) {
+    match table.get_mut(key) {
+        Some(item) => put(item, new),
+        None => {
+            table.insert(key, Item::Value(new));
+        }
+    }
+}
+
 fn set_key(doc: &mut DocumentMut, page: usize, row: usize, col: usize, text: &str) {
     let name = format!("row{}", row + 1);
     let keys = table(doc, ["keys", "keys2"][page]);
     // A missing or malformed row is rebuilt from the defaults before the one key is set.
     let complete = keys.get(&name).and_then(Item::as_array).is_some_and(|a| a.len() == 4);
     if !complete {
-        keys[&name] = value(Array::from_iter(config::DEFAULT_KEYS[page][row]));
+        put_in(keys, &name, Array::from_iter(config::DEFAULT_KEYS[page][row]).into());
     }
-    if let Some(cells) = keys[&name].as_array_mut() {
+    if let Some(cells) = keys.get_mut(&name).and_then(Item::as_array_mut) {
         cells.replace(col, text);
     }
 }
 
 fn set_knob(doc: &mut DocumentMut, knob: usize, text: &str) {
-    put(&mut table(doc, "knobs")[&format!("knob{}", knob + 1)], text.into());
+    put_in(table(doc, "knobs"), &format!("knob{}", knob + 1), text.into());
 }
 
 fn set_number(doc: &mut DocumentMut, name: &str, v: f64) {
@@ -1406,6 +1417,31 @@ mod tests {
         assert_eq!(cfg.pages[0][3][0], KeyAction::Focus);
         assert_eq!(cfg.pages[0][3][1], KeyAction::Mute, "the rest of the row keeps its default");
         assert!(cfg.knobs[2] == KnobBinding::Channel(0));
+    }
+
+    #[test]
+    fn hand_written_inline_tables_keep_their_other_entries() {
+        let text = "knobs = { knob1 = \"Chat\", knob2 = \"Media\", knob3 = \"Game\" }\n\
+                    keys = { row1 = [\"page\", \"prev\", \"play\", \"next\"], row4 = [\"mute\", \"mute\", \"mute\", \"mute\"] }\n\
+                    keys2 = { row1 = [\"page\", \"a\", \"b\", \"c\"], row2 = [\"d\", \"e\", \"f\", \"g\"] }\n\
+                    [[channel]]\nname = \"Chat\"\napps = [\"x.exe\"]\n\
+                    [[channel]]\nname = \"Media\"\napps = [\"y.exe\"]\n\
+                    [[channel]]\nname = \"Game\"\ntarget = \"other\"\n";
+        let text = edited(text, |d| {
+            set_knob(d, 0, "master");
+            set_key(d, 0, 0, 1, "F20");
+            set_key(d, 1, 1, 0, "F21");
+            Ok(())
+        });
+        let cfg = config::parse(&text).expect("still valid");
+        assert!(cfg.knobs == [KnobBinding::Master, KnobBinding::Channel(1), KnobBinding::Channel(2)], "{text}");
+        assert_eq!(cfg.pages[0][0][1], KeyAction::Keyboard { code: 0x6F, mods: 0 });
+        assert_eq!(cfg.pages[0][0][2], KeyAction::Media { tap: 0xCD, hold: 0 }, "the rest of row1 stays");
+        assert_eq!(config::raw_keys(&text)[0][3], ["mute"; 4].map(String::from), "row4 stays");
+        assert_eq!(cfg.pages[1][0][1], KeyAction::Keyboard { code: 0x04, mods: 0 }, "keys2 row1 stays");
+        assert_eq!(cfg.pages[1][1][0], KeyAction::Keyboard { code: 0x70, mods: 0 });
+        assert_eq!(cfg.pages[1][1][1], KeyAction::Keyboard { code: 0x08, mods: 0 }, "keys2 row2 keeps its others");
+        assert!(text.starts_with("knobs = { knob1 = \"master\", knob2 = \"Media\""), "still inline: {text}");
     }
 
     #[test]
