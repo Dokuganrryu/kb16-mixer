@@ -214,8 +214,10 @@ impl Mixer {
             if !s.channel.is_some_and(|c| self.is_ducked(c, channels)) {
                 continue;
             }
-            let level = real.get(&s.id).copied().or_else(|| s.volume.level()).unwrap_or(1.0);
-            s.volume.set_level(level * self.duck);
+            let Some((down, level)) = dip(real.get(&s.id).copied().or_else(|| s.volume.level()), self.duck) else {
+                continue;
+            };
+            s.volume.set_level(down);
             self.ducked.insert(s.id.clone(), level);
         }
         self.sync_restore();
@@ -312,17 +314,19 @@ impl Mixer {
 
     /// A session in a channel Focus turns down. A turned-down level is ours, never Windows'
     /// truth. An app that appears mid-focus is turned down too, remembering what it should be.
+    /// One whose level cannot be read yet is tried again on the next refresh (see `dip`).
     fn hold_down(&mut self, s: &Session, c: usize, left: Option<f32>, is_new: bool) {
         if self.ducked.contains_key(&s.id) {
             return;
         }
         let f = &self.faders[c];
-        let level = match left {
-            Some(level) => level,
-            None if is_new && f.pinned => trim::heard(f.volume, self.trim(&s.exe)),
-            None => s.volume.level().unwrap_or(1.0),
+        let real = match left {
+            Some(level) => Some(level),
+            None if is_new && f.pinned => Some(trim::heard(f.volume, self.trim(&s.exe))),
+            None => s.volume.level(),
         };
-        s.volume.set_level(level * self.duck);
+        let Some((down, level)) = dip(real, self.duck) else { return };
+        s.volume.set_level(down);
         self.ducked.insert(s.id.clone(), level);
     }
 
@@ -929,6 +933,14 @@ fn heard_peak(peak: f32, level: f32, muted: bool, output_muted: bool) -> f32 {
     if peak > AUDIBLE && !muted && !output_muted { peak * level } else { 0.0 }
 }
 
+/// What Focus does to one session whose real level is `real`: the level to set it to, and the
+/// level to remember and put back later. None when the real level is unknown (the read failed):
+/// the session then plays on as it is. Turning it down anyway would mean putting back a guess
+/// (100 % would be loud), and an app left alone is the smaller fault.
+fn dip(real: Option<f32>, duck: f32) -> Option<(f32, f32)> {
+    real.map(|level| (level * duck, level))
+}
+
 /// Multiplies each app's trim once, however many sessions it has.
 fn scale_trims<'a>(trims: &mut HashMap<String, f32>, apps: impl Iterator<Item = &'a str>, factor: f32) {
     let apps: HashSet<&str> = apps.collect();
@@ -966,21 +978,25 @@ mod tests {
     use std::rc::Rc;
 
     /// A slider in a pretend Windows mixer; clones share it, as two looks at one session do.
+    /// Reading it can be made to fail, as a Core Audio call can.
     #[derive(Clone)]
-    struct Fake(Rc<Cell<f32>>);
+    struct Fake(Rc<Cell<f32>>, Rc<Cell<bool>>);
 
     impl Fake {
         fn at(level: f32) -> Fake {
-            Fake(Rc::new(Cell::new(level)))
+            Fake(Rc::new(Cell::new(level)), Rc::new(Cell::new(true)))
         }
         fn get(&self) -> f32 {
             self.0.get()
+        }
+        fn readable(&self, ok: bool) {
+            self.1.set(ok);
         }
     }
 
     impl Slider for Fake {
         fn level(&self) -> Option<f32> {
-            Some(self.0.get())
+            self.1.get().then(|| self.0.get())
         }
         fn set_level(&self, v: f32) {
             self.0.set(v);
@@ -1110,6 +1126,31 @@ mod tests {
         settled_refresh(&mut m, windows_has(&[("x", "spotify.exe", &x, GAME)]), false);
         assert!(close(x.get(), 0.5), "real level back: {}", x.get());
         assert!(close(m.faders[GAME].volume, 0.9) && m.trim("spotify.exe") == trim::FULL, "nothing learned");
+    }
+
+    #[test]
+    fn focus_turns_down_only_a_level_it_knows() {
+        assert_eq!(dip(Some(0.8), 0.25), Some((0.2, 0.8)), "set to 0.2, put back 0.8");
+        assert_eq!(dip(None, 0.25), None, "a failed read: nothing is set or remembered");
+    }
+
+    #[test]
+    fn a_session_whose_level_cannot_be_read_is_not_turned_down_until_it_can() {
+        let a = Fake::at(0.4);
+        let mut m = mixer([0.5, 0.5]);
+        m.faders[MEDIA].touched = Some(Instant::now()); // nothing learned from this refresh
+        m.follow(windows_has(&[("a", "spotify.exe", &a, MEDIA)]), &channels(), true);
+        a.readable(false);
+        m.set_focus(Some(GAME), &channels());
+        assert!(close(a.get(), 0.4), "left as it is: {}", a.get());
+        assert!(m.restore.is_empty(), "no guess is remembered: {:?}", m.restore);
+        settled_refresh(&mut m, windows_has(&[("a", "spotify.exe", &a, MEDIA)]), false);
+        assert!(close(a.get(), 0.4) && m.restore.is_empty(), "still unknown, still left alone");
+        a.readable(true);
+        settled_refresh(&mut m, windows_has(&[("a", "spotify.exe", &a, MEDIA)]), false);
+        assert!(close(a.get(), 0.1), "turned down once it is read: {}", a.get());
+        m.set_focus(None, &channels());
+        assert!(close(a.get(), 0.4), "and its real level comes back, not 100 %: {}", a.get());
     }
 
     #[test]
