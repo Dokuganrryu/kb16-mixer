@@ -168,8 +168,31 @@ The app is a library (`app/src/lib.rs`) and a program of 8 lines (`app/src/main.
 | `config.rs` | `config.toml`, `apps.toml`, `state.toml` |
 | `procs.rs` | Program names from the Toolhelp snapshot, and the foreground window |
 | `win.rs` | Small safe wrappers for the Win32 calls of the settings window and the dialogs |
-| `settings/` (folder) | The settings window. `layout.rs` makes the controls, and `fill.rs` fills them from the file. `changes.rs` applies a change, `apps.rs` the **Add** and **Remove** buttons, and `file.rs` the edits of `config.toml`. `choices.rs` and `checks.rs` hold the logic. `controls.rs` and `ids.rs` hold the shared Win32 parts. |
-| `dialog/` (folder) | The small dialogs: `shortcut.rs` (with the key logic in `keys.rs`) and `text.rs` (a line of text with a **Browse...** button) |
+| `settings/mod.rs` | The settings window: the three tabs, open and close. The window and its controls exist only while it is open. |
+| `settings/layout.rs` | The place of each control, and the controls that each tab shows |
+| `settings/scene.rs` | What the window paints below its controls: the background, the tab strip, the pad status, the cards and the footer |
+| `settings/controls.rs` | Makes the controls, reads and writes their values, and calculates the display scale |
+| `settings/ids.rs` | The control IDs, and Win32 message numbers |
+| `settings/fill.rs` | Puts the settings into the controls. Follows the file when another program changes it. |
+| `settings/changes.rs` | What each control does when you change it: check, write `config.toml`, and show the result in the status line |
+| `settings/apps.rs` | The **Add** and **Remove** buttons of the **Channels** tab |
+| `settings/file.rs` | The edits of `config.toml`. The comments and the layout of the file stay. |
+| `settings/choices.rs` | What each dropdown list shows. Data and functions only, with no window. |
+| `settings/checks.rs` | What the **Channels** tab lists, and the checks that refuse a change before the app writes it |
+| `settings/preview.rs` | Draws the window or a dialog into a picture, with the window hidden. For the design checks and the pictures in the docs. |
+| `settings/window_tests.rs` | Tests with the real window, hidden: each change applies and goes into `config.toml` |
+| `ui/mod.rs` | The look of the settings window and the dialogs: the fonts and the display scale |
+| `ui/theme.rs` | The colours, from the Windows app theme (dark or light) or from high contrast. Also the colour of the title bar. |
+| `ui/canvas.rs` | A back buffer with smooth rounded shapes and GDI text |
+| `ui/anim.rs` | The short animations. A timer runs only while something moves. |
+| `ui/draw.rs` | How each kind of control looks in each state (hover, press, focus) |
+| `ui/widget/mod.rs` | Real Win32 controls with the look of `draw.rs`. Windows keeps their keyboard use, focus and screen-reader role. |
+| `ui/widget/input.rs` | Hover and press feedback, Ctrl+Tab, Home and End in a segmented group, the default button of a dialog |
+| `ui/widget/paint.rs` | Paints each control, the rows of the lists, and the open list of a dropdown |
+| `ui/widget/tip.rs` | A tooltip with the full text of a dropdown or of the status line when the text does not fit |
+| `dialog/` (folder) | The small dialogs: `shortcut.rs` (with the key logic in `keys.rs`), `text.rs` (a line of text with a **Browse...** button) and `look.rs` (the look and the places of their controls) |
+
+[design/settings-ui.md](design/settings-ui.md) gives the colours, the controls and the motion rules of the settings window, and how the app draws it.
 
 ### Frame rate
 
