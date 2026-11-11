@@ -16,6 +16,7 @@ embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 embassy-usb = "0.6.0"
 kb16-mixer-protocol = { path = "../protocol" }
+kb16-mixer-pad-core = { path = "../pad-core" }
 static_cell = "2.1.1"
 
 [profile.release]

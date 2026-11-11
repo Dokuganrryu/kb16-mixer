@@ -1,5 +1,5 @@
-"""Generates the OLED bitmaps: src/assets.rs (logo font, big font, sine table), src/font.rs
-(5x7 font) and assets/preview.png (what they look like on the 128x32 screen, 4x scale).
+"""Generates the OLED bitmaps: pad-core/src/assets.rs (logo font, big font, sine table),
+pad-core/src/font.rs (5x7 font) and assets/preview.png (what they look like on the 128x32 screen, 4x scale).
 
 Run from anywhere:  uv run --with pillow python firmware/gen_assets.py [TEXT]
 TEXT (default KB16) only picks the name drawn in the preview; the pad draws whatever name the
@@ -18,8 +18,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
 FONTS = HERE / "assets" / "fonts"
-ASSETS_RS = HERE / "src" / "assets.rs"
-FONT_RS = HERE / "src" / "font.rs"
+# The drawing code that uses them lives in the pad-core crate, next to this one.
+ASSETS_RS = HERE.parent / "pad-core" / "src" / "assets.rs"
+FONT_RS = HERE.parent / "pad-core" / "src" / "font.rs"
 PREVIEW = HERE / "assets" / "preview.png"
 LOGO_FONT = "OpenSans-ExtraBold.ttf"
 BIG_FONT = "OpenSans-SemiBold.ttf"

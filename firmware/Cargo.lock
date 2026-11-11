@@ -650,8 +650,16 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "embassy-usb",
+ "kb16-mixer-pad-core",
  "kb16-mixer-protocol",
  "static_cell",
+]
+
+[[package]]
+name = "kb16-mixer-pad-core"
+version = "0.1.0"
+dependencies = [
+ "kb16-mixer-protocol",
 ]
 
 [[package]]

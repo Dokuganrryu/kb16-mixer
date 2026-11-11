@@ -1,0 +1,14 @@
+[package]
+name = "kb16-mixer-pad-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "The KB16 mixer firmware logic that needs no hardware: input decoding, idle rules, lights, screens, flash guard"
+publish = false
+
+[dependencies]
+kb16-mixer-protocol = { path = "../protocol" }
+
+[lib]
+name = "pad_core"
