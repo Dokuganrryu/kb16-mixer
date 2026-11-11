@@ -223,13 +223,3 @@ fn single_instance() -> bool {
     }
     true
 }
-
-#[cfg(test)]
-mod tests {
-    /// The app never observes the keyboard: the module that could is not even compiled in.
-    #[test]
-    fn the_keyboard_module_stays_out() {
-        let manifest = include_str!("../Cargo.toml");
-        assert!(!manifest.contains("KeyboardAndMouse"), "Win32_UI_Input_KeyboardAndMouse must stay disabled");
-    }
-}

@@ -134,6 +134,7 @@ fn the_scan_finds_what_it_must_find() {
     assert_eq!(scan_code("a.rs", "use windows::Win32::UI::Input::KeyboardAndMouse::SendInput;").len(), 2);
     assert_eq!(scan_code("a.rs", "let c = reqwest::blocking::Client::new();").len(), 1);
     assert_eq!(scan_manifest("Cargo.toml", r#"features = ["Win32_Foundation", "Win32_Networking_WinSock"]"#).len(), 1);
+    assert_eq!(scan_manifest("Cargo.toml", r#"features = ["Win32_UI_Input_KeyboardAndMouse"]"#).len(), 1);
     assert_eq!(scan_manifest("Cargo.lock", r#"name = "tokio-rustls""#).len(), 0);
     assert_eq!(scan_manifest("Cargo.lock", r#"name = "rustls""#).len(), 1);
 }
