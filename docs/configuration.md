@@ -46,14 +46,14 @@ On the first start (when `config.toml` does not exist), the app does these steps
 2. It opens the settings window on the **Pad** tab.
 3. The status line tells you that the app is in the tray, near the clock (possibly behind the `^` arrow).
 
-The app does **not** start with Windows until you select **Start with Windows** on the **Pad** tab.
+The app does **not** start with Windows until you turn on **Start with Windows** on the **Pad** tab.
 
 ## The settings window
 
 To open the window, click the tray icon. You can also use the **Settings...** item of the tray menu. To open the tray menu, right-click the tray icon.
 The window has three tabs: **Keys**, **Channels** and **Pad**.
 
-A change in a list, a slider, a tick box or a button applies immediately and goes into `config.toml`.
+A change in a list, a slider, a switch or a button applies immediately and goes into `config.toml`.
 The text boxes are the channel names and the name on the screen. A text box applies when you press Enter, leave the box, or close the window.
 While you type, the status line tells you if the name is not correct.
 The app keeps the comments and the layout of the file.

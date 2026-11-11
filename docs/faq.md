@@ -86,7 +86,7 @@ The BOOT message is one fixed raw HID packet: the bytes `D1 7F`, followed by the
 
 ## How do I uninstall the app?
 
-1. Open the settings window. On the **Pad** tab, clear **Start with Windows**.
+1. Open the settings window. On the **Pad** tab, turn off **Start with Windows**.
 2. Right-click the tray icon. Click **Quit**.
 3. Delete the folder of the app, for example `%LOCALAPPDATA%\Programs\kb16-mixer`.
 4. If you want, delete the settings folder `%APPDATA%\kb16-mixer`.
