@@ -117,7 +117,7 @@ The workflow pins each third-party action to a full commit SHA.
 | `supply-chain` | Linux | `cargo deny` for each crate |
 | `package` | Windows | Makes the release zip from the image and the exe of the run. It compares the zip with the release layout and with a second zip. |
 
-The smoke test runs `kb16-mixer.exe --check`. The runner has no pad, so the report has a `FAIL` line for the pad. The step accepts this, but it fails on a crash or on a report with the wrong form.
+The smoke test runs `kb16-mixer.exe --check`. The runner has no pad and no audio device, so the report has `FAIL` lines for the pad and for audio. The step accepts this, but it fails on a crash or on a report with the wrong form.
 For the exact steps, read the workflow file. The workflow file is correct if this table and the file disagree.
 
 ## Release build

@@ -127,7 +127,8 @@ jobs:
       - name: Release build (paths remapped)
         run: sh scripts/build-app.sh
       # --help shows a message box, which would wait for a click on a runner. --check prints its
-      # report and quits. The runner has no pad, so the report has a FAIL line and exit code 1.
+      # report and quits. The runner has no pad and no audio device, so the report has FAIL lines
+      # and the exit code is 1.
       # The step fails on a crash, on another exit code, or on a report with the wrong form.
       - name: Smoke test (--check)
         run: |
@@ -138,7 +139,7 @@ jobs:
           cat "$RUNNER_TEMP/check.txt"
           if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then echo "::error::--check exited with $code"; exit 1; fi
           grep -Eq '^app +OK ' "$RUNNER_TEMP/check.txt"
-          tail -n 1 "$RUNNER_TEMP/check.txt" | grep -Eq '^Result: (OK|[0-9]+ problem\(s\))$'
+          tail -n 1 "$RUNNER_TEMP/check.txt" | grep -Eq '^Result: (OK|[0-9]+ problems?)$'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: kb16-mixer-app
