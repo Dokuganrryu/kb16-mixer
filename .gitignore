@@ -1,0 +1,9 @@
+target/
+# Local third-party tools (dfu-util and the like); scripts/flash.sh looks here last.
+/tools/
+# Firmware images are build output, and other people's images are not ours to ship.
+*.bin
+*.hex
+*.elf
+__pycache__/
+*.pyc
