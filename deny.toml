@@ -1,0 +1,68 @@
+# cargo-deny configuration for all four crates. CI runs, for each crate:
+#   cargo deny --manifest-path <crate>/Cargo.toml --config deny.toml check
+# See https://embarkstudios.github.io/cargo-deny/ for the format.
+
+[graph]
+# The platforms that the binaries are built for: the app (Windows) and the firmware (the pad).
+# Dependencies of other platforms (for example the Linux tray code of tray-icon) never reach a
+# binary, so they are not checked. protocol and pad-core have no platform-specific dependencies.
+targets = ["x86_64-pc-windows-msvc", "thumbv7m-none-eabi"]
+# Dev-dependencies never reach a binary.
+exclude-dev = true
+
+[advisories]
+# Every RustSec advisory fails the check, also "unmaintained" and "unsound" notices.
+# An exception needs an entry with a reason: ignore = [{ id = "RUSTSEC-...", reason = "..." }]
+yanked = "deny"
+ignore = [
+    # An "unmaintained" notice, not a vulnerability: the crate is archived. The firmware gets it
+    # only through cortex-m 0.7.10, the newest 0.7 release, which Embassy needs. There is no
+    # upgrade yet (cargo deny: "No safe upgrade is available"). Remove this entry when cortex-m
+    # drops bare-metal.
+    { id = "RUSTSEC-2026-0110", reason = "bare-metal is unmaintained; cortex-m 0.7.10 has no release without it" },
+]
+
+[licenses]
+# The same permissive list as the `accepted` list of scripts/about.toml. Keep the two lists equal.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "0BSD",
+    "MIT-0",
+]
+confidence-threshold = 0.93
+# One list serves four crates, so most crates use only part of it.
+unused-allowed-license = "allow"
+# The four crates of this project are MIT; publish = false makes them private.
+private = { ignore = true }
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+# The crates of this project refer to each other by path.
+allow-wildcard-paths = true
+# The app must have no network access (CONTRIBUTING.md, Code rules). app/tests/forbidden_apis.rs
+# checks the same names in the source.
+deny = [
+    { crate = "reqwest", reason = "network client: the app has no network access" },
+    { crate = "hyper", reason = "HTTP library: the app has no network access" },
+    { crate = "ureq", reason = "network client: the app has no network access" },
+    { crate = "native-tls", reason = "TLS library: the app has no network access" },
+    { crate = "rustls", reason = "TLS library: the app has no network access" },
+    { crate = "openssl", reason = "TLS library: the app has no network access" },
+    { crate = "openssl-sys", reason = "TLS library: the app has no network access" },
+]
+
+[sources]
+# crates.io only: no git dependencies and no other registry.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
