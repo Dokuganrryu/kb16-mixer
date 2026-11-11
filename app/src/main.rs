@@ -172,6 +172,13 @@ fn worker(
     // Talk key that is down: the mic mute state to go back to on release.
     let mut talk_restore: Option<bool> = None;
     let mut move_armed = false;
+    // Key page in use (0 = [keys]), and the page key that is down: since when, and the page
+    // to go back to if it turns out to be held rather than tapped.
+    let mut page = 0usize;
+    let mut page_key: Option<(Instant, usize)> = None;
+    // What each key meant when it went down, so its release does the matching thing even
+    // after the page changed underneath it.
+    let mut held: [[Option<KeyAction>; 4]; 4] = [[None; 4]; 4];
 
     loop {
         let every = if last_active.elapsed() < STAY_ACTIVE { FRAME } else { IDLE_FRAME };
@@ -198,8 +205,11 @@ fn worker(
             mixer.duck = cfg.duck;
             mixer.restore = saved.restore.clone();
             focus_key = None;
+            page = 0;
+            page_key = None;
             meta_sent = None;
         }
+        let shown_page = page;
         mixer.refresh(channels, false);
 
         // Coalesce: a fast spin becomes one change per knob.
@@ -251,7 +261,8 @@ fn worker(
             if row as usize >= 4 || col >= 4 {
                 continue;
             }
-            let action = cfg.keys[row as usize][col];
+            let action = cfg.pages[page][row as usize][col];
+            held[row as usize][col] = Some(action);
             // Move is held like a shift key: the next key picks the column.
             if move_armed && action != KeyAction::Move && col < n {
                 let (outcome, app) = mixer.move_focused(col, channels);
@@ -289,6 +300,10 @@ fn worker(
                         popup = notice(format!("Focus {}", channels[col].name));
                     }
                 }
+                KeyAction::Page => {
+                    page_key = Some((Instant::now(), page));
+                    page = 1 - page;
+                }
                 KeyAction::Move => {
                     move_armed = true;
                     popup = match mixer.where_is_focused(channels) {
@@ -308,9 +323,17 @@ fn worker(
             if row >= 4 || col >= 4 {
                 continue;
             }
-            let action = cfg.keys[row][col];
+            let Some(action) = held[row][col].take() else { continue };
             match action {
                 KeyAction::Move => move_armed = false,
+                KeyAction::Page => {
+                    // Same rule as Focus: a tap switches and stays, a hold lasts while held.
+                    if let Some((since, back)) = page_key.take()
+                        && since.elapsed() >= MOMENTARY
+                    {
+                        page = back;
+                    }
+                }
                 _ if is_talk(action, col, channels) => {
                     if let Some(muted) = talk_restore.take() {
                         mixer.set_mic_muted(muted, channels);
@@ -334,6 +357,9 @@ fn worker(
             mixer.set_focus(None, channels);
             focus_key = None;
             move_armed = false;
+            page = 0;
+            page_key = None;
+            held = [[None; 4]; 4];
             if let Some(muted) = talk_restore.take() {
                 mixer.set_mic_muted(muted, channels);
             }
@@ -404,6 +430,12 @@ fn worker(
         if !link.is_open() {
             continue;
         }
+        if page != shown_page && meta_sent.is_some() {
+            for m in pad::key_messages(&cfg.pages[page]) {
+                link.send(&m);
+            }
+            popup = Some(Show::Notice(if page == 0 { "MIXER" } else { "KEYS" }.into()));
+        }
         if let Some(show) = popup {
             link.send(&pad::popup_message(&show));
         }
@@ -411,7 +443,7 @@ fn worker(
             let colors: Vec<[u8; 3]> = channels.iter().map(|c| c.color).collect();
             link.send(&pad::settings_message(&colors, &cfg));
             link.send(&pad::names_message(channels.iter().map(|c| c.name.as_str())));
-            for m in pad::key_messages(&cfg.keys) {
+            for m in pad::key_messages(&cfg.pages[page]) {
                 link.send(&m);
             }
             meta_sent = Some(Instant::now());
@@ -445,6 +477,7 @@ fn worker(
                 mixer_keys: cfg.mixer_keys,
                 mic_muted,
                 playing,
+                second_page: page != 0,
             });
             if frame != last_frame {
                 link.send(&frame);

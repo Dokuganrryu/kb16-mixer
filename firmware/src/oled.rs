@@ -211,6 +211,10 @@ fn draw_mixer(fb: &mut Fb, m: &Mixer, peaks: &[u8; NCH]) {
     if m.mic_muted {
         fb.rect(0, 9, W - 2, 9, true);
     }
+    // Second key page: a short tick in the right-most pixel column, which nothing else uses.
+    if m.second_page {
+        fb.rect(W - 1, 2, W - 1, 6, true);
+    }
 }
 
 /// A short message on its own, centred.

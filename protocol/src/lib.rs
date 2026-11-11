@@ -20,7 +20,8 @@
 //! pad -> host
 //!   [D1 01 knob delta]   knob turned          [D1 02 knob 0]    knob pressed
 //!   [D1 03 row col]      key pressed          [D1 04 row col]   key released
-//! flags: bit0 = keys belong to the mixer, bit1 = mic muted, bit2 = programme audio is playing.
+//! flags: bit0 = keys belong to the mixer, bit1 = mic muted, bit2 = programme audio is playing,
+//!        bit3 = the second key page is active.
 //! ```
 //!
 //! This crate only lays out bytes. What a value means (defaults, clamping, which characters
@@ -161,6 +162,8 @@ pub struct Frame {
     /// volume and mute, sustained, and not with the output device muted. The pad counts this
     /// as activity for its idle timers; raw `levels` are only for the meters.
     pub playing: bool,
+    /// The host has switched the keys to its second page (the screen shows a small marker).
+    pub second_page: bool,
 }
 
 /// What [`KEYS_PER_REPORT`] keys do, starting at key `first` (key = row * 4 + col).
@@ -211,7 +214,8 @@ impl HostMsg {
                 r[6..10].copy_from_slice(&f.volumes);
                 r[10] = f.mutes;
                 r[11] = f.selected;
-                r[12] = f.mixer_keys as u8 | (f.mic_muted as u8) << 1 | (f.playing as u8) << 2;
+                r[12] =
+                    f.mixer_keys as u8 | (f.mic_muted as u8) << 1 | (f.playing as u8) << 2 | (f.second_page as u8) << 3;
             }
             HostMsg::Names(names) => {
                 r[1] = id::NAMES;
@@ -278,6 +282,7 @@ impl HostMsg {
                     mixer_keys: r[12] & 1 != 0,
                     mic_muted: r[12] & 2 != 0,
                     playing: r[12] & 4 != 0,
+                    second_page: r[12] & 8 != 0,
                 })
             }
             id::NAMES => {
@@ -375,7 +380,7 @@ mod tests {
             screen_off_min: NEVER,
             lights_dim_min: 30,
         }));
-        for flags in 0..8u8 {
+        for flags in 0..16u8 {
             host_roundtrip(HostMsg::Frame(Frame {
                 levels: [0, 40, 200, 255],
                 volumes: [100, 0, 55, 7],
@@ -384,6 +389,7 @@ mod tests {
                 mixer_keys: flags & 1 != 0,
                 mic_muted: flags & 2 != 0,
                 playing: flags & 4 != 0,
+                second_page: flags & 8 != 0,
             }));
         }
         host_roundtrip(HostMsg::Keys(Keys {
@@ -445,9 +451,10 @@ mod tests {
             mixer_keys: false,
             mic_muted: true,
             playing: true,
+            second_page: true,
         })
         .encode();
-        assert_eq!(&f[..13], &[0xD1, 0x21, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 6]);
+        assert_eq!(&f[..13], &[0xD1, 0x21, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 14]);
 
         let mut names = [[b' '; NAME_LEN]; CHANNELS];
         names[3] = *b"MEDIA\0";
@@ -498,6 +505,7 @@ mod tests {
                 mixer_keys: false,
                 mic_muted: false,
                 playing: false,
+                second_page: false,
             }))
         );
         // Unknown key kinds are host keys.

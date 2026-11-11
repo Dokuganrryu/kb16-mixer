@@ -48,6 +48,7 @@ const KEY_CHOICES: &[(&str, &str)] = &[
     ("Focus", "focus"),
     ("Talk (hold)", "talk"),
     ("Move app", "move"),
+    ("Switch page", "page"),
     ("Play / pause", "play"),
     ("Next track", "next"),
     ("Previous track", "prev"),
@@ -124,7 +125,7 @@ fn set_key(row: usize, col: usize, text: &str) -> Result<(), String> {
         // A missing or malformed row is rebuilt from the defaults before the one key is set.
         let complete = keys.get(&name).and_then(Item::as_array).is_some_and(|a| a.len() == 4);
         if !complete {
-            keys[&name] = value(Array::from_iter(config::DEFAULT_KEYS[row]));
+            keys[&name] = value(Array::from_iter(config::DEFAULT_KEYS[0][row]));
         }
         if let Some(cells) = keys[&name].as_array_mut() {
             cells.replace(col, text);
@@ -246,7 +247,7 @@ fn build(hwnd: HWND, cfg: &Config) {
     for r in 0..4 {
         label(hwnd, ROW_NAMES[r], 16, 62 + r as i32 * 30, 96);
         for c in 0..4 {
-            let (list, at) = key_choices(cfg.keys[r][c], &raw_keys[r][c]);
+            let (list, at) = key_choices(cfg.pages[0][r][c], &raw_keys[r][c]);
             combo(
                 hwnd,
                 ID_KEY + (r * 4 + c) as i32,
@@ -345,7 +346,7 @@ fn changed(hwnd: HWND, id: i32) -> Result<(), String> {
     match (id, pick) {
         (ID_KEY..=115, Some(i)) => {
             let (r, c) = (((id - ID_KEY) / 4) as usize, ((id - ID_KEY) % 4) as usize);
-            let (list, _) = key_choices(cfg.keys[r][c], &config::raw_keys()[r][c]);
+            let (list, _) = key_choices(cfg.pages[0][r][c], &config::raw_keys()[r][c]);
             let Some((_, text)) = list.get(i) else { return Ok(()) };
             set_key(r, c, text)?;
         }
@@ -493,9 +494,11 @@ mod tests {
 
         let text = std::fs::read_to_string(config::path()).unwrap();
         let cfg = config::load().expect("still a valid config");
-        assert_eq!(cfg.keys[0][1], KeyAction::Keyboard { code: 0x07, mods: 0x03 });
-        assert_eq!(cfg.keys[2][3], KeyAction::Nothing);
-        assert_eq!(cfg.keys[3], [KeyAction::Mute; 4], "untouched rows stay");
+        assert_eq!(cfg.pages[0][0][1], KeyAction::Keyboard { code: 0x07, mods: 0x03 });
+        assert_eq!(cfg.pages[0][2][3], KeyAction::Nothing);
+        assert_eq!(cfg.pages[0][3], [KeyAction::Mute; 4], "untouched rows stay");
+        assert_eq!(cfg.pages[1], config::defaults().pages[1], "the keypad page is left alone");
+        assert!(text.contains("[keys2]\nrow1 = [\"page\",  \"7\", \"8\", \"9\"]"));
         assert!(cfg.knobs[1] == KnobBinding::Master);
         assert_eq!(cfg.brightness, 102);
         assert_eq!((cfg.screen_off_min, cfg.lights_dim_min), (0, 30));
@@ -511,8 +514,8 @@ mod tests {
         set_key(3, 0, "focus").unwrap();
         set_knob(2, "Game").unwrap();
         let cfg = config::load().expect("valid");
-        assert_eq!(cfg.keys[3][0], KeyAction::Focus);
-        assert_eq!(cfg.keys[3][1], KeyAction::Mute, "the rest of the row keeps its default");
+        assert_eq!(cfg.pages[0][3][0], KeyAction::Focus);
+        assert_eq!(cfg.pages[0][3][1], KeyAction::Mute, "the rest of the row keeps its default");
         assert!(cfg.knobs[2] == KnobBinding::Channel(0));
 
         // A broken file is reported, not overwritten.

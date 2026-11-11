@@ -32,7 +32,8 @@ knob2 = "Media"       # small knob, top right
 knob3 = "Game"        # big knob
 
 # KEYS: four rows of four, top row first. Each column belongs to the channel above it;
-# the lights in a column are that channel's level meter.
+# the lights in a column are that channel's level meter. There are two pages of keys:
+# [keys] is the mixer page and [keys2] a keypad page; a "page" key switches between them.
 #
 #   "mute"    mute / unmute this column's channel (amber while muted)
 #   "focus"   tap: turn every other channel down so this one stands out; tap again to undo.
@@ -40,6 +41,9 @@ knob3 = "Game"        # big knob
 #   "talk"    hold: flips the mic while held. Push-to-talk if you are muted, cough button if not.
 #   "move"    hold it and tap a column's mute key: the app in front moves into that channel
 #             (again to undo). Tap it alone to see which channel the app is in.
+#   "page"    tap: switch to the other page of keys; tap again to come back. Hold instead
+#             and the other page lasts only while held. The screen shows MIXER or KEYS.
+#             If [keys] has a page key, [keys2] needs one too, so there is a way back.
 #   "none"    does nothing
 #
 # Anything else is typed by the pad itself as a real key press, so it works everywhere,
@@ -47,12 +51,19 @@ knob3 = "Game"        # big knob
 #   media     "play", "next", "prev", "stop";  "next|prev" = tap for next, hold for previous
 #   keys      "F13" .. "F24" are free keys nothing else uses: bind them in Discord (deafen),
 #             OBS or a game. Also letters, digits, "enter", "esc", "space", arrows ...,
-#             with modifiers: "ctrl+shift+m"
+#             with modifiers: "ctrl+shift+m", "win+shift+s"
 [keys]
-row1 = ["move", "F13",   "F14",   "next|prev"]
-row2 = ["F15",  "F16",   "F17",   "play"]
-row3 = ["talk", "focus", "focus", "focus"]
-row4 = ["mute", "mute",  "mute",  "mute"]
+row1 = ["page", "prev",        "play",  "next"]   # keypad page; media keys
+row2 = ["move", "win+shift+s", "F13",   "F14"]    # move app; snipping tool; free keys to bind
+row3 = ["talk", "focus",       "focus", "focus"]  # push-to-talk; Focus per channel
+row4 = ["mute", "mute",        "mute",  "mute"]   # mute per channel
+
+# The keypad page. Same rules; a missing row keeps the default shown here.
+[keys2]
+row1 = ["page",  "7", "8", "9"]                   # back to the mixer page; digits
+row2 = ["0",     "4", "5", "6"]                   # digits
+row3 = ["enter", "1", "2", "3"]                   # enter; digits
+row4 = ["mute",  "mute", "mute", "mute"]          # mute stays at hand on both pages
 
 # CHANNELS: up to 4, one per key column, left to right.
 #   target = "mic"      your microphone: the meter shows your voice
@@ -103,6 +114,8 @@ struct RawConfig {
     #[serde(default)]
     keys: RawKeys,
     #[serde(default)]
+    keys2: RawKeys,
+    #[serde(default)]
     channel: Vec<RawChannel>,
 }
 
@@ -145,7 +158,7 @@ pub struct ChannelCfg {
     pub target: ChannelTarget,
 }
 
-/// What one of the 16 keys does. The first four are handled by this app; the last two are
+/// What one of the 16 keys does. The first five are handled by this app; the last two are
 /// typed by the pad itself as real key presses.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum KeyAction {
@@ -153,6 +166,7 @@ pub enum KeyAction {
     Focus,
     Talk,
     Move,
+    Page,
     Nothing,
     Keyboard { code: u8, mods: u8 },
     Media { tap: u8, hold: u8 },
@@ -160,11 +174,18 @@ pub enum KeyAction {
 
 pub type KeyGrid = [[KeyAction; 4]; 4];
 
-pub const DEFAULT_KEYS: [[&str; 4]; 4] = [
-    ["move", "F13", "F14", "next|prev"],
-    ["F15", "F16", "F17", "play"],
-    ["talk", "focus", "focus", "focus"],
-    ["mute", "mute", "mute", "mute"],
+/// The mixer page ([keys]) and the keypad page ([keys2]).
+pub const PAGES: usize = 2;
+const PAGE_TABLES: [&str; PAGES] = ["keys", "keys2"];
+
+pub const DEFAULT_KEYS: [[[&str; 4]; 4]; PAGES] = [
+    [
+        ["page", "prev", "play", "next"],
+        ["move", "win+shift+s", "F13", "F14"],
+        ["talk", "focus", "focus", "focus"],
+        ["mute", "mute", "mute", "mute"],
+    ],
+    [["page", "7", "8", "9"], ["0", "4", "5", "6"], ["enter", "1", "2", "3"], ["mute", "mute", "mute", "mute"]],
 ];
 
 fn media_usage(name: &str) -> Option<u8> {
@@ -219,6 +240,7 @@ pub fn parse_key(text: &str) -> Result<KeyAction, String> {
         "focus" => return Ok(KeyAction::Focus),
         "talk" => return Ok(KeyAction::Talk),
         "move" => return Ok(KeyAction::Move),
+        "page" => return Ok(KeyAction::Page),
         _ => {}
     }
     if let Some((tap, hold)) = name.split_once('|') {
@@ -250,20 +272,31 @@ pub fn parse_key(text: &str) -> Result<KeyAction, String> {
     code.map(|code| KeyAction::Keyboard { code, mods }).ok_or_else(unknown)
 }
 
-fn parse_grid(raw: RawKeys) -> Result<KeyGrid, String> {
+fn parse_grid(raw: RawKeys, page: usize) -> Result<KeyGrid, String> {
+    let table = PAGE_TABLES[page];
     let rows = [raw.row1, raw.row2, raw.row3, raw.row4];
     let mut grid = [[KeyAction::Nothing; 4]; 4];
     for (r, row) in rows.into_iter().enumerate() {
         let names: Vec<String> = match row {
             Some(names) if names.len() == 4 => names,
-            Some(names) => return Err(format!("[keys] row{}: {} entries, a row has 4 keys", r + 1, names.len())),
-            None => DEFAULT_KEYS[r].iter().map(|s| s.to_string()).collect(),
+            Some(names) => return Err(format!("[{table}] row{}: {} entries, a row has 4 keys", r + 1, names.len())),
+            None => DEFAULT_KEYS[page][r].iter().map(|s| s.to_string()).collect(),
         };
         for (c, name) in names.iter().enumerate() {
-            grid[r][c] = parse_key(name).map_err(|e| format!("[keys] row{}: {e}", r + 1))?;
+            grid[r][c] = parse_key(name).map_err(|e| format!("[{table}] row{}: {e}", r + 1))?;
         }
     }
     Ok(grid)
+}
+
+/// Both pages, refused if a tap could switch to the keypad page with no key there to switch back.
+fn parse_pages(keys: RawKeys, keys2: RawKeys) -> Result<[KeyGrid; PAGES], String> {
+    let pages = [parse_grid(keys, 0)?, parse_grid(keys2, 1)?];
+    let has_page_key = |g: &KeyGrid| g.iter().flatten().any(|&a| a == KeyAction::Page);
+    if has_page_key(&pages[0]) && !has_page_key(&pages[1]) {
+        return Err("[keys2] has no \"page\" key, so there would be no way back to [keys]".into());
+    }
+    Ok(pages)
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -288,7 +321,8 @@ pub struct Config {
     pub screen_off_min: u8,
     pub lights_dim_min: u8,
     pub knobs: [KnobBinding; 3],
-    pub keys: KeyGrid,
+    /// [keys] then [keys2]; the pad starts on the first.
+    pub pages: [KeyGrid; PAGES],
     pub channels: Vec<ChannelCfg>,
 }
 
@@ -382,7 +416,7 @@ impl RawConfig {
             duck: self.duck.clamp(0.0, 1.0),
             screen_off_min: self.screen_off_min.min(240) as u8,
             lights_dim_min: self.lights_dim_min.min(240) as u8,
-            keys: parse_grid(self.keys)?,
+            pages: parse_pages(self.keys, self.keys2)?,
             knobs: [
                 bind("knob1", self.knobs.knob1, KnobBinding::Master)?,
                 bind("knob2", self.knobs.knob2, KnobBinding::Master)?,
@@ -468,7 +502,7 @@ pub fn load() -> Result<Config, String> {
     parse(&text)
 }
 
-/// The key table as written in the file (for showing a custom entry unchanged).
+/// The first page's key table as written in the file (for showing a custom entry unchanged).
 pub fn raw_keys() -> [[String; 4]; 4] {
     #[derive(Deserialize, Default)]
     struct File {
@@ -482,7 +516,7 @@ pub fn raw_keys() -> [[String; 4]; 4] {
         for c in 0..4 {
             out[r][c] = match &row {
                 Some(names) if names.len() == 4 => names[c].clone(),
-                _ => DEFAULT_KEYS[r][c].to_string(),
+                _ => DEFAULT_KEYS[0][r][c].to_string(),
             };
         }
     }
@@ -552,13 +586,35 @@ mod tests {
             "Chat, Media, Game"
         );
         assert_eq!(c.default_selected(), 2);
-        assert_eq!(c.keys[3], [KeyAction::Mute; 4], "bottom row mutes");
-        assert_eq!(c.keys[2][0], KeyAction::Talk);
-        assert_eq!(c.keys[2][1..], [KeyAction::Focus; 3]);
-        assert_eq!(c.keys[0][0], KeyAction::Move);
-        assert_eq!(c.keys[0][3], KeyAction::Media { tap: 0xB5, hold: 0xB6 });
-        assert_eq!(c.keys[1][3], KeyAction::Media { tap: 0xCD, hold: 0 });
-        assert_eq!(c.keys[0][1], KeyAction::Keyboard { code: 0x68, mods: 0 }, "F13");
+        let [mixer, keypad] = c.pages;
+        assert_eq!(mixer[3], [KeyAction::Mute; 4], "bottom row mutes");
+        assert_eq!(keypad[3], [KeyAction::Mute; 4], "on both pages");
+        assert_eq!(mixer[2][0], KeyAction::Talk);
+        assert_eq!(mixer[2][1..], [KeyAction::Focus; 3]);
+        assert_eq!((mixer[0][0], keypad[0][0]), (KeyAction::Page, KeyAction::Page));
+        assert_eq!(mixer[0][1..], [0xB6, 0xCD, 0xB5].map(|tap| KeyAction::Media { tap, hold: 0 }), "prev play next");
+        assert_eq!(mixer[1][0], KeyAction::Move);
+        assert_eq!(mixer[1][1], KeyAction::Keyboard { code: 0x16, mods: 0x0A }, "win+shift+s");
+        assert_eq!(mixer[1][2], KeyAction::Keyboard { code: 0x68, mods: 0 }, "F13");
+        assert_eq!(keypad[0][1], KeyAction::Keyboard { code: 0x24, mods: 0 }, "7");
+        assert_eq!(keypad[1][0], KeyAction::Keyboard { code: 0x27, mods: 0 }, "0");
+        assert_eq!(keypad[2][0], KeyAction::Keyboard { code: 0x28, mods: 0 }, "enter");
+    }
+
+    #[test]
+    fn the_keypad_page_falls_back_to_its_defaults_and_always_has_a_way_back() {
+        let one_channel = "[[channel]]\nname = \"A\"\ntarget = \"other\"\n";
+        let c = parse(one_channel).unwrap();
+        assert_eq!(c.pages, defaults().pages, "no [keys] or [keys2]: both defaults");
+        let c = parse(&format!("[keys2]\nrow2 = [\"a\", \"b\", \"c\", \"d\"]\n{one_channel}")).unwrap();
+        assert_eq!(c.pages[1][1][0], KeyAction::Keyboard { code: 0x04, mods: 0 });
+        assert_eq!(c.pages[1][0][0], KeyAction::Page, "rows left out keep the default");
+
+        let stuck = format!("[keys2]\nrow1 = [\"1\", \"2\", \"3\", \"4\"]\n{one_channel}");
+        assert!(problem(&stuck).contains("no way back"));
+        let unreachable = format!("[keys]\nrow1 = [\"move\", \"F13\", \"F14\", \"F15\"]\n{stuck}");
+        assert!(parse(&unreachable).is_ok(), "no page key on either page is fine");
+        assert!(problem(&format!("[keys2]\nrow3 = [\"x\"]\n{one_channel}")).contains("[keys2] row3"));
     }
 
     #[test]

@@ -202,7 +202,7 @@ pub fn names_message<'a>(names: impl Iterator<Item = &'a str>) -> Report {
 pub fn key_messages(grid: &crate::config::KeyGrid) -> [Report; 2] {
     use crate::config::KeyAction::*;
     let key = |i: usize| match grid[i / 4][i % 4] {
-        Mute | Focus | Talk | Move => Key::Host,
+        Mute | Focus | Talk | Move | Page => Key::Host,
         Keyboard { code, mods } => Key::Keyboard { code, mods },
         Media { tap, hold } => Key::Media { tap, hold },
         Nothing => Key::Nothing,

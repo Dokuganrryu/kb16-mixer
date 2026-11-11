@@ -45,6 +45,7 @@ pub struct Mixer {
     pub mic_muted: bool,
     /// The host hears an app playing; counts as activity while the host is there.
     pub playing: bool,
+    pub second_page: bool,
     pub names: [[u8; 6]; NCH],
 }
 
@@ -85,6 +86,7 @@ impl State {
                 mixer_keys: true,
                 mic_muted: false,
                 playing: false,
+                second_page: false,
                 names: [[b' '; 6]; NCH],
             },
             brightness: DEFAULT_BRIGHTNESS,
@@ -138,6 +140,7 @@ pub fn handle_report(r: &[u8]) -> bool {
         // A host that comes back starts from silence, not from what it said last time.
         if !s.host_alive(now) {
             s.mixer.playing = false;
+            s.mixer.second_page = false;
         }
         s.host_seen = Some(now);
         let m = &mut s.mixer;
@@ -167,6 +170,7 @@ pub fn handle_report(r: &[u8]) -> bool {
                 // Raw levels are not activity: they come before the app's own volume and mute,
                 // and include the microphone. Whether something is heard is the host's call.
                 m.playing = f.playing;
+                m.second_page = f.second_page;
             }
             HostMsg::Names(names) => m.names = names,
             HostMsg::Keys(k) => {
