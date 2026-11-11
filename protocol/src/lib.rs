@@ -604,4 +604,113 @@ mod tests {
         assert_eq!(PadMsg::decode(&[0xD2, 0x01, 0, 1]), None);
         assert_eq!(PadMsg::decode(&[0xD1, 0x09, 0, 1]), None);
     }
+
+    /// xorshift64*: small, deterministic, no dependency.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+    }
+
+    /// Decodes `r` both ways. A message that decodes must also survive its own round trip, so a
+    /// field the decoder reads is always a field the encoder writes.
+    fn decode_both(r: &[u8]) {
+        if let Some(m) = HostMsg::decode(r) {
+            assert_eq!(HostMsg::decode(&m.encode()), Some(m), "{r:02X?}");
+        }
+        if let Some(m) = PadMsg::decode(r) {
+            assert_eq!(PadMsg::decode(&m.encode()), Some(m), "{r:02X?}");
+        }
+    }
+
+    #[test]
+    fn no_report_makes_a_decoder_panic() {
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        let mut decoded = 0;
+        for i in 0..200_000 {
+            let mut r = [0u8; REPORT_LEN];
+            for b in r.iter_mut() {
+                *b = rng.next() as u8;
+            }
+            // Mostly our magic byte and a known id, so every decoder branch runs.
+            if i % 8 != 0 {
+                r[0] = MAGIC;
+            }
+            if i % 4 != 0 {
+                let ids = [0x00, 0x01, 0x02, 0x03, 0x04, 0x10, 0x20, 0x21, 0x22, 0x23, 0x24, 0x7F];
+                r[1] = ids[(rng.next() % ids.len() as u64) as usize];
+            }
+            if r[1] == id::BOOTLOADER && i % 3 == 0 {
+                r[2..6].copy_from_slice(BOOT);
+            }
+            let len = if i % 5 == 0 { (rng.next() % 33) as usize } else { REPORT_LEN };
+            decode_both(&r[..len]);
+            decoded += HostMsg::decode(&r[..len]).is_some() as u32;
+        }
+        assert!(decoded > 100_000, "too few reports decoded ({decoded}) to cover the branches");
+    }
+
+    #[test]
+    fn edge_case_reports() {
+        // Longer than a report: the extra bytes are ignored.
+        let long = [MAGIC; 40];
+        decode_both(&long);
+        for fill in [0x00, 0xFF, MAGIC] {
+            let r = [fill; REPORT_LEN];
+            decode_both(&r);
+            for len in 0..=REPORT_LEN {
+                decode_both(&r[..len]);
+            }
+        }
+        assert_eq!(HostMsg::decode(&[0; REPORT_LEN]), None);
+        assert_eq!(HostMsg::decode(&[0xFF; REPORT_LEN]), None);
+        assert_eq!(PadMsg::decode(&[0; REPORT_LEN]), None);
+        assert_eq!(PadMsg::decode(&[0xFF; REPORT_LEN]), None);
+
+        // Every id, with the wrong report id (magic byte) and with the right one, at every length.
+        for id in 0..=255u8 {
+            for magic in [MAGIC, MAGIC ^ 1, 0x00, 0xFF] {
+                let mut r = [0xFFu8; REPORT_LEN];
+                r[0] = magic;
+                r[1] = id;
+                for len in 0..=REPORT_LEN {
+                    decode_both(&r[..len]);
+                    if magic != MAGIC {
+                        assert_eq!(HostMsg::decode(&r[..len]), None);
+                        assert_eq!(PadMsg::decode(&r[..len]), None);
+                    }
+                }
+            }
+        }
+
+        // A popup with volume 255 is a notice, and stays one.
+        let mut r = [0u8; REPORT_LEN];
+        r[..4].copy_from_slice(&[MAGIC, id::POPUP, 0, 255]);
+        let Some(HostMsg::Popup(p)) = HostMsg::decode(&r) else { panic!() };
+        assert!(p.is_notice());
+        // Other volumes above 100 decode as sent; the pad clamps them when it shows them.
+        r[3] = 254;
+        let Some(HostMsg::Popup(p)) = HostMsg::decode(&r) else { panic!() };
+        assert_eq!(p.volume, 254);
+
+        // A truncated bootloader request never counts.
+        let boot = HostMsg::Bootloader.encode();
+        for len in 0..6 {
+            assert_eq!(HostMsg::decode(&boot[..len]), None, "length {len}");
+        }
+        assert_eq!(HostMsg::decode(&boot[..6]), Some(HostMsg::Bootloader));
+    }
+
+    #[test]
+    fn every_release_number_reads_back() {
+        for bcd in 0..=u16::MAX {
+            let (major, minor, patch) = release_version(bcd);
+            assert!(major <= 165 && minor <= 15 && patch <= 15);
+        }
+    }
 }
