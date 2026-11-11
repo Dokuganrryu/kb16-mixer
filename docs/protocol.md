@@ -57,7 +57,7 @@ On Windows, the app writes 33 bytes: report ID `0`, then the 32 bytes of the mes
 
 ## App to pad
 
-Each message from the app tells the pad that the app is present.
+Each correct message from the app, except `BOOTLOADER`, tells the pad that the app is present. `pad-core/src/state.rs` applies the messages in the firmware.
 If the pad gets no message for 3 seconds, it goes to keyboard mode.
 The pad accepts an unknown message ID as a sign that the app is present, and ignores its contents.
 
@@ -103,7 +103,7 @@ The pad shows a popup for 1.3 seconds. A popup does not count as activity for th
 | 17 | `screen_off_min` | Minutes without activity before the screen goes off. 0 = pad default (10). 255 = never. |
 | 18 | `lights_dim_min` | Minutes without activity before the lights dim. 0 = pad default (10). 255 = never. |
 
-The app sends `255` for a setting of `0` (never) in the config file.
+The app sends `255` for a setting of `0` (never) in the config file. It sends at most `240` minutes, and a brightness of at least `1`.
 
 ### `0x21` FRAME
 

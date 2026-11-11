@@ -58,7 +58,7 @@ This project does not include `dfu-util`, a driver installer or a driver.
    ```
 
    To flash a different image, give its path: `sh scripts/flash.sh path/to/image.bin`.
-3. If the script shows `REFUSED`, it did not write. The image is empty, too large, or does not start with a stack pointer in RAM and a reset vector in the firmware area.
+3. If the script shows `REFUSED`, it did not write. The image is empty, too large, or does not start with a stack pointer in RAM and a reset vector in the firmware area. The limit is `0x1D400` bytes (117 KB). The image of version 0.1.0 is approximately 50 KB.
 4. If the script shows "pad told to enter its bootloader", go to step 6.
 5. If the script shows "waiting for the bootloader", do these steps:
    1. Disconnect the pad.
@@ -72,6 +72,8 @@ This project does not include `dfu-util`, a driver installer or a driver.
 The script stops `kb16-mixer.exe` before it flashes. Then it runs `kb16-mixer.exe --bootloader` if the built app exists.
 After the download, the script starts `kb16-mixer.exe` again from the same file, if the app ran before.
 After "Download done", `dfu-util` can show exit code 74. This is normal.
+
+`flash.sh` shows the `NEXT:` line also after a failed write. If `dfu-util` did not show "Download done", do not disconnect the pad. Run the script again.
 
 `flash.sh` asks for no confirmation, and it does not list the devices first. If more than one DFU device has the USB ID `1EAF:0003`, `dfu-util` itself refuses. `flash.ps1` does more checks. See [install.md](install.md#6-flash-the-firmware).
 
@@ -96,7 +98,7 @@ To check that the new firmware runs, see [install.md](install.md#7-restart-the-p
 
 ## Recovery
 
-This firmware never writes the bootloader region, so the bootloader should stay available for a new image. This is not a guarantee: see [A firmware that does not start at all](#a-firmware-that-does-not-start-at-all) and the [Status table](../README.md#status).
+This firmware never writes the bootloader region, so the bootloader should stay available for a new image. A flash guard lets the firmware write only its two reserved pages. See [hardware.md](hardware.md#flash-guard). This is not a guarantee: see [A firmware that does not start at all](#a-firmware-that-does-not-start-at-all) and the [Status table](../README.md#status).
 
 There are three ways into the bootloader while the firmware of this project runs:
 

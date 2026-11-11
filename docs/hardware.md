@@ -94,6 +94,23 @@ On the wire, the knobs have the numbers 0, 1 and 2.
 `firmware/memory.x` gives the firmware region as 117 KB from `0x08002000`. The region ends below the name page.
 `scripts/build-firmware.sh` rejects an image that is larger than `0x1D400` bytes (117 KB).
 Thus the image cannot overlap the name page or the crash log.
+The image of version 0.1.0 is approximately 50 KB (51608 bytes in a local build of this branch).
+
+### Flash guard
+
+The firmware erases and writes the flash only in two pages: the name page (`0x0801F400`) and the crash log (`0x0801F800`).
+All other flash is closed to the firmware: the bootloader, the firmware image, and the last page (`0x0801FC00`).
+
+| Step | Rule | Code |
+|---|---|---|
+| Address check | An erase must start at the first byte of a reserved page. A write must be on a 2-byte boundary, and stay inside one reserved page. Other addresses get an error, and the firmware does not touch the flash controller. | `pad-core/src/flash.rs` |
+| Wait | The firmware waits for the busy flag (`BSY`) for a limited time. After the limit, it stops with an error. | `firmware/src/flash.rs` |
+| Error flags | Before and after each step, the firmware reads and clears the error flags `PGERR` (program error) and `WRPRTERR` (write protection error). A set flag is an error. | `firmware/src/flash.rs` |
+| Read-back | After an erase, each word must read `0xFFFF`. After a write, each word must read back the written value. | `firmware/src/flash.rs` |
+| Lock | The firmware locks the flash controller again after each operation, also after an error. | `firmware/src/flash.rs` |
+
+A refused or failed write changes nothing else. The firmware continues. The panic and hard-fault handlers use the same code, so it never panics and never waits without a limit.
+The tests in `pad-core/tests/rules.rs` check the address rules on the PC.
 
 ### Name page
 
@@ -158,12 +175,15 @@ The firmware sends its version as the release number of its USB device (`bcdDevi
 
 The format is `0xJJMN` in binary-coded decimal, for version JJ.M.N. For example, version 0.1.0 is `0x0010`.
 Thus the major version can be 0–99, and the minor and patch versions can be 0–9. The build stops for a version that does not fit.
-Early builds without a version sent `0x0300`. The app shows these as "an early build without a version".
+Early builds without a version sent `0x0300`. The **Pad** tab then shows "Pad firmware: an early build without a version.", and `--check` shows "firmware unknown (an early build)".
 
 ## Crash log
 
 The firmware writes panic and hard-fault details into the flash page at `0x0801F800`.
-Each entry is a 16-bit word. An empty word is `0xFFFF`. The page has space for 512 entries.
+Each entry is a 16-bit word. An empty word is `0xFFFF`. The page has space for 512 words.
+
+A normal build does not erase the page, so the entries of all crashes stay. When the page is full, the firmware writes no more entries.
+A build with `--diag` erases the page at each start.
 
 | First word | Next words |
 |---|---|
