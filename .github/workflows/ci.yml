@@ -99,3 +99,41 @@ jobs:
         run: |
           python3 scripts/third-party-notices.py
           git diff --exit-code THIRD_PARTY_NOTICES.md
+
+  # --- Firmware hardening: host tests of the firmware logic, strict firmware lints ---------------
+  # The toolchain comes from rust-toolchain.toml at the repository root.
+
+  # The firmware logic that needs no hardware, tested on the PC (pad-core/tests/oracle.rs and
+  # pad-core/tests/rules.rs).
+  pad-core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pad-core
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: pad-core
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  # Clippy on the firmware with every warning an error, both build profiles.
+  firmware-strict:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: firmware
+      - run: cargo fmt --check
+      - run: cargo clippy --release --locked -- -D warnings
+      - run: cargo clippy --locked -- -D warnings
