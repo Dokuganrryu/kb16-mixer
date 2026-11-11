@@ -506,8 +506,8 @@ You cannot change this layout in the config file.
 
 | Option | Action |
 |---|---|
-| `--settings` | Starts the app with the settings window open |
-| `--settings=keys`, `--settings=channels`, `--settings=pad` | Starts the app with the settings window open on that tab |
+| `--settings` | Starts the app with the settings window open on the first tab, **Keys** |
+| `--settings=keys`, `--settings=channels`, `--settings=pad` | Starts the app with the settings window open on that tab. Upper case and lower case letters do not matter. Another tab name opens the first tab. |
 | `--no-pad` | The app never looks for the pad. The volume control still runs. Use it to try the settings window while another copy of the app has the pad. |
 | `--bootloader` | Tells the pad to restart into its bootloader, then stops. Exit code 0 = the app sent the command. Exit code 1 = the app found no pad, or the write failed. |
 | `--check` | Prints a short report about the app, the pad, the settings, **Start with Windows** and audio, then stops. It only reads. You can paste the report into a bug report. See [The `--check` report](#the---check-report). |

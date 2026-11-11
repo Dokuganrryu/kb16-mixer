@@ -168,20 +168,26 @@ pub fn run(
 /// The first run opens the window where Start with Windows is, and says where the app lives.
 /// `--settings[=tab]` starts with the window open too.
 fn open_first_window(first_run: bool) {
-    let asked = std::env::args().find_map(|a| a.strip_prefix("--settings").map(str::to_string));
+    let asked = std::env::args().find_map(|a| settings_flag(&a));
     if first_run {
         let welcome = "KB16 mixer is running. It lives in the tray by the clock (maybe behind the ^ arrow): \
-                       click its icon to come back here. It does not start with Windows unless you tick that below.";
+                       click its icon to come back here. It does not start with Windows unless you turn that on below.";
         settings::open_at(Some(settings::Tab::Pad), Some(welcome));
     } else if let Some(tab) = asked {
-        let tab = match tab.trim_start_matches('=') {
-            "channels" => Some(settings::Tab::Channels),
-            "pad" => Some(settings::Tab::Pad),
-            "keys" => Some(settings::Tab::Keys),
-            _ => None,
-        };
         settings::open_at(tab, None);
     }
+}
+
+/// `--settings` or `--settings=<tab>`: None for any other argument. A tab name other than keys,
+/// channels or pad (any case) gives the default tab.
+fn settings_flag(arg: &str) -> Option<Option<settings::Tab>> {
+    let rest = arg.strip_prefix("--settings")?;
+    if rest.is_empty() {
+        return Some(None);
+    }
+    let name = rest.strip_prefix('=')?;
+    let tabs = [("keys", settings::Tab::Keys), ("channels", settings::Tab::Channels), ("pad", settings::Tab::Pad)];
+    Some(tabs.into_iter().find(|(text, _)| name.eq_ignore_ascii_case(text)).map(|(_, tab)| tab))
 }
 
 /// What the hidden window does when the pad comes or goes: the tooltip, the status line and the
@@ -323,5 +329,25 @@ unsafe extern "system" fn ui_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         // SAFETY: the arguments are the ones Windows passed to this window procedure.
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::settings_flag;
+    use crate::settings::Tab;
+
+    #[test]
+    fn settings_flag_matches_whole_tab_names_only() {
+        assert_eq!(settings_flag("--settings"), Some(None));
+        assert_eq!(settings_flag("--settings=keys"), Some(Some(Tab::Keys)));
+        assert_eq!(settings_flag("--settings=Channels"), Some(Some(Tab::Channels)));
+        assert_eq!(settings_flag("--settings=PAD"), Some(Some(Tab::Pad)));
+        for unknown in ["--settings=k", "--settings=pads", "--settings=", "--settings==pad", "--settings= pad"] {
+            assert_eq!(settings_flag(unknown), Some(None), "{unknown}: the default tab");
+        }
+        for other in ["--settingsx", "--settings-pad", "--no-pad", "settings", "-settings=pad"] {
+            assert_eq!(settings_flag(other), None, "{other}: not the flag");
+        }
     }
 }
