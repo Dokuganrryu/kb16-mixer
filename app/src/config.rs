@@ -681,10 +681,12 @@ pub fn load_state() -> Saved {
     toml::from_str(&text).unwrap_or_default()
 }
 
+/// Whole or not at all (`write_whole`): a torn file would lose every level, trim and the list of
+/// apps Focus has turned down.
 pub fn save_state(state: &Saved) {
     match toml::to_string(state) {
         Ok(text) => {
-            if let Err(e) = std::fs::write(dir().join("state.toml"), text) {
+            if let Err(e) = write_whole(&dir().join("state.toml"), &text) {
                 crate::log(&format!("could not save state.toml: {e}"));
             }
         }
