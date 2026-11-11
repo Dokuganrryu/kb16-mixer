@@ -1,8 +1,8 @@
 //! Settings: parsing and checking config.toml, and the files the app keeps between runs.
 //!
-//! Files in %APPDATA%\kb16-mixer:
+//! Files in %APPDATA%\kb16-mixer (or the folder named by `KB16_MIXER_DIR`, see `custom_dir`):
 //!   config.toml  what the user edits (written with defaults on first run)
-//!   apps.toml    apps moved to a channel by holding its key
+//!   apps.toml    apps moved to a channel with the Move key; only the mixer thread writes it
 //!   state.toml   remembered channel levels, per-app trims, and what Focus has turned down
 
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,8 @@ knob3 = "Game"        # big knob
 #   "focus"   tap: turn every other channel down so this one stands out; tap again to undo.
 #             Hold instead and it only lasts while held. Focus on Game = clutch mode.
 #   "talk"    hold: flips the mic while held. Push-to-talk if you are muted, cough button if not.
-#   "move"    hold it and tap a column's mute key: the app in front moves into that channel
+#   "move"    hold it and tap another key in a column (any key this app handles: mute,
+#             focus, talk, page, open): the app in front moves into that column's channel
 #             (again to undo). Tap it alone to see which channel the app is in.
 #   "page"    tap: switch to the other page of keys; tap again to come back. Hold instead
 #             and the other page lasts only while held. The screen shows MIXER or KEYS.
@@ -215,27 +216,54 @@ fn media_usage(name: &str) -> Option<u8> {
     })
 }
 
+/// Key names the pad can type besides letters, digits and F1-F24, with their HID usage.
+const NAMED_KEYS: &[(&str, u8)] = &[
+    ("enter", 0x28),
+    ("esc", 0x29),
+    ("backspace", 0x2A),
+    ("tab", 0x2B),
+    ("space", 0x2C),
+    ("printscreen", 0x46),
+    ("pause", 0x48),
+    ("insert", 0x49),
+    ("home", 0x4A),
+    ("pageup", 0x4B),
+    ("delete", 0x4C),
+    ("end", 0x4D),
+    ("pagedown", 0x4E),
+    ("right", 0x4F),
+    ("left", 0x50),
+    ("down", 0x51),
+    ("up", 0x52),
+];
+
+/// The config name of a HID keyboard usage, the way `parse_key` reads it back.
+pub fn key_name(usage: u8) -> Option<String> {
+    Some(match usage {
+        0x04..=0x1D => ((b'a' + usage - 0x04) as char).to_string(),
+        0x1E..=0x26 => ((b'1' + usage - 0x1E) as char).to_string(),
+        0x27 => "0".into(),
+        0x3A..=0x45 => format!("F{}", usage - 0x3A + 1),
+        0x68..=0x73 => format!("F{}", usage - 0x68 + 13),
+        _ => NAMED_KEYS.iter().find(|(_, u)| *u == usage)?.0.into(),
+    })
+}
+
 /// HID keyboard usage for a key name.
 fn key_usage(name: &str) -> Option<u8> {
     let b = name.as_bytes();
+    let alias = match name {
+        "return" => "enter",
+        "escape" => "esc",
+        "pgup" => "pageup",
+        "del" => "delete",
+        "pgdn" => "pagedown",
+        other => other,
+    };
+    if let Some((_, usage)) = NAMED_KEYS.iter().find(|(n, _)| *n == alias) {
+        return Some(*usage);
+    }
     Some(match name {
-        "enter" | "return" => 0x28,
-        "esc" | "escape" => 0x29,
-        "backspace" => 0x2A,
-        "tab" => 0x2B,
-        "space" => 0x2C,
-        "printscreen" => 0x46,
-        "pause" => 0x48,
-        "insert" => 0x49,
-        "home" => 0x4A,
-        "pageup" | "pgup" => 0x4B,
-        "delete" | "del" => 0x4C,
-        "end" => 0x4D,
-        "pagedown" | "pgdn" => 0x4E,
-        "right" => 0x4F,
-        "left" => 0x50,
-        "down" => 0x51,
-        "up" => 0x52,
         _ if b.len() == 1 && b[0].is_ascii_lowercase() => 0x04 + (b[0] - b'a'),
         _ if b.len() == 1 && (b'1'..=b'9').contains(&b[0]) => 0x1E + (b[0] - b'1'),
         "0" => 0x27,
@@ -315,11 +343,16 @@ fn parse_grid(raw: RawKeys, page: usize) -> Result<KeyGrid, String> {
     Ok(grid)
 }
 
-/// Both pages, refused if a tap could switch to the keypad page with no key there to switch back.
+/// True if a tap could switch to the keypad page with no key there to switch back.
+pub fn stuck_on_page_two(pages: &[KeyGrid; PAGES]) -> bool {
+    let has_page_key = |g: &KeyGrid| g.iter().flatten().any(|a| *a == KeyAction::Page);
+    has_page_key(&pages[0]) && !has_page_key(&pages[1])
+}
+
+/// Both pages, refused if they fail `stuck_on_page_two`.
 fn parse_pages(keys: RawKeys, keys2: RawKeys) -> Result<[KeyGrid; PAGES], String> {
     let pages = [parse_grid(keys, 0)?, parse_grid(keys2, 1)?];
-    let has_page_key = |g: &KeyGrid| g.iter().flatten().any(|a| *a == KeyAction::Page);
-    if has_page_key(&pages[0]) && !has_page_key(&pages[1]) {
+    if stuck_on_page_two(&pages) {
         return Err("[keys2] has no \"page\" key, so there would be no way back to [keys]".into());
     }
     Ok(pages)
@@ -369,7 +402,7 @@ fn default_name() -> String {
 }
 
 /// The pad draws the logo name in capitals; it has letters for A-Z, 0-9 and space only.
-fn parse_name(text: &str) -> Result<String, String> {
+pub fn parse_name(text: &str) -> Result<String, String> {
     let name = text.trim().to_uppercase();
     let fits = name.chars().all(|c| c == ' ' || c.is_ascii_uppercase() || c.is_ascii_digit());
     if name.is_empty() || name.len() > kb16_mixer_protocol::LOGO_NAME_LEN || !fits {
@@ -431,8 +464,11 @@ impl RawConfig {
                 Some("other") => ChannelTarget::Other,
                 Some("focused") => ChannelTarget::Focused,
                 Some("mic") => ChannelTarget::Mic,
-                Some("apps") | None if !c.apps.is_empty() => ChannelTarget::Apps(c.apps),
-                Some("apps") | None => return Err(format!("channel {}: needs apps = [...] or a target", c.name)),
+                // An explicit "apps" may start empty (the settings window writes that); without a
+                // target, an empty list is more likely a mistake.
+                Some("apps") => ChannelTarget::Apps(c.apps),
+                None if !c.apps.is_empty() => ChannelTarget::Apps(c.apps),
+                None => return Err(format!("channel {}: needs apps = [...] or a target", c.name)),
                 Some(other) => return Err(format!("channel {}: unknown target {other:?}", c.name)),
             };
             channels.push(ChannelCfg { name: c.name, color, target });
@@ -478,14 +514,24 @@ fn base_dir() -> PathBuf {
     std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir)
 }
 
+/// The environment variable that replaces the settings folder.
+pub const DIR_VAR: &str = "KB16_MIXER_DIR";
+
+/// The folder named by `KB16_MIXER_DIR`, if set: a portable copy, or a build tried against a
+/// throwaway folder. With it, nothing is carried over from an old install and "Start with
+/// Windows" is never written (see `main.rs`).
+pub fn custom_dir() -> Option<PathBuf> {
+    std::env::var_os(DIR_VAR).filter(|d| !d.is_empty()).map(PathBuf::from)
+}
+
 pub fn dir() -> PathBuf {
-    base_dir().join(DIR_NAME)
+    custom_dir().unwrap_or_else(|| base_dir().join(DIR_NAME))
 }
 
 /// Carries the settings of an install from before the rename across, once: only while the new
 /// folder does not exist yet. The old folder is left as it is. Returns true if it copied.
 pub fn migrate_old_settings() -> bool {
-    migrate_from(&base_dir())
+    custom_dir().is_none() && migrate_from(&base_dir())
 }
 
 fn migrate_from(base: &std::path::Path) -> bool {
@@ -517,7 +563,7 @@ pub fn path() -> PathBuf {
     dir().join("config.toml")
 }
 
-fn parse(text: &str) -> Result<Config, String> {
+pub fn parse(text: &str) -> Result<Config, String> {
     let raw: RawConfig = toml::from_str(text).map_err(|e| {
         // toml's message spans several lines (location, source excerpt, reason); keep it on one.
         e.to_string().lines().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join(" ")
@@ -545,30 +591,48 @@ pub fn load() -> Result<Config, String> {
     parse(&text)
 }
 
-/// The first page's key table as written in the file (for showing a custom entry unchanged).
-pub fn raw_keys() -> [[String; 4]; 4] {
+/// Replaces a file so that it is never seen half written: a crash or a full disk leaves the old
+/// one in place.
+pub fn write_whole(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}
+
+/// Both pages' key tables as written in `text` (for showing a custom entry unchanged).
+pub fn raw_keys(text: &str) -> [[[String; 4]; 4]; PAGES] {
     #[derive(Deserialize, Default)]
     struct File {
         #[serde(default)]
         keys: RawKeys,
+        #[serde(default)]
+        keys2: RawKeys,
     }
-    let file: File = std::fs::read_to_string(path()).ok().and_then(|t| toml::from_str(&t).ok()).unwrap_or_default();
-    let rows = [file.keys.row1, file.keys.row2, file.keys.row3, file.keys.row4];
-    let mut out: [[String; 4]; 4] = Default::default();
-    for (r, row) in rows.into_iter().enumerate() {
-        for c in 0..4 {
-            out[r][c] = match &row {
-                Some(names) if names.len() == 4 => names[c].clone(),
-                _ => DEFAULT_KEYS[0][r][c].to_string(),
-            };
+    let file: File = toml::from_str(text).unwrap_or_default();
+    let mut out: [[[String; 4]; 4]; PAGES] = Default::default();
+    for (page, keys) in [file.keys, file.keys2].into_iter().enumerate() {
+        let rows = [keys.row1, keys.row2, keys.row3, keys.row4];
+        for (r, row) in rows.into_iter().enumerate() {
+            for c in 0..4 {
+                out[page][r][c] = match &row {
+                    Some(names) if names.len() == 4 => names[c].clone(),
+                    _ => DEFAULT_KEYS[page][r][c].to_string(),
+                };
+            }
         }
     }
     out
 }
 
+fn apps_path() -> PathBuf {
+    dir().join("apps.toml")
+}
+
 /// Apps moved by holding Move and tapping a column: exe (lowercase) -> channel name.
 pub fn load_apps() -> HashMap<String, String> {
-    let text = std::fs::read_to_string(dir().join("apps.toml")).unwrap_or_default();
+    let text = std::fs::read_to_string(apps_path()).unwrap_or_default();
     let map: HashMap<String, String> = toml::from_str(&text).unwrap_or_default();
     map.into_iter().map(|(exe, channel)| (exe.to_lowercase(), channel)).collect()
 }
@@ -576,10 +640,25 @@ pub fn load_apps() -> HashMap<String, String> {
 pub fn save_apps(apps: &HashMap<String, String>) {
     let mut lines: Vec<String> = apps.iter().map(|(exe, ch)| format!("{exe:?} = {ch:?}")).collect();
     lines.sort();
-    let header = "# Apps moved by holding a channel key on the pad: \"app.exe\" = \"Channel\". Delete a line to undo.";
-    if let Err(e) = std::fs::write(dir().join("apps.toml"), format!("{header}\n{}\n", lines.join("\n"))) {
+    let header = "# Apps moved with the Move key on the pad: \"app.exe\" = \"Channel\". They win over the lists\n\
+                  # in config.toml. Delete a line to undo, or use Remove in the settings window.";
+    if let Err(e) = write_whole(&apps_path(), &format!("{header}\n{}\n", lines.join("\n"))) {
         crate::log(&format!("could not save apps.toml: {e}"));
     }
+}
+
+/// Channels that kept their place but got a new name, (old, new): what is remembered by name
+/// (levels, apps moved there) follows them. A name that still exists elsewhere, or a new name
+/// that was already there, is a reshuffle, not a rename.
+pub fn renames(before: &[String], now: &[ChannelCfg]) -> Vec<(String, String)> {
+    let had = |name: &str| before.iter().any(|b| b.eq_ignore_ascii_case(name));
+    let has = |name: &str| now.iter().any(|c| c.name.eq_ignore_ascii_case(name));
+    before
+        .iter()
+        .zip(now)
+        .filter(|(old, c)| !old.eq_ignore_ascii_case(&c.name) && !has(old) && !had(&c.name))
+        .map(|(old, c)| (old.clone(), c.name.clone()))
+        .collect()
 }
 
 /// What the pad remembers between runs.
@@ -741,6 +820,23 @@ mod tests {
         assert!(!migrate_from(&base), "only once");
         assert_eq!(std::fs::read_to_string(base.join(DIR_NAME).join("config.toml")).unwrap(), "step = 3");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_renamed_channel_is_told_from_a_reshuffle() {
+        let before: Vec<String> = ["Mic", "Chat", "Game", "Media"].map(String::from).to_vec();
+        let with = |names: [&str; 4]| {
+            let mut c = defaults().channels;
+            for (ch, n) in c.iter_mut().zip(names) {
+                ch.name = n.into();
+            }
+            renames(&before, &c)
+        };
+        assert_eq!(with(["Mic", "Talk", "Game", "Media"]), [("Chat".to_string(), "Talk".to_string())]);
+        assert!(with(["Mic", "Chat", "Game", "Media"]).is_empty());
+        assert!(with(["Mic", "chat", "Game", "Media"]).is_empty(), "case only");
+        assert!(with(["Mic", "Game", "Chat", "Media"]).is_empty(), "swapped, not renamed");
+        assert!(renames(&[], &defaults().channels).is_empty(), "first load");
     }
 
     #[test]

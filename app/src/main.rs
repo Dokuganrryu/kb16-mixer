@@ -3,12 +3,24 @@
 //! What it does, in full: reads knob/key events from its own USB device, moves sliders in the
 //! Windows volume mixer, and sends levels back for the pad's lights and screen.
 //! What it never does: keyboard hooks, input injection, drivers, reading or opening other
-//! processes. That is what keeps it out of an anti-cheat's way.
+//! processes. That is what keeps it out of an anti-cheat's way. (The `windows` crate's keyboard
+//! and mouse module is not even enabled; a test below keeps it that way.)
+//!
+//! Command line (also shown by `--help`):
+//!   --settings[=keys|channels|pad]  start with the settings window open, on that tab
+//!   --no-pad      never look for the pad (to try the settings window while another copy of
+//!                 the app owns the pad); the volume mixer still runs
+//!   --selftest    write what the mixer sees into selftest.txt and quit
+//!   --bootloader  restart the pad into its bootloader and quit
+//! KB16_MIXER_DIR=<folder> replaces the settings folder (%APPDATA%\kb16-mixer): a portable
+//! copy, or a throwaway folder for testing. With it, nothing is migrated from an old install
+//! and "Start with Windows" is never written.
 
 #![windows_subsystem = "windows"]
 
 mod audio;
 mod config;
+mod dialog;
 mod pad;
 mod procs;
 mod settings;
@@ -35,6 +47,16 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{HSTRING, PCWSTR, w};
 
 const WM_PAD_STATUS: u32 = WM_APP + 1;
+/// The mixer moved an app with the Move key (the settings window shows it).
+const WM_APPS_MOVED: u32 = WM_APP + 2;
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+const USAGE: &str = "kb16-mixer [--settings[=keys|channels|pad]] [--no-pad] [--selftest] [--bootloader]\n\n\
+    --settings   start with the settings window open, on that tab\n\
+    --no-pad     never look for the pad (try the settings window while another copy owns it)\n\
+    --selftest   write what the mixer sees into selftest.txt and quit\n\
+    --bootloader restart the pad into its bootloader and quit\n\n\
+    KB16_MIXER_DIR=<folder> replaces the settings folder (%APPDATA%\\kb16-mixer), for a portable \
+    copy or a throwaway test folder. Then nothing is migrated and Start with Windows is never written.";
 const RUN_KEY: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
 const RUN_VALUE: PCWSTR = w!("kb16-mixer");
 /// The autostart value written before the app was renamed.
@@ -83,6 +105,25 @@ pub fn reload() -> Result<(), String> {
     })
 }
 
+/// Hands the mixer thread a request; false if it is not running (its audio could not start).
+pub fn tell_mixer(event: PadEvent) -> bool {
+    APP.with_borrow(|app| app.as_ref().is_some_and(|a| a.to_mixer.send(event).is_ok()))
+}
+
+/// Waits (briefly) until the mixer has taken in the config made live by `reload`.
+pub fn mixer_caught_up() {
+    let (done, answer) = mpsc::channel();
+    if tell_mixer(PadEvent::CaughtUp(done)) {
+        let _ = answer.recv_timeout(Duration::from_secs(1));
+    }
+}
+
+/// The apps that have a volume slider right now, as the mixer sees them.
+pub fn live_apps() -> Option<Vec<String>> {
+    let (reply, answer) = mpsc::channel();
+    tell_mixer(PadEvent::Apps(reply)).then(|| answer.recv_timeout(Duration::from_secs(1)).ok()).flatten()
+}
+
 pub fn log(msg: &str) {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let _ = std::fs::create_dir_all(config::dir());
@@ -98,18 +139,37 @@ fn main() {
     if config::migrate_old_settings() && old_autostart_enabled() {
         set_autostart(true);
     }
+    if std::env::args().any(|a| a == "--help" || a == "-h" || a == "/?") {
+        unsafe {
+            MessageBoxW(None, &HSTRING::from(USAGE), w!("KB16 mixer"), MB_OK | MB_ICONINFORMATION);
+        }
+        return;
+    }
     if std::env::args().any(|a| a == "--selftest") {
         return selftest();
     }
     if std::env::args().any(|a| a == "--bootloader") {
         std::process::exit(if pad::enter_bootloader() { 0 } else { 1 });
     }
+    // One copy per settings folder: a copy run against KB16_MIXER_DIR does not stop the real one.
+    let instance = match config::custom_dir() {
+        Some(dir) => {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            dir.to_string_lossy().to_lowercase().hash(&mut h);
+            format!("Local\\kb16-mixer-{:016x}", h.finish())
+        }
+        None => "Local\\kb16-mixer".into(),
+    };
     unsafe {
-        let _mutex = CreateMutexW(None, true, w!("Local\\kb16-mixer"));
+        let _mutex = CreateMutexW(None, true, &HSTRING::from(instance));
         if GetLastError() == ERROR_ALREADY_EXISTS {
             return;
         }
+        // The settings window's file dialog wants a single-threaded COM apartment here.
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     }
+    let no_pad = std::env::args().any(|a| a == "--no-pad");
 
     let first_run = config::is_first_run();
     let (cfg, startup_problem) = match config::load() {
@@ -119,9 +179,6 @@ fn main() {
             (config::defaults(), Some(e))
         }
     };
-    if first_run {
-        set_autostart(true);
-    }
 
     let cfg = Arc::new(RwLock::new(cfg));
     let generation = Arc::new(AtomicU64::new(0));
@@ -129,7 +186,7 @@ fn main() {
     let (ev_tx, ev_rx) = mpsc::channel();
     let main_thread = unsafe { GetCurrentThreadId() };
 
-    {
+    if !no_pad {
         let (ev_tx, paused) = (ev_tx.clone(), paused.clone());
         std::thread::spawn(move || pad::listen(ev_tx, paused));
     }
@@ -142,7 +199,8 @@ fn main() {
     }
     APP.set(Some(App { cfg, generation, to_mixer: ev_tx.clone() }));
 
-    if let Err(e) = tray(paused, ev_tx, startup_problem) {
+    let start = Start { first_run, no_pad, problem: startup_problem };
+    if let Err(e) = tray(paused, ev_tx, start) {
         log(&format!("tray failed: {e}"));
     }
 }
@@ -187,6 +245,8 @@ fn worker(
     let mut held: [[Option<KeyAction>; 4]; 4] = Default::default();
     // What each knob is aimed at: its channel, or for a few seconds one app in it.
     let mut aims: [trim::Aim; 3] = Default::default();
+    // Channel names of the config in force, to tell a rename from a new channel.
+    let mut names: Vec<String> = Vec::new();
 
     loop {
         let every = if last_active.elapsed() < STAY_ACTIVE { FRAME } else { IDLE_FRAME };
@@ -207,9 +267,27 @@ fn worker(
         let g = generation.load(Ordering::Relaxed);
         if g != seen_generation {
             seen_generation = g;
+            // A renamed channel keeps its remembered level and the apps moved into it.
+            let renamed = config::renames(&names, channels);
+            names = channels.iter().map(|c| c.name.clone()).collect();
+            for (old, new) in &renamed {
+                if let Some(level) = saved.levels.remove(old) {
+                    saved.levels.insert(new.clone(), level);
+                }
+            }
+            mixer.moved = config::load_apps();
+            let mut moved_renamed = false;
+            for channel in mixer.moved.values_mut() {
+                if let Some((_, new)) = renamed.iter().find(|(old, _)| old.eq_ignore_ascii_case(channel)) {
+                    *channel = new.clone();
+                    moved_renamed = true;
+                }
+            }
+            if moved_renamed {
+                config::save_apps(&mixer.moved);
+            }
             mixer.set_focus(None, channels);
             mixer.reset(channels, &saved.levels);
-            mixer.moved = config::load_apps();
             mixer.duck = cfg.duck;
             mixer.restore = saved.restore.clone();
             mixer.trims = saved.trims.clone();
@@ -258,6 +336,20 @@ fn worker(
                     }
                 }
                 PadEvent::Notice(text) => popup = Some(Show::Notice(text)),
+                PadEvent::Apps(reply) => {
+                    mixer.refresh(channels, true);
+                    let _ = reply.send(mixer.app_names());
+                }
+                PadEvent::CaughtUp(done) => {
+                    let _ = done.send(());
+                }
+                PadEvent::Unmove { exe, done } => {
+                    if mixer.moved.remove(&exe).is_some() {
+                        config::save_apps(&mixer.moved);
+                        mixer.refresh(channels, true);
+                    }
+                    let _ = done.send(());
+                }
                 _ => {}
             }
         }
@@ -277,13 +369,18 @@ fn worker(
             if move_armed && action != KeyAction::Move && col < n {
                 let (outcome, app) = mixer.move_focused(col, channels);
                 let channel = &channels[col].name;
+                let tell_settings = || unsafe {
+                    let _ = PostThreadMessageW(main_thread, WM_APPS_MOVED, WPARAM(0), LPARAM(0));
+                };
                 popup = match outcome {
                     Moved::To => {
                         config::save_apps(&mixer.moved);
+                        tell_settings();
                         notice(format!("{}>{}", clip(&app, 15usize.saturating_sub(channel.len())), channel))
                     }
                     Moved::BackToAuto => {
                         config::save_apps(&mixer.moved);
+                        tell_settings();
                         notice(format!("{}>auto", clip(&app, 11)))
                     }
                     Moved::NothingFocused => notice("No app in front".into()),
@@ -598,8 +695,12 @@ fn selftest() {
     let _ = std::fs::write(config::dir().join("selftest.txt"), out.join("\n"));
 }
 
+/// Always off for a copy run against `KB16_MIXER_DIR`, which never touches the registry.
 pub fn autostart_enabled() -> bool {
-    unsafe { RegGetValueW(HKEY_CURRENT_USER, RUN_KEY, RUN_VALUE, RRF_RT_REG_SZ, None, None, None) == ERROR_SUCCESS }
+    config::custom_dir().is_none()
+        && unsafe {
+            RegGetValueW(HKEY_CURRENT_USER, RUN_KEY, RUN_VALUE, RRF_RT_REG_SZ, None, None, None) == ERROR_SUCCESS
+        }
 }
 
 fn old_autostart_enabled() -> bool {
@@ -607,6 +708,9 @@ fn old_autostart_enabled() -> bool {
 }
 
 pub fn set_autostart(on: bool) {
+    if config::custom_dir().is_some() {
+        return log("Start with Windows not written: KB16_MIXER_DIR is set");
+    }
     unsafe {
         if on {
             let Ok(exe) = std::env::current_exe() else { return };
@@ -651,19 +755,39 @@ fn icon() -> Icon {
     Icon::from_rgba(px, n as u32, n as u32).expect("icon")
 }
 
-fn tray(
-    paused: Arc<AtomicBool>,
-    to_mixer: Sender<PadEvent>,
-    startup_problem: Option<String>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let status = MenuItem::new("Looking for the pad...", false, None);
+/// How this run started, for the tray.
+struct Start {
+    first_run: bool,
+    no_pad: bool,
+    problem: Option<String>,
+}
+
+/// The tray's first line: the app's version and the pad.
+fn status_line(no_pad: bool) -> String {
+    let pad = match pad::connected_release() {
+        _ if no_pad => "pad not used (--no-pad)".to_string(),
+        None => "pad not connected".into(),
+        Some(kb16_mixer_protocol::UNVERSIONED_RELEASE) => "pad connected".into(),
+        Some(r) => {
+            let (a, b, c) = kb16_mixer_protocol::release_version(r);
+            format!("pad connected, firmware {a}.{b}.{c}")
+        }
+    };
+    format!("KB16 mixer {VERSION}: {pad}")
+}
+
+fn tray(paused: Arc<AtomicBool>, to_mixer: Sender<PadEvent>, start: Start) -> Result<(), Box<dyn std::error::Error>> {
+    let status = MenuItem::new(status_line(start.no_pad), false, None);
     let problem = MenuItem::new("", false, None);
     let open_settings = MenuItem::new("Settings...", true, None);
     let pause = CheckMenuItem::new("Pause (pad acts as a plain keyboard)", true, false, None);
     let open = MenuItem::new("Open config file", true, None);
     let reload_item = MenuItem::new("Reload config file", true, None);
     let folder = MenuItem::new("Open settings folder", true, None);
-    let autostart = CheckMenuItem::new("Start with Windows", true, autostart_enabled(), None);
+    let autostart = match config::custom_dir() {
+        Some(_) => CheckMenuItem::new("Start with Windows (off: KB16_MIXER_DIR is set)", false, false, None),
+        None => CheckMenuItem::new("Start with Windows", true, autostart_enabled(), None),
+    };
     let quit = MenuItem::new("Quit", true, None);
     let menu = Menu::new();
     menu.append(&status)?;
@@ -683,7 +807,7 @@ fn tray(
         Some(t) => problem.set_text(format!("Config problem: {}", clip(t, 90))),
         None => problem.set_text("Config OK"),
     };
-    show_problem(startup_problem.as_deref());
+    show_problem(start.problem.as_deref());
 
     // Left click opens the settings window; right click shows the menu.
     let tray = TrayIconBuilder::new()
@@ -693,18 +817,34 @@ fn tray(
         .with_icon(icon())
         .build()?;
 
-    // `kb16-mixer.exe --settings` starts with the window open.
-    if std::env::args().any(|a| a == "--settings") {
-        settings::open();
+    // The first run opens the window where Start with Windows is, and says where the app lives.
+    // `--settings[=tab]` starts with the window open too.
+    let asked = std::env::args().find_map(|a| a.strip_prefix("--settings").map(str::to_string));
+    if start.first_run {
+        let welcome = "KB16 mixer is running. It lives in the tray by the clock (maybe behind the ^ arrow): \
+                       click its icon to come back here. It does not start with Windows unless you tick that below.";
+        settings::open_at(Some(settings::Tab::Pad), Some(welcome));
+    } else if let Some(tab) = asked {
+        let tab = match tab.trim_start_matches('=') {
+            "channels" => Some(settings::Tab::Channels),
+            "pad" => Some(settings::Tab::Pad),
+            "keys" => Some(settings::Tab::Keys),
+            _ => None,
+        };
+        settings::open_at(tab, None);
     }
 
     let mut msg = MSG::default();
     unsafe {
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             if msg.message == WM_PAD_STATUS && !pause.is_checked() {
-                let text = if msg.wParam.0 != 0 { "Pad connected" } else { "Pad not connected" };
+                let text = status_line(start.no_pad);
+                let _ = tray.set_tooltip(Some(&text));
                 status.set_text(text);
-                let _ = tray.set_tooltip(Some(format!("KB16 mixer: {}", text.to_lowercase())));
+                settings::pad_changed();
+            }
+            if msg.message == WM_APPS_MOVED {
+                settings::apps_moved();
             }
             // Tab / arrow-key navigation inside the settings window.
             if settings::window().is_some_and(|w| IsDialogMessageW(w, &msg).as_bool()) {
@@ -728,15 +868,19 @@ fn tray(
                     settings::open();
                 } else if ev.id == pause.id() {
                     paused.store(pause.is_checked(), Ordering::Relaxed);
-                    if pause.is_checked() {
-                        status.set_text("Paused");
-                    }
+                    status.set_text(if pause.is_checked() {
+                        format!("KB16 mixer {VERSION}: paused")
+                    } else {
+                        status_line(start.no_pad)
+                    });
                 } else if ev.id == open.id() {
                     let _ = std::process::Command::new("notepad.exe").arg(config::path()).spawn();
                 } else if ev.id == folder.id() {
                     let _ = std::process::Command::new("explorer.exe").arg(config::dir()).spawn();
                 } else if ev.id == reload_item.id() {
-                    match reload() {
+                    let result = reload();
+                    settings::reloaded();
+                    match result {
                         Ok(()) => {
                             show_problem(None);
                             let _ = to_mixer.send(PadEvent::Notice("Config loaded".into()));
@@ -757,4 +901,14 @@ fn tray(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// The app never observes the keyboard: the module that could is not even compiled in.
+    #[test]
+    fn the_keyboard_module_stays_out() {
+        let manifest = include_str!("../Cargo.toml");
+        assert!(!manifest.contains("KeyboardAndMouse"), "Win32_UI_Input_KeyboardAndMouse must stay disabled");
+    }
 }

@@ -693,6 +693,14 @@ impl Mixer {
         (outcome, pretty(&exe))
     }
 
+    /// Every app with a volume slider now, by exe (lowercase), sorted.
+    pub fn app_names(&self) -> Vec<String> {
+        let mut apps: Vec<String> = self.sessions.iter().filter(|s| !s.exe.is_empty()).map(|s| s.exe.clone()).collect();
+        apps.sort();
+        apps.dedup();
+        apps
+    }
+
     /// One line per session, for `--selftest`.
     pub fn describe(&self) -> Vec<String> {
         self.sessions
@@ -710,8 +718,9 @@ pub fn mic_channel(channels: &[ChannelCfg]) -> Option<usize> {
 }
 
 /// An app moved by hand goes where it was put. Otherwise the first channel that names it
-/// wins, and an "other" channel takes everything left over.
-fn assign(
+/// wins, and an "other" channel takes everything left over. `exe` is lowercase. The settings
+/// window shows the channels through this same rule (with no app in front).
+pub fn assign(
     channels: &[ChannelCfg],
     moved: &HashMap<String, String>,
     exe: &str,

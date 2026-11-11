@@ -8,7 +8,7 @@ use hidapi::{HidApi, HidDevice};
 use kb16_mixer_protocol::{self as protocol, HostMsg, Key, PadMsg, Report};
 use std::ffi::CString;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
@@ -35,15 +35,38 @@ pub enum PadEvent {
     Notice(String),
     /// Not from the pad: the app is closing; undo anything temporary first.
     Shutdown,
+    /// Not from the pad: the settings window asks which apps have a volume slider right now
+    /// (exe names, lowercase, sorted).
+    Apps(Sender<Vec<String>>),
+    /// Not from the pad: the settings window takes an app out of the Move key's list (the
+    /// mixer is the only writer of apps.toml). `done` answers once the file is written.
+    Unmove {
+        exe: String,
+        done: Sender<()>,
+    },
+    /// Not from the pad: answered once the mixer has taken in the config that is in force (a
+    /// renamed channel's moved apps are rewritten then).
+    CaughtUp(Sender<()>),
+}
+
+/// USB release number of the connected pad plus 1 << 16, or 0 while none is connected.
+static PAD: AtomicU32 = AtomicU32::new(0);
+
+/// The connected pad's firmware release number (bcdDevice), or None while no pad is connected.
+pub fn connected_release() -> Option<u16> {
+    let v = PAD.load(Ordering::Relaxed);
+    (v != 0).then_some(v as u16)
+}
+
+fn pad_info(api: &HidApi) -> Option<&hidapi::DeviceInfo> {
+    api.device_list().find(|d| {
+        d.vendor_id() == protocol::VID && d.product_id() == protocol::PID && d.usage_page() == protocol::USAGE_PAGE
+    })
 }
 
 fn find(api: &mut HidApi) -> Option<CString> {
     let _ = api.refresh_devices();
-    api.device_list()
-        .find(|d| {
-            d.vendor_id() == protocol::VID && d.product_id() == protocol::PID && d.usage_page() == protocol::USAGE_PAGE
-        })
-        .map(|d| d.path().to_owned())
+    pad_info(api).map(|d| d.path().to_owned())
 }
 
 /// Blocks on the pad's input for the life of the app, reconnecting as needed.
@@ -61,6 +84,8 @@ pub fn listen(events: Sender<PadEvent>, paused: Arc<AtomicBool>) {
             std::thread::sleep(Duration::from_secs(1));
             continue;
         };
+        let release = pad_info(&api).map_or(0, |d| d.release_number());
+        PAD.store(1 << 16 | release as u32, Ordering::Relaxed);
         let _ = events.send(PadEvent::Connected(true));
         let mut buf = [0u8; protocol::REPORT_LEN];
         // The timeout only exists so a pause is noticed; input wakes the read at once.
@@ -80,6 +105,7 @@ pub fn listen(events: Sender<PadEvent>, paused: Arc<AtomicBool>) {
             }
         }
         drop(dev);
+        PAD.store(0, Ordering::Relaxed);
         let _ = events.send(PadEvent::Connected(false));
         std::thread::sleep(Duration::from_millis(500));
     }
@@ -93,8 +119,9 @@ pub struct Link {
 }
 
 impl Link {
+    /// Touches nothing yet: the device list is only read on the first `open`.
     pub fn new() -> Link {
-        Link { api: HidApi::new().ok(), dev: None, last_write: Instant::now() }
+        Link { api: None, dev: None, last_write: Instant::now() }
     }
 
     pub fn is_open(&self) -> bool {
@@ -102,6 +129,9 @@ impl Link {
     }
 
     pub fn open(&mut self) -> bool {
+        if self.api.is_none() {
+            self.api = HidApi::new().ok();
+        }
         let Some(api) = self.api.as_mut() else { return false };
         self.dev = find(api).and_then(|p| api.open_path(&p).ok());
         self.dev.is_some()
