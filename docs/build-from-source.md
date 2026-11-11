@@ -3,7 +3,7 @@
 This document tells you how to build the firmware image and the app yourself, on Windows 10 or 11.
 To install a release without a build, see [install.md](install.md).
 
-The steps were written on Windows 11 with Rust 1.99.1, Python 3.14, Visual Studio Build Tools 2026 and Git for Windows.
+The author wrote the steps on Windows 11 with Rust 1.99.1, Python 3.14, the Build Tools for Visual Studio 2026 and Git for Windows.
 
 ## What you need
 
@@ -24,7 +24,7 @@ You do not need a pad to build. You need a pad only to flash.
 ## Set up
 
 1. Install Git for Windows.
-2. Install the Visual Studio Build Tools with the workload **Desktop development with C++**.
+2. Install the Build Tools for Visual Studio with the workload **Desktop development with C++**.
 3. Install Rust with `rustup-init.exe`. Accept the default host `x86_64-pc-windows-msvc`.
 4. Open Git Bash.
 5. Add the firmware target:
@@ -80,7 +80,7 @@ The script checks the image before it writes it. It shows `IMAGE REJECTED` and w
 
 - the stack pointer is not in RAM.
 - the reset vector is not in the firmware region (above `0x08002000`).
-- one of the interrupts for the timer, USB, I2C or DMA goes to `DefaultHandler`. This occurs when the `rt` feature of embassy-stm32 is missing. Such an image stops the pad at the first interrupt.
+- one of the interrupts for the timer, USB, I2C or DMA goes to `DefaultHandler`. This occurs when the build does not have the `rt` feature of embassy-stm32. Such an image stops the pad at the first interrupt.
 - the image is larger than 117 KB (`0x1D400` bytes). It then overlaps the name page and the crash log.
 
 `sh scripts/build-firmware.sh --diag` builds an image that also writes start-up markers into the crash log. See [hardware.md](hardware.md#crash-log).
@@ -149,4 +149,4 @@ The script writes `THIRD_PARTY_NOTICES.md`. It stops with exit code 1 if a depen
 - The version commands in [Check the setup](#check-the-setup) were run on the author's PC: Rust 1.99.1, Python 3.14.7, `cargo-about` 0.9.3, targets `thumbv7m-none-eabi` and `x86_64-pc-windows-msvc`.
 - The dry run of `flash.ps1` was run against the image in `firmware/target/`, with a simulated `dfu-util`.
 - The two build scripts and the tests were not run for this document. CI runs them.
-- The setup on a new PC (Git, Build Tools, rustup, Python) was not done again for this document.
+- Nobody did the setup again on a new PC (Git, Build Tools, rustup, Python) for this document.

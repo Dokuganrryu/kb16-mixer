@@ -3,7 +3,7 @@
 This document describes the board for people who want to write their own firmware for this pad.
 The facts come from the firmware source (`firmware/src`, `firmware/memory.x`) and from the public QMK board definition (`keyboards/doio/kb16/rev2` in `qmk/qmk_firmware`).
 
-Only one unit was examined and tested. Other production runs can be different.
+The project examined and tested only one unit. Other production runs can be different.
 
 ## Parts
 
@@ -128,7 +128,7 @@ The bootloader reads the backup register `BKP_DR10` after each reset:
 Backup registers keep their values through a reset, but not through a power cycle.
 After a power cycle, the bootloader finds no "stay" mark and starts the firmware.
 
-The public source code of the stm32duino bootloader starts the firmware only if the first word at `0x08002000` (or `0x08005000`) is a stack pointer in RAM. Otherwise it stays in DFU mode. This project does not know if the bootloader in this pad has the same code.
+The public source code of the stm32duino bootloader starts the firmware only if its first word is a stack pointer in RAM. Otherwise the bootloader stays in DFU mode. It checks the words at `0x08002000` and `0x08005000`. This project does not know if the bootloader in this pad has the same code.
 
 After a download, the bootloader does not start the new firmware. It waits for a power cycle.
 Thus each flash ends with one disconnect and one connect of the pad.
@@ -154,7 +154,8 @@ The top-left key check occurs before the firmware sets the clocks. It reads PB14
 
 ## Firmware version
 
-The firmware sends its version as the USB device release number (`bcdDevice`). The value comes from `firmware/Cargo.toml`.
+The firmware sends its version as the release number of its USB device (`bcdDevice`). The value comes from `firmware/Cargo.toml`.
+
 The format is `0xJJMN` in binary-coded decimal, for version JJ.M.N. For example, version 0.1.0 is `0x0010`.
 Thus the major version can be 0–99, and the minor and patch versions can be 0–9. The build stops for a version that does not fit.
 Early builds without a version sent `0x0300`. The app shows these as "an early build without a version".
@@ -183,7 +184,7 @@ To read the crash log:
 This project used this method to read the crash log.
 
 A build with `--diag` (`scripts/build-firmware.sh --diag`) also writes start-up stage markers into this page.
-This is how the first start-up problems on this board were found.
+The project found the first start-up problems on this board in this way.
 
 ## Lessons learned
 
@@ -192,8 +193,8 @@ These facts cost time to learn. They can help you if you write your own firmware
 - **embassy-stm32 needs the `rt` feature**, also with `default-features = false`. Without it, all interrupts go to `DefaultHandler`. The pad then stops at the first timer interrupt, with no lights. `scripts/build-firmware.sh` rejects such an image.
 - **Clear the NVIC at start.** The interrupt state of the bootloader stays after the jump to the firmware. The firmware disables and clears all interrupts before it starts.
 - **Force a new USB connection.** The board has a fixed pull-up resistor on D+. The firmware holds D+ low for 10 ms, so that the PC sees a new device.
-- **The case hides the top rows of the screen.** On the tested unit, approximately 3 pixel rows are hidden. All screen layouts use 29 rows and move down by `oled_top` (default 3).
+- **The case hides the top rows of the screen.** On the tested unit, the case hides approximately 3 pixel rows. All screen layouts use 29 rows and move down by `oled_top` (default 3).
 - **Free PB3.** PB3 is a JTAG pin after reset. Turn off JTAG (keep SWD) to use it as matrix row 0.
 - **Time the WS2812 signal with the cycle counter.** The firmware sends the LED data from RAM with interrupts off, timed by the DWT cycle counter. Flash wait states then cannot change the pulse length. One frame takes approximately 0.5 ms.
 - **Limit the LED current.** The firmware limits the sum of all LED values to 45 % of full white.
-- **Knobs:** each detent has four contact steps. If the decoder misses a reading (two steps at once), it ignores that step.
+- **Knobs:** each detent has four contact steps. If the decoder misses a step (two steps at once), it ignores that step.

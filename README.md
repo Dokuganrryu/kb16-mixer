@@ -1,12 +1,12 @@
 # KB16 Mixer
 
-KB16 Mixer is firmware and a small Windows tray app that make the **DOIO KB16-01 rev2** macro pad a per-app volume mixer, which is also a normal keypad.
+KB16 Mixer is firmware and a small Windows tray app. They make the **DOIO KB16-01 rev2** macro pad a per-app volume mixer that is also a normal keypad.
 
 It is not a driver, and it does not route audio. The app uses no keyboard hooks and injects no input. It moves only the sliders of the Windows volume mixer.
 
-**Status: pre-release.** The first release (0.1.0) is planned but not published. Tested on one pad with Windows 11. Not tested: Windows 10, other units, the Windows flasher on the pad, a restore of the stock firmware. See [Status](#status).
+**Status: pre-release.** The project plans a first release (0.1.0). It has not published it yet. Tested on one pad with Windows 11. Not tested: Windows 10, other units, the Windows flasher on the pad, a restore of the stock firmware. See [Status](#status).
 
-> **Unofficial project.** It is not affiliated with DOIO, or endorsed by DOIO. You flash firmware at your own risk. Flashing can void the warranty of the pad.
+> **Unofficial project.** It has no connection with DOIO, and DOIO does not endorse it. You flash firmware at your own risk. A flash can void the warranty of the pad.
 
 | Keys tab | Channels tab | Pad tab |
 |---|---|---|
@@ -61,14 +61,14 @@ The full check, with the steps, is in [docs/install.md](docs/install.md#2-check-
 
 ## Quick start
 
-The release is planned, not published. Until then, [build the files from source](docs/build-from-source.md).
+The project has not published the first release yet. Until then, [build the files from source](docs/build-from-source.md).
 
-1. Download the release zip and check its SHA-256 value. See [Get the files](docs/install.md#1-get-the-files).
+1. Download the release zip. Check its SHA-256 value. See [Get the files](docs/install.md#1-get-the-files).
 2. Check your pad. See [Check your pad](docs/install.md#2-check-your-pad).
 3. Install the WinUSB driver for the bootloader, one time. See [Install the bootloader driver](docs/install.md#4-install-the-bootloader-driver-one-time-only).
 4. Make a backup of the stock firmware. See [Make a backup](docs/install.md#5-make-a-backup-of-the-stock-firmware).
-5. Flash the firmware with `flash.ps1`, then disconnect the pad and connect it again. See [Flash the firmware](docs/install.md#6-flash-the-firmware).
-6. Start `kb16-mixer.exe` and run `kb16-mixer.exe --check`. See [Start the app](docs/install.md#8-start-the-app).
+5. Flash the firmware with `flash.ps1`. Then disconnect the pad, and connect it again. See [Flash the firmware](docs/install.md#6-flash-the-firmware).
+6. Start `kb16-mixer.exe`. Then run `kb16-mixer.exe --check`. See [Start the app](docs/install.md#8-start-the-app).
 
 On the first start, the settings window opens on the **Pad** tab. The app does not start with Windows until you select **Start with Windows**.
 
@@ -131,7 +131,7 @@ Click the tray icon to open the settings window. A change applies immediately. T
 
 ## Status
 
-The project has one tested pad (KB16-01 rev2, Windows 11). This is what was tested, and how:
+The project has one tested pad (KB16-01 rev2, Windows 11). This table shows what the project tested, and how:
 
 | Item | Tested on the real pad | Tested by automated tests and builds only | Not tested |
 |---|---|---|---|
@@ -157,7 +157,7 @@ The project has one tested pad (KB16-01 rev2, Windows 11). This is what was test
 | A firmware image that does not start at all (for example, after an interrupted download) | | | yes |
 | Windows 10 | | | yes |
 
-The table shows the state at the time of writing. Please report your results, good or bad, in an issue.
+The table shows the state on the date of the last change. Report your results, good or bad, in an issue.
 
 Safeguards: the firmware never writes the bootloader region. Three ways lead into the bootloader while this firmware runs. Both flashers check the device and the image before they write. See [Recovery](docs/flashing.md#recovery).
 
@@ -198,12 +198,12 @@ To report a security problem, see [SECURITY.md](SECURITY.md). For the list of ch
 
 ## Licence and legal notes
 
-- The code is licensed under the MIT licence. See [LICENSE](LICENSE).
-- The screen fonts are Open Sans (SIL Open Font License 1.1) and the public-domain X11 5x7 font. The build turns them into bitmaps.
+- The code has the MIT licence. See [LICENSE](LICENSE).
+- The screen fonts are Open Sans (SIL Open Font License 1.1) and the X11 5x7 font, which is in the public domain. The build turns them into bitmaps.
 - All dependencies have permissive licences. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) gives their copyright notices and full licence texts.
-- The firmware code, including the knob decoder, is original to this project. The pin assignments come from the public QMK board definition, as facts.
+- All firmware code, also the knob decoder, is original to this project. The pin assignments come from the public QMK board definition, as facts.
 - This project does not include `dfu-util`, a driver, a driver installer or any stock firmware.
-- This is an unofficial project. It is not affiliated with DOIO, or endorsed by DOIO.
+- This is an unofficial project. It has no connection with DOIO, and DOIO does not endorse it.
 - All product names and company names are trademarks of their owners. This project uses them only to describe compatibility.
-- You flash firmware at your own risk. Flashing can void the warranty of the pad.
+- You flash firmware at your own risk. A flash can void the warranty of the pad.
 - The software comes with no warranty. See the MIT licence.

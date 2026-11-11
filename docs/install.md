@@ -1,9 +1,9 @@
 # Install KB16 Mixer on Windows
 
-This document takes you from a new pad to a working mixer. You do not need a compiler.
+This document takes you from a new pad to a mixer that works. You do not need a compiler.
 Do the steps in sequence. Each step tells you what to do, what you must see, and what to do if you do not see it.
 
-You flash firmware at your own risk. Flashing can void the warranty of the pad.
+You flash firmware at your own risk. A flash can void the warranty of the pad.
 
 > **Status:** These steps are for the **planned first release, 0.1.0**. That release is not published yet.
 > Until it is published, build the files yourself. See [build-from-source.md](build-from-source.md).
@@ -15,7 +15,7 @@ You flash firmware at your own risk. Flashing can void the warranty of the pad.
 
 You can stop at each step:
 
-- **Before step 6 (flash):** nothing in the pad changed. Disconnect the pad and connect it again. The stock firmware starts.
+- **Before step 6 (flash):** nothing in the pad changed. Disconnect the pad. Connect it again. The stock firmware starts.
 - **After step 6:** write your backup back. See [stock-firmware.md](stock-firmware.md#write-the-backup-back-restore).
 
 ## Contents
@@ -26,7 +26,7 @@ You can stop at each step:
 4. [Install the bootloader driver (one time only)](#4-install-the-bootloader-driver-one-time-only)
 5. [Make a backup of the stock firmware](#5-make-a-backup-of-the-stock-firmware)
 6. [Flash the firmware](#6-flash-the-firmware)
-7. [Disconnect the pad and connect it again](#7-disconnect-the-pad-and-connect-it-again)
+7. [Restart the pad](#7-restart-the-pad)
 8. [Start the app](#8-start-the-app)
 9. [Run the check](#9-run-the-check)
 10. [First use](#10-first-use)
@@ -75,7 +75,7 @@ The zip holds these files (planned layout):
 3. Open `SHA256SUMS` in a text editor.
 4. Compare the two values. They must be the same.
 
-If you use the GitHub CLI, you can also check where the file was built:
+If you use the GitHub CLI, you can also check where GitHub built the file:
 
 ```powershell
 gh attestation verify .\kb16-mixer-0.1.0-windows-x64.zip --repo Dokuganrryu/kb16-mixer
@@ -83,7 +83,7 @@ gh attestation verify .\kb16-mixer-0.1.0-windows-x64.zip --repo Dokuganrryu/kb16
 
 The command must show that the verification succeeded. The attestation shows that GitHub Actions built the file from this repository.
 
-**If the values are not the same:** do not use the file. Delete it, and download it again. If the values are still different, tell us in an issue.
+**If the values are not the same:** do not use the file. Delete it. Download it again. If the values are still different, tell us in an issue.
 
 ### 1.3 Unzip the release
 
@@ -114,7 +114,7 @@ If `tar` cannot open the archive, use 7-Zip.
 
 The app and the script do not have a code signature. Windows can show warnings:
 
-- **"Windows protected your PC"** (SmartScreen) when you start `kb16-mixer.exe`. Click **More info**, then **Run anyway**. Do this only after the check in 1.2.
+- **"Windows protected your PC"** (SmartScreen) when you start `kb16-mixer.exe`. Click **More info**. Then click **Run anyway**. Do this only after the check in 1.2.
 - **"Running scripts is disabled on this system"** when you start `flash.ps1`. Use the command `powershell -ExecutionPolicy Bypass -File .\flash.ps1`. This changes the rule only for that one command.
 - An antivirus program can stop `dfu-util` or the driver installer. These tools write to USB devices, so some programs report them. Check the download with its SHA-256 value. Then allow the file in your antivirus program, or do not continue.
 
@@ -132,16 +132,18 @@ Do this check before you change anything. If one item does not agree, **STOP. Do
 
 Items 3 and 4 cannot tell rev1 from rev2: QMK gives both revisions the USB ID `D010:1601`. Only item 5 tells rev2 with certainty.
 The chip of rev2 is an APM32F103CBT6 with 128 KB of flash and the stm32duino ("Maple") bootloader at `0x08000000`. See [hardware.md](hardware.md).
-Only one rev2 unit was tested. Other production runs of rev2 can be different.
+The project tested only one rev2 unit. Other production runs of rev2 can be different.
 
 ### How to find the USB ID
 
 1. Connect the pad.
-2. Right-click the **Start** button, then click **Device Manager**.
-3. Open **Keyboards** or **Human Interface Devices**.
-4. Double-click a device. Click the **Details** tab.
-5. In **Property**, select **Hardware Ids**.
-6. Look for `VID_D010&PID_1601`. If this device does not have it, try the next device.
+2. Right-click the **Start** button.
+3. Click **Device Manager**.
+4. Open **Keyboards** or **Human Interface Devices**.
+5. Double-click a device.
+6. Click the **Details** tab.
+7. In **Property**, select **Hardware Ids**.
+8. Look for `VID_D010&PID_1601`. If this device does not have it, try the next device.
 
 You can also run this command in PowerShell. It shows the devices of the pad:
 
@@ -152,14 +154,16 @@ Get-PnpDevice -PresentOnly | Where-Object InstanceId -like 'USB\VID_D010&PID_160
 ### What --check tells you
 
 1. Open the folder of the release.
-2. Click the address bar, type `cmd`, and press Enter. A command prompt opens in this folder.
-3. Run this command:
+2. Click the address bar.
+3. Type `cmd`.
+4. Press Enter. A command prompt opens in this folder.
+5. Run this command:
 
    ```text
    kb16-mixer.exe --check | more
    ```
 
-4. Read the line that starts with `pad`.
+6. Read the line that starts with `pad`.
 
 | The pad line shows | Meaning | What to do |
 |---|---|---|
@@ -182,7 +186,7 @@ The check only reads. It does not change the pad, the settings or Windows. Its r
 **You see:** the screen and the key lights stay dark. Device Manager shows `Maple 003`, or an unknown device with the USB ID `1EAF:0003` (before step 4).
 
 **If you do not see it:** the stock firmware possibly does not have this way. See [stock-firmware.md](stock-firmware.md#put-the-pad-into-the-bootloader-from-the-stock-firmware) for the other ways.
-This way worked on the author's pad with a community firmware in it. It is not tested with the DOIO factory firmware.
+This way worked on the author's pad with a community firmware in it. Nobody tested it with the DOIO factory firmware.
 
 To leave the bootloader without a change, disconnect the pad and connect it again.
 
@@ -192,7 +196,7 @@ The pad needs no driver for normal use. Windows uses its own HID driver.
 Only the bootloader needs the generic WinUSB driver, so that `dfu-util` can talk to it.
 
 > **WARNING:** Install WinUSB only for the USB ID `1EAF:0003`.
-> If you change the driver of a different device, that device (for example your keyboard or mouse) can stop working.
+> If you change the driver of a different device, that device (for example your keyboard or mouse) can stop.
 
 > **WARNING:** Do not install WinUSB for the USB ID `D010:1601`.
 > That is the pad in normal use. It must keep the Windows HID driver, or the keys and the app do not work.
@@ -206,7 +210,7 @@ Status: **done on the author's PC**. The installer comes from QMK. It uses libwd
 1. Download `qmk_driver_installer.exe` (version 1.01) from https://github.com/qmk/qmk_driver_installer/releases.
 2. Put it in a new folder.
 3. In the same folder, make a text file with the name `drivers.txt`.
-4. Write this one line into the file, and save it:
+4. Write this one line into the file. Save the file.
 
    ```text
    winusb,STM32duino Bootloader,1EAF,0003,746915ec-99d8-4a90-a722-3c85ba31e4fe
@@ -264,7 +268,7 @@ Write down the SHA-256 value. Copy `stock-backup.bin` to a second place. For the
 
 ## 6. Flash the firmware
 
-> **CAUTION:** Do not disconnect the pad while the script writes. If you disconnect it, the firmware image is incomplete. This case was not tested. See [Recovery](flashing.md#recovery).
+> **CAUTION:** Do not disconnect the pad while the script writes. If you disconnect it, the firmware image is incomplete. Nobody tested this case. See [Recovery](flashing.md#recovery).
 
 **Do:**
 
@@ -279,7 +283,7 @@ Write down the SHA-256 value. Copy `stock-backup.bin` to a second place. For the
 4. When the script asks, type `YES` and press Enter.
 5. Wait until the script shows `Download done.` (approximately 10 seconds).
 
-**You see:** `Download done.` and then `NEXT: unplug the pad and plug it in again.`
+**You see:** `Download done.`, then `NEXT: unplug the pad and plug it in again.`
 After `Download done`, the line `dfu-util exit 74` is normal.
 
 **If you do not see it:**
@@ -290,7 +294,7 @@ After `Download done`, the line `dfu-util exit 74` is normal.
 The script writes only the firmware area (`0x08002000`). It does not write the bootloader. It does not write unless you type `YES`.
 If the pad is not in the bootloader when the script starts, the script tells you what to do and waits 120 seconds.
 
-## 7. Disconnect the pad and connect it again
+## 7. Restart the pad
 
 The bootloader starts the new firmware only after a power cycle.
 

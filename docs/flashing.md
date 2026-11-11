@@ -7,8 +7,8 @@ It also tells you how to recover the pad.
 - To build the image, see [build-from-source.md](build-from-source.md).
 - To make a backup of the stock firmware, or to go back to it, see [stock-firmware.md](stock-firmware.md).
 
-You flash firmware at your own risk. Flashing can void the warranty of the pad.
-The procedures were tested on one pad (KB16-01 rev2) with Windows 11.
+You flash firmware at your own risk. A flash can void the warranty of the pad.
+The author tested the procedures on one pad (KB16-01 rev2) with Windows 11.
 
 ## Contents
 
@@ -43,12 +43,12 @@ This project does not include `dfu-util`, a driver installer or a driver.
 ## Flash with flash.sh
 
 > **WARNING:** Flash only an image for the DOIO KB16-01 rev2.
-> An image for a different board can stop the firmware from starting.
+> An image for a different board can prevent the start of the firmware.
 
 > **WARNING:** Use only DFU alternate setting 2 (`-a 2`). This project does not use other alternate settings.
 
 > **CAUTION:** Do not disconnect the pad while `dfu-util` writes.
-> If you disconnect it, the firmware image is incomplete, and the pad can fail to start. This case was not tested. See [Recovery](#recovery).
+> If you disconnect it, the firmware image is incomplete, and the pad possibly does not start. Nobody tested this case. See [Recovery](#recovery).
 
 1. Open a POSIX shell in the repository folder.
 2. Run the script:
@@ -70,7 +70,7 @@ This project does not include `dfu-util`, a driver installer or a driver.
 8. Connect the pad again. The script shows this step as `NEXT:` at the end.
 
 The script stops `kb16-mixer.exe` before it flashes. Then it runs `kb16-mixer.exe --bootloader` if the built app exists.
-After the download, the script starts `kb16-mixer.exe` again from the same file, if the app was running before.
+After the download, the script starts `kb16-mixer.exe` again from the same file, if the app ran before.
 After "Download done", `dfu-util` can show exit code 74. This is normal.
 
 `flash.sh` asks for no confirmation, and it does not list the devices first. If more than one DFU device has the USB ID `1EAF:0003`, `dfu-util` itself refuses. `flash.ps1` does more checks. See [install.md](install.md#6-flash-the-firmware).
@@ -92,7 +92,7 @@ After "Download done", `dfu-util` can show exit code 74. This is normal.
 The bootloader does not start the new firmware after the download. It waits for a power cycle.
 Thus each flash ends with one disconnect and one connect.
 
-To check that the new firmware runs, see [install.md](install.md#7-disconnect-the-pad-and-connect-it-again) and [install.md](install.md#9-run-the-check).
+To check that the new firmware runs, see [install.md](install.md#7-restart-the-pad) and [install.md](install.md#9-run-the-check).
 
 ## Recovery
 
@@ -110,12 +110,12 @@ The firmware also recovers by itself:
 
 - A watchdog resets the chip if the firmware stops for approximately 2 seconds. The firmware then starts again.
 - After a crash, the firmware starts again.
-- After three crashed starts in a row, the firmware is designed to keep the pad in the bootloader. Then flash a correct image. This was not tested on the pad.
+- After three crashed starts in a row, the firmware keeps the pad in the bootloader (by design). Then flash a correct image. Nobody tested this on the pad.
 
 ### A firmware that does not start at all
 
 This case (for example, after an interrupted download) was **not tested**. The project can make no promise about it.
-These facts are known:
+The project knows these facts:
 
 - This firmware never writes the bootloader region.
 - The three ways above need this firmware to run. The top-left key check is part of this firmware, not of the bootloader.

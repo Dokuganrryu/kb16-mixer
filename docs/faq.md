@@ -28,7 +28,7 @@ This project cannot promise how an anti-cheat system judges it. The owner of eac
 
 These are the facts about the code:
 
-- The app moves only the volume sliders and the mute switches that the Windows volume mixer shows, and the level and the mute of your microphone.
+- The app moves only the volume sliders and the mute switches of the Windows volume mixer. It also changes the level and the mute of your microphone.
 - The app has no driver. It uses no keyboard hooks. It does not inject input.
 - The app does not open or read other processes. It gets the names of programs from a system snapshot only.
 - Keys that type (media keys, F13–F24, shortcuts, digits) come from the pad itself, as real USB keyboard input.
@@ -72,14 +72,14 @@ This is correct. The app cannot answer the prompt for you, and it does not try. 
 
 ## What is the BOOT message?
 
-The BOOT message is one fixed raw HID packet: the bytes `D1 7F` and then the letters `BOOT`. When the firmware receives it, the pad restarts into its bootloader. `kb16-mixer.exe --bootloader` and `flash.ps1` send it, so that you do not have to hold a key.
+The BOOT message is one fixed raw HID packet: the bytes `D1 7F`, followed by the letters `BOOT`. When the firmware receives it, the pad restarts into its bootloader. `kb16-mixer.exe --bootloader` and `flash.ps1` send it, so that you do not have to hold a key.
 
 - It is a marker, not a password. All copies of this firmware use the same bytes.
 - It gives no access to the PC, to your files or to other devices.
-- A program on your PC can send it, and then a new firmware can be written into the pad. You can always write this firmware back.
+- A program on your PC can send it. A program can then write a new firmware into the pad. You can always write this firmware back.
 - The bootloader itself stays the same. This firmware never writes it.
 
-The message is described in [protocol.md](protocol.md).
+[protocol.md](protocol.md) describes the message.
 
 ## How do I uninstall the app?
 
@@ -91,7 +91,7 @@ The message is described in [protocol.md](protocol.md).
 The firmware stays in the pad. Without the app, the pad is a normal keyboard with media knobs.
 To go back to the stock firmware also, see the next question.
 
-The WinUSB driver for the bootloader can stay. It applies only to the USB ID `1EAF:0003`. To remove it, open Device Manager with the pad in the bootloader, right-click `Maple 003`, and click **Uninstall device**. Select the option to delete the driver, if Windows shows it. This removal was not tested.
+The WinUSB driver for the bootloader can stay. It applies only to the USB ID `1EAF:0003`. To remove it, open Device Manager with the pad in the bootloader, right-click `Maple 003`, and click **Uninstall device**. Select the option to delete the driver, if Windows shows it. Nobody tested this removal.
 
 ## How do I go back to the stock firmware?
 
@@ -109,10 +109,10 @@ The first line of the tray menu shows the version of the app and of the firmware
 
 ## Does it work with other pads?
 
-It was tested on one DOIO KB16-01 rev2 only. rev1, the wireless KB16B-02 and other DOIO models are not supported. Other pads need their own firmware.
+The project tested it on one DOIO KB16-01 rev2 only. rev1, the wireless KB16B-02 and other DOIO models are not supported. Other pads need their own firmware.
 To check your pad, see [install.md](install.md#2-check-your-pad).
 
 ## Does it work on Linux or macOS?
 
-The app runs only on Windows. Without the app, the pad is a standard USB keyboard. This was not tested on Linux or macOS.
-`scripts/flash.sh` also runs on Linux. This was not tested.
+The app runs only on Windows. Without the app, the pad is a standard USB keyboard. Nobody tested this on Linux or macOS.
+`scripts/flash.sh` is also for Linux. Nobody tested it there.

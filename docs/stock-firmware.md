@@ -1,15 +1,15 @@
 # Stock firmware: back up, restore, go back
 
-This document tells you how to put a pad with its stock firmware into the bootloader, how to make a backup of that firmware, and how to write the backup back.
+This document tells you how to put a pad with its stock firmware into the bootloader. It also tells you how to make a backup of that firmware and how to write the backup back.
 "Stock firmware" here means the firmware in your pad before you flash KB16 Mixer. It can be the factory firmware from DOIO, or a different firmware that a person installed before you.
 
 This project does not include, host or link a copy of any stock firmware. The firmware from the factory is the work of its maker.
 
-You flash firmware at your own risk. Flashing can void the warranty of the pad.
+You flash firmware at your own risk. A flash can void the warranty of the pad.
 
 ## Contents
 
-- [What is known and what is not known](#what-is-known-and-what-is-not-known)
+- [What the project knows and does not know](#what-the-project-knows-and-does-not-know)
 - [Put the pad into the bootloader from the stock firmware](#put-the-pad-into-the-bootloader-from-the-stock-firmware)
 - [Make a backup of the stock firmware](#make-a-backup-of-the-stock-firmware)
 - [Write the backup back (restore)](#write-the-backup-back-restore)
@@ -17,7 +17,7 @@ You flash firmware at your own risk. Flashing can void the warranty of the pad.
 - [Other sources of a stock image](#other-sources-of-a-stock-image)
 - [After you go back to the stock firmware](#after-you-go-back-to-the-stock-firmware)
 
-## What is known and what is not known
+## What the project knows and does not know
 
 Each step in this document has one of these labels:
 
@@ -32,7 +32,7 @@ These facts are important:
 
 - The author's pad did **not** have the DOIO factory firmware when this project started. It had a community firmware for the Vial configurator. A person installed it before the start of this project. The replies of the firmware to configurator commands showed this.
 - The author did **not** make a backup before the first flash. Thus nobody in this project has read or restored a factory firmware.
-- The author made backups of the firmware area later, with this project's firmware in the pad. That is how the backup command and the file size below are known.
+- The author made backups of the firmware area later, with this project's firmware in the pad. Thus the project knows the backup command and the file size below.
 
 ## Put the pad into the bootloader from the stock firmware
 
@@ -82,7 +82,7 @@ Status: **done on the author's pad**.
 - Device Manager shows a device with the name `Maple 003`.
 - The device has the USB ID `1EAF:0003`. Its device instance path starts with `USB\VID_1EAF&PID_0003`.
 
-If Windows shows the USB ID `03EB:2FF4` or the name `ATmega32U4`, **stop**. Your pad is possibly a rev1, which has an Atmel DFU bootloader (QMK documentation). This project does not support rev1. See [Is my pad supported?](install.md#1-check-your-pad).
+If Windows shows the USB ID `03EB:2FF4` or the name `ATmega32U4`, **stop**. Your pad is possibly a rev1, which has an Atmel DFU bootloader (QMK documentation). This project does not support rev1. See [Is my pad supported?](install.md#2-check-your-pad).
 
 If no way puts the pad into the bootloader, do not flash. Your pad stays as it is. Tell us in an issue.
 
@@ -114,7 +114,7 @@ This command reads the backup, checks it, and writes nothing to the pad. Do it i
 `flash.ps1` refuses a backup that is empty, that holds only `0xFF` bytes (an empty flash area), or that does not have 122880 bytes.
 If it refuses, do not flash. Keep the pad as it is and tell us in an issue.
 
-The end-to-end backup with `flash.ps1` was **not tested** on the pad. Its checks were tested with a simulated `dfu-util`.
+The end-to-end backup with `flash.ps1` was **not tested** on the pad. The project tested its checks with a simulated `dfu-util`.
 
 ### Backup with dfu-util only
 
@@ -145,7 +145,8 @@ The end-to-end backup with `flash.ps1` was **not tested** on the pad. Its checks
    Get-FileHash .\stock-backup.bin -Algorithm SHA256
    ```
 
-7. Disconnect the pad and connect it again. The stock firmware starts again.
+7. Disconnect the pad.
+8. Connect the pad again. The stock firmware starts again.
 
 > **NOTE:** Do not share your backup. It is the firmware of its maker, and it can hold your own key settings.
 
@@ -156,7 +157,7 @@ Status: **not tested**. Nobody in this project has written a backup of a stock f
 Use `dfu-util` directly. `flash.ps1` and `flash.sh` refuse the backup, because it is larger than the 117 KB limit for this project's firmware.
 That limit protects the name page and the crash log of this project. The backup is a copy of the whole area, so a write of the whole area puts back what was there.
 
-1. Quit the app. Right-click the tray icon, then click **Quit**.
+1. Quit the app. Right-click the tray icon. Click **Quit**.
 2. Put the pad into the bootloader. With this project's firmware in the pad, use a way in [Recovery](flashing.md#recovery).
 3. Check the SHA-256 value of the backup. It must be the value that you wrote down:
 
@@ -171,7 +172,7 @@ That limit protects the name page and the crash log of this project. The backup 
    ```
 
 5. Do not disconnect the pad while `dfu-util` writes.
-6. Wait until `dfu-util` shows `Download done`. After that line, exit code 74 is normal.
+6. Wait until `dfu-util` shows `Download done`. Exit code 74 after this line is normal.
 7. Disconnect the pad.
 8. Connect the pad again.
 
@@ -214,7 +215,7 @@ powershell -ExecutionPolicy Bypass -File .\flash.ps1 -Firmware .\other-image.bin
 ## After you go back to the stock firmware
 
 1. If **Start with Windows** is on, clear it on the **Pad** tab of the settings window.
-2. Quit the app. Right-click the tray icon, then click **Quit**.
+2. Quit the app. Right-click the tray icon. Click **Quit**.
 3. Delete the folder of the app.
 4. If you want, delete the settings folder `%APPDATA%\kb16-mixer`.
 
