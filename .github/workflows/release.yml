@@ -1,0 +1,126 @@
+name: Release
+
+# A pushed tag v* builds the firmware image and the app with the same checks as CI, and attaches
+# them to a GitHub release with LICENSE, THIRD_PARTY_NOTICES.md and their SHA-256 sums.
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The pad reports its firmware version (bcdDevice) from firmware/Cargo.toml and the app shows its
+  # own from app/Cargo.toml: both must be the version the tag names.
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches the crate versions
+        run: |
+          for crate in app firmware; do
+            v=$(sed -n 's/^version = "\(.*\)"/\1/p' "$crate/Cargo.toml" | head -n 1)
+            if [ "v$v" != "$GITHUB_REF_NAME" ]; then
+              echo "::error::$crate/Cargo.toml says $v but the tag is $GITHUB_REF_NAME"
+              exit 1
+            fi
+          done
+
+  protocol:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: protocol
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy,llvm-tools --target thumbv7m-none-eabi
+          rustup default stable
+      - name: Format
+        working-directory: firmware
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: firmware
+        run: cargo clippy --release --locked
+      # Builds the image with llvm-objcopy and rejects it unless the vector table and size check out.
+      - name: Build and check the image
+        run: sh scripts/build-firmware.sh
+      - name: Name the image after the tag
+        run: cp firmware/target/kb16-mixer-firmware.bin "kb16-mixer-firmware-${GITHUB_REF_NAME}.bin"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: kb16-mixer-firmware-${{ github.ref_name }}.bin
+          if-no-files-found: error
+
+  app:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - name: Format
+        working-directory: app
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: app
+        run: cargo clippy --all-targets --locked
+      - name: Test
+        working-directory: app
+        run: cargo test --locked
+      - name: Build
+        run: sh scripts/build-app.sh
+      - name: Name the app after the tag
+        run: cp app/target/release/kb16-mixer.exe "kb16-mixer-${GITHUB_REF_NAME}.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: kb16-mixer-${{ github.ref_name }}.exe
+          if-no-files-found: error
+
+  release:
+    needs: [versions, protocol, firmware, app]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Collect the files and their sums
+        run: |
+          cp LICENSE THIRD_PARTY_NOTICES.md dist/
+          cd dist
+          ls -l
+          sha256sum "kb16-mixer-firmware-${GITHUB_REF_NAME}.bin" "kb16-mixer-${GITHUB_REF_NAME}.exe" \
+            LICENSE THIRD_PARTY_NOTICES.md > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag \
+            "kb16-mixer-firmware-${GITHUB_REF_NAME}.bin" "kb16-mixer-${GITHUB_REF_NAME}.exe" \
+            LICENSE THIRD_PARTY_NOTICES.md SHA256SUMS.txt
