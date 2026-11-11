@@ -197,9 +197,10 @@ The command reads the firmware area (from `0x08002000`). It does not read or cha
    4. Hold the key until the download starts.
 5. Wait until `dfu-util` shows "Download done".
 6. Disconnect the pad.
-7. Connect the pad again.
+7. Connect the pad again. The script shows this step as `NEXT:` at the end.
 
 The script stops `kb16-mixer.exe` before it flashes. Then it runs `kb16-mixer.exe --bootloader` if the built app exists.
+After the download, the script starts `kb16-mixer.exe` again from the same file, if the app was running before.
 After "Download done", `dfu-util` can show exit code 74. This is normal.
 
 ### Procedure with dfu-util only

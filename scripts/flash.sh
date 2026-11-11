@@ -34,6 +34,14 @@ fi
 
 echo "firmware: $BIN ($(wc -c < "$BIN") bytes)"
 echo "dfu-util: $DFU"
+# The running app would take the pad back between the bootloader request and the download, so
+# it is stopped here and started again from the same exe after the download.
+RUNNING=""
+if command -v powershell.exe >/dev/null 2>&1; then
+  RUNNING=$(powershell.exe -NoProfile -Command \
+    "Get-Process kb16-mixer -ErrorAction SilentlyContinue | ForEach-Object { \$_.Path } | Sort-Object -Unique" |
+    tr -d '\r')
+fi
 if command -v taskkill >/dev/null 2>&1; then
   taskkill //IM kb16-mixer.exe //F >/dev/null 2>&1
 fi
@@ -44,3 +52,11 @@ else
 fi
 "$DFU" -w -d 1eaf:0003 -a 2 -D "$BIN" -R
 echo "dfu-util exit $? (74 after 'Download done' is normal)"
+
+echo "$RUNNING" | while IFS= read -r exe; do
+  if [ -n "$exe" ]; then
+    powershell.exe -NoProfile -Command "Start-Process -FilePath '$exe'" && echo "started the app again: $exe"
+  fi
+done
+echo
+echo "NEXT: unplug the pad and plug it in again. The bootloader starts the new firmware only after that."
