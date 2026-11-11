@@ -64,13 +64,25 @@ if [ -x "$APP" ] && "$APP" --bootloader; then
 else
   echo "waiting for the bootloader: unplug, hold the top-left key, plug in, keep holding"
 fi
-"$DFU" -w -d 1eaf:0003 -a 2 -D "$BIN" -R
-echo "dfu-util exit $? (74 after 'Download done' is normal)"
+# The output is kept to look for "Download done", the same success test as flash.ps1: dfu-util
+# can exit with 74 after a good download, because the bootloader does not answer the reset.
+LOG=$(mktemp) || exit 1
+{ "$DFU" -w -d 1eaf:0003 -a 2 -D "$BIN" -R 2>&1; echo "dfu-util exit $? (74 after 'Download done' is normal)"; } |
+  tee "$LOG"
+DONE=no
+if grep -v '^dfu-util exit' "$LOG" | grep -q 'Download done'; then DONE=yes; fi
+rm -f "$LOG"
 
 echo "$RUNNING" | while IFS= read -r exe; do
   if [ -n "$exe" ]; then
     powershell.exe -NoProfile -Command "Start-Process -FilePath '$exe'" && echo "started the app again: $exe"
   fi
 done
+if [ "$DONE" != yes ]; then
+  echo
+  echo 'FAILED: dfu-util did not show "Download done". Do not unplug the pad yet.' >&2
+  echo 'Run the script again. If it fails again, see docs/troubleshooting.md.' >&2
+  exit 1
+fi
 echo
 echo "NEXT: unplug the pad and plug it in again. The bootloader starts the new firmware only after that."
