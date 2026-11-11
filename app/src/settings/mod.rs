@@ -1,5 +1,6 @@
-//! The settings window: three tabs (Keys, Channels, Pad) of plain Win32 controls, created when
-//! opened and destroyed when closed, so it costs nothing the rest of the time.
+//! The settings window: three tabs (Keys, Channels, Pad) of real Win32 controls with the look of
+//! `crate::ui`, created when opened and destroyed when closed, so it costs nothing the rest of
+//! the time.
 //!
 //! Every change is written into config.toml with its comments and layout kept, but only once
 //! the app's own parser accepts the result: a change that would stop the file from loading is
@@ -11,10 +12,11 @@
 //! Channels tab shows every app where the mixer puts it (`audio::assign`, the mixer's own rule),
 //! marks the moved ones, and asks the mixer to forget a move when one is removed.
 //!
-//! The files: `layout` makes the controls and `fill` fills them from the file; `changes`
-//! applies what is changed in them, `apps` the Channels tab's Add and Remove, `file` the edits
-//! of config.toml. `choices` and `checks` are the plain logic behind them, `controls` and `ids`
-//! the Win32 parts they share.
+//! The files: `layout` makes the controls, `scene` paints what lies under them, and `fill`
+//! fills them from the file; `changes` applies what is changed in them, `apps` the Channels
+//! tab's Add and Remove, `file` the edits of config.toml. `choices` and `checks` are the plain
+//! logic behind them, `controls` and `ids` the Win32 parts they share. `preview` draws the
+//! window hidden into a picture, for the design checks.
 
 mod apps;
 mod changes;
@@ -25,23 +27,24 @@ mod file;
 mod fill;
 mod ids;
 mod layout;
+mod preview;
+mod scene;
+#[cfg(test)]
+mod window_tests;
 
 pub use fill::{apps_moved, pad_changed, reloaded};
+pub use preview::{Options, Picture, Preview, render_hidden};
 
 use changes::changed;
 use checks::Member;
-use controls::{CONTROLS, FONT, child, dpi, font_height, scale, status, system_dpi};
+use controls::{CONTROLS, child, dpi_setting, set_checked, status, system_dpi};
 use fill::{catch_up, fill, problem_text};
 use ids::*;
 use layout::{HEIGHT, WIDTH, build, show_tab};
 use std::cell::{Cell, RefCell};
 use windows::Win32::Foundation::*;
-use windows::Win32::Graphics::Gdi::{
-    COLOR_WINDOW, CreateFontIndirectW, DeleteObject, GetSysColor, GetSysColorBrush, HBRUSH, HDC, SetBkColor,
-};
-use windows::Win32::UI::Controls::{
-    ICC_BAR_CLASSES, ICC_TAB_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, NMHDR, TCN_SELCHANGE,
-};
+use windows::Win32::UI::Controls::{ICC_BAR_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx};
+use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::w;
 
@@ -68,10 +71,11 @@ thread_local! {
     static SEEN: RefCell<Option<String>> = const { RefCell::new(None) };
     /// The text box being typed in, if any: Enter applies it.
     static EDITING: Cell<Option<i32>> = const { Cell::new(None) };
-    /// The tab pages' colour, for the labels, tick boxes and slider on them.
-    static PANE: Cell<Option<COLORREF>> = const { Cell::new(None) };
-    static PANE_BRUSH: Cell<HBRUSH> = const { Cell::new(HBRUSH(std::ptr::null_mut())) };
+    static REGISTERED: Cell<bool> = const { Cell::new(false) };
 }
+
+const STYLE: WINDOW_STYLE =
+    WINDOW_STYLE(WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0 | WS_CLIPCHILDREN.0);
 
 /// The open settings window, if any (for the message loop's keyboard navigation).
 pub fn window() -> Option<HWND> {
@@ -79,42 +83,96 @@ pub fn window() -> Option<HWND> {
     (!h.is_invalid()).then_some(h)
 }
 
+/// Shows tab `i`; by mouse its indicator slides there.
+fn select_tab(i: usize) {
+    let old = TAB.replace(i);
+    for t in 0..TABS.len() {
+        set_checked(ID_TAB + t as i32, t == i);
+    }
+    scene::slide(scene::PART_TAB, old, i);
+    show_tab();
+}
+
+/// Ctrl+Tab and Ctrl+Shift+Tab, from any control: the next or previous tab, with the focus on it.
+fn ctrl_tab(back: bool) {
+    let i = (TAB.get() + if back { TABS.len() - 1 } else { 1 }) % TABS.len();
+    select_tab(i);
+    crate::win::set_focus(child(ID_TAB + i as i32));
+}
+
+/// The window's size for a client area of the design at `dpi`.
+fn outer_size(dpi: i32) -> (i32, i32) {
+    let mut rect = RECT { left: 0, top: 0, right: WIDTH * dpi / 96, bottom: HEIGHT * dpi / 96 };
+    // SAFETY: AdjustWindowRectExForDpi only computes into `rect`.
+    unsafe {
+        let _ = AdjustWindowRectExForDpi(&mut rect, STYLE, false, WS_EX_CONTROLPARENT, dpi as u32);
+    }
+    (rect.right - rect.left, rect.bottom - rect.top)
+}
+
+/// Makes every control again at the window's new scale, keeping the tab and the status line.
+fn rebuild(hwnd: HWND) {
+    let note = controls::text_of(ID_STATUS);
+    let kids: Vec<HWND> = CONTROLS.with_borrow(|c| c.iter().map(|k| k.0).collect());
+    for k in kids {
+        // SAFETY: the children are ours, on this thread.
+        unsafe {
+            let _ = DestroyWindow(k);
+        }
+    }
+    controls::forget_all();
+    MEMBERS.with_borrow_mut(Vec::clear);
+    build(hwnd);
+    match fill(true) {
+        Some(e) => status(&problem_text(&e)),
+        None => status(&note),
+    }
+}
+
 unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if let Some(r) = crate::ui::widget::parent_msg(hwnd, msg, wparam, lparam) {
+        return r;
+    }
     // SAFETY: Windows calls this on the window's own thread with the message's real parameters:
-    // WM_NOTIFY's lParam points to an NMHDR, and the WM_CTLCOLOR* wParam is a live DC.
+    // WM_DPICHANGED's lParam points to the suggested window rectangle.
     unsafe {
         match msg {
             WM_COMMAND => {
-                changed(hwnd, (wparam.0 & 0xFFFF) as i32, (wparam.0 >> 16) as u32);
-                LRESULT(0)
-            }
-            WM_NOTIFY => {
-                let hdr = &*(lparam.0 as *const NMHDR);
-                if hdr.idFrom == ID_TABS as usize && hdr.code == TCN_SELCHANGE {
-                    TAB.set(crate::win::send(child(ID_TABS), TCM_GETCURSEL, 0, 0).max(0) as usize);
-                    show_tab();
+                let (id, code) = ((wparam.0 & 0xFFFF) as i32, (wparam.0 >> 16) as u32);
+                if (ID_TAB..ID_TAB + TABS.len() as i32).contains(&id) {
+                    if code == BN_CLICKED {
+                        select_tab((id - ID_TAB) as usize);
+                    }
+                } else {
+                    changed(hwnd, id, code);
                 }
                 LRESULT(0)
             }
-            // The brightness slider, once the mouse or key is released.
-            WM_HSCROLL if (wparam.0 & 0xFFFF) as u32 == TB_ENDTRACK => {
-                changed(hwnd, ID_BRIGHTNESS, 0);
+            // The brightness slider: its value shows while it moves, and applies once released.
+            WM_HSCROLL => {
+                fill::show_brightness();
+                if (wparam.0 & 0xFFFF) as u32 == TB_ENDTRACK {
+                    changed(hwnd, ID_BRIGHTNESS, 0);
+                }
                 LRESULT(0)
-            }
-            // Labels, tick boxes and the slider take the colour of the tab page under them.
-            WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
-                let from = HWND(lparam.0 as *mut _);
-                let on_page = CONTROLS.with_borrow(|c| c.iter().any(|(h, _, tab)| *h == from && tab.is_some()));
-                let (color, brush) = match PANE.get() {
-                    Some(c) if on_page => (c, PANE_BRUSH.get()),
-                    _ => (COLORREF(GetSysColor(COLOR_WINDOW)), GetSysColorBrush(COLOR_WINDOW)),
-                };
-                SetBkColor(HDC(wparam.0 as *mut _), color);
-                LRESULT(brush.0 as isize)
             }
             WM_ACTIVATE if (wparam.0 & 0xFFFF) as u32 != WA_INACTIVE => {
                 catch_up();
                 DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+            WM_SETTINGCHANGE | WM_THEMECHANGED | WM_SYSCOLORCHANGE => {
+                if crate::ui::theme::refresh() {
+                    crate::ui::widget::restyle(hwnd);
+                }
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+            WM_DPICHANGED if dpi_setting().is_none() => {
+                crate::ui::rescale((wparam.0 & 0xFFFF) as i32);
+                let r = &*(lparam.0 as *const RECT);
+                let (w, h) = (r.right - r.left, r.bottom - r.top);
+                let _ = SetWindowPos(hwnd, None, r.left, r.top, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+                rebuild(hwnd);
+                LRESULT(0)
             }
             WM_CLOSE => {
                 if let Some(id) = EDITING.get() {
@@ -125,16 +183,20 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             }
             WM_DESTROY => {
                 WINDOW.set(HWND::default());
+                scene::stop_chip_timer();
+                crate::ui::widget::drop_scene(hwnd);
+                crate::ui::widget::on_ctrl_tab(None);
                 controls::forget_all();
                 MEMBERS.with_borrow_mut(Vec::clear);
                 HIDDEN.with_borrow_mut(Vec::clear);
                 SEEN.set(None);
                 EDITING.set(None);
-                if !PANE_BRUSH.get().is_invalid() {
-                    let _ = DeleteObject(PANE_BRUSH.replace(HBRUSH::default()).into());
-                }
-                PANE.set(None);
                 LRESULT(0)
+            }
+            // The children are gone by now: the fonts they used can go too.
+            WM_NCDESTROY => {
+                crate::ui::end();
+                DefWindowProcW(hwnd, msg, wparam, lparam)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
@@ -148,73 +210,87 @@ pub fn open() {
 
 /// Opens the window on `tab` (or where it was), with `note` in the status line.
 pub fn open_at(tab: Option<Tab>, note: Option<&str>) {
+    if let Some(existing) = window() {
+        if let Some(t) = tab {
+            select_tab(TABS.iter().position(|x| x.0 == t).unwrap_or(0));
+        }
+        if let Some(n) = note {
+            status(n);
+        }
+        // SAFETY: the window is ours and on this thread.
+        unsafe {
+            let _ = SetForegroundWindow(existing);
+        }
+        return;
+    }
+    let Some(hwnd) = create(tab, note) else { return };
+    // SAFETY: the window was just made on this thread.
+    unsafe {
+        let _ = ShowWindow(hwnd, SW_SHOW);
+        let _ = SetForegroundWindow(hwnd);
+    }
+}
+
+/// Makes the window, hidden, with every control filled; None if Windows refused.
+fn create(tab: Option<Tab>, note: Option<&str>) -> Option<HWND> {
     if let Some(t) = tab {
         TAB.set(TABS.iter().position(|x| x.0 == t).unwrap_or(0));
     }
+    let instance = crate::win::instance();
     // SAFETY: plain Win32 calls on this thread. The structs passed carry their own sizes, the
-    // font and class name outlive the calls, and the window procedure is `proc` above.
+    // class name outlives the calls, and the window procedure is `proc` above.
     unsafe {
-        if let Some(existing) = window() {
-            crate::win::send(child(ID_TABS), TCM_SETCURSEL, TAB.get(), 0);
-            show_tab();
-            if let Some(n) = note {
-                status(n);
-            }
-            let _ = SetForegroundWindow(existing);
-            return;
-        }
-        let instance = crate::win::instance();
-        if FONT.get().is_invalid() {
+        if !REGISTERED.replace(true) {
             let _ = InitCommonControlsEx(&INITCOMMONCONTROLSEX {
                 dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
-                dwICC: ICC_BAR_CLASSES | ICC_TAB_CLASSES,
+                dwICC: ICC_BAR_CLASSES,
             });
-            let mut metrics = NONCLIENTMETRICSW { cbSize: size_of::<NONCLIENTMETRICSW>() as u32, ..Default::default() };
-            let _ = SystemParametersInfoW(
-                SPI_GETNONCLIENTMETRICS,
-                metrics.cbSize,
-                Some((&raw mut metrics).cast()),
-                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-            );
-            let font = &mut metrics.lfMessageFont;
-            font.lfHeight = font_height(font.lfHeight, dpi(), system_dpi());
-            FONT.set(CreateFontIndirectW(font));
             RegisterClassW(&WNDCLASSW {
                 lpfnWndProc: Some(proc),
                 hInstance: instance,
                 lpszClassName: w!("kb16-mixer-settings"),
-                hbrBackground: GetSysColorBrush(COLOR_WINDOW),
                 hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
                 hIcon: LoadIconW(None, IDI_APPLICATION).unwrap_or_default(),
                 ..Default::default()
             });
         }
-        let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-        let mut rect = RECT { left: 0, top: 0, right: scale(WIDTH), bottom: scale(HEIGHT) };
-        let _ = AdjustWindowRect(&mut rect, style, false);
+        let first = dpi_setting().unwrap_or_else(system_dpi);
+        let (w, h) = outer_size(first);
+        crate::ui::begin(first);
         let Ok(hwnd) = CreateWindowExW(
             WS_EX_CONTROLPARENT,
             w!("kb16-mixer-settings"),
             w!("KB16 mixer settings"),
-            style,
+            STYLE,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            rect.right - rect.left,
-            rect.bottom - rect.top,
+            w,
+            h,
             None,
             None,
             Some(instance),
             None,
         ) else {
-            return crate::log("could not create the settings window");
+            crate::ui::end();
+            crate::log("could not create the settings window");
+            return None;
         };
+        // On a display of another scale than the system's, the window takes that one.
+        let dpi = dpi_setting().unwrap_or(GetDpiForWindow(hwnd) as i32);
+        if dpi != first && dpi > 0 {
+            crate::ui::rescale(dpi);
+            let (w, h) = outer_size(dpi);
+            let _ = SetWindowPos(hwnd, None, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
         WINDOW.set(hwnd);
+        crate::ui::widget::set_scene(hwnd, scene::paint);
+        crate::ui::widget::on_ctrl_tab(Some(ctrl_tab));
+        crate::ui::theme::chrome(hwnd);
         build(hwnd);
         match fill(true) {
             Some(e) => status(&problem_text(&e)),
             None => status(note.unwrap_or(STATUS_IDLE)),
         }
-        let _ = ShowWindow(hwnd, SW_SHOW);
-        let _ = SetForegroundWindow(hwnd);
+        Some(hwnd)
     }
 }

@@ -1,9 +1,10 @@
 //! The settings window's small modal dialogs: "press the keys you want" (`shortcut`, with the
 //! key logic in `keys`), and a line of text with a Browse button (`text`). Built from in-memory
-//! dialog templates, so Windows does the modality, the keyboard navigation and the scaling to
-//! the display.
+//! dialog templates, so Windows does the modality and the keyboard navigation; `look` gives them
+//! the settings window's look and places their controls at its scale.
 
 mod keys;
+mod look;
 mod shortcut;
 mod text;
 
@@ -15,7 +16,8 @@ use crate::win;
 use std::cell::RefCell;
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DLGPROC, DS_SETFONT, DialogBoxIndirectParamW, EndDialog, WS_CAPTION, WS_CHILD, WS_POPUP, WS_SYSMENU, WS_VISIBLE,
+    CreateDialogIndirectParamW, DLGPROC, DS_SETFONT, DialogBoxIndirectParamW, EndDialog, WS_CAPTION, WS_CHILD,
+    WS_CLIPCHILDREN, WS_POPUP, WS_SYSMENU, WS_VISIBLE,
 };
 use windows::core::PCWSTR;
 
@@ -48,7 +50,8 @@ fn template(title: &str, size: [i16; 2], items: &[Item]) -> Vec<u32> {
     let mut b: Vec<u16> = Vec::new();
     let dword = |b: &mut Vec<u16>, v: u32| b.extend([v as u16, (v >> 16) as u16]);
     let text = |b: &mut Vec<u16>, s: &str| b.extend(s.encode_utf16().chain([0]));
-    let style = DS_SETFONT as u32 | DS_MODALFRAME | DS_CENTER | WS_POPUP.0 | WS_CAPTION.0 | WS_SYSMENU.0;
+    let style =
+        DS_SETFONT as u32 | DS_MODALFRAME | DS_CENTER | WS_POPUP.0 | WS_CAPTION.0 | WS_SYSMENU.0 | WS_CLIPCHILDREN.0;
     dword(&mut b, style);
     dword(&mut b, 0);
     b.push(items.len() as u16);
@@ -89,6 +92,25 @@ fn run(owner: HWND, template: &[u32], proc: DLGPROC) -> isize {
     unsafe { DialogBoxIndirectParamW(Some(win::instance()), template.as_ptr().cast(), Some(owner), proc, LPARAM(0)) }
 }
 
+/// A dialog the hidden renderer draws.
+pub enum Which {
+    /// Started from a shortcut (modifiers, key name).
+    Shortcut(Option<(u8, String)>),
+    Open(String),
+    Program,
+}
+
+/// Makes a dialog modeless and hidden (its template has no WS_VISIBLE), for a picture of it.
+pub fn hidden(which: Which) -> Option<HWND> {
+    let (t, proc) = match which {
+        Which::Shortcut(current) => (shortcut::prepare(current), shortcut::PROC),
+        Which::Open(now) => (text::prepare_open(&now), text::PROC),
+        Which::Program => (text::prepare_program(), text::PROC),
+    };
+    // SAFETY: as in `run`; the template is copied when the dialog is made.
+    unsafe { CreateDialogIndirectParamW(Some(win::instance()), t.as_ptr().cast(), None, proc, LPARAM(0)).ok() }
+}
+
 /// Closes a dialog of ours with `code`, which `run` then returns.
 fn end(dlg: HWND, code: isize) {
     // SAFETY: called from the dialog's own procedure, on its thread, as EndDialog requires.
@@ -114,6 +136,12 @@ const ID_FIELD: u16 = 10;
 const ID_EXTRA: u16 = 11;
 const ID_HINT: u16 = 12;
 const ID_CLEAR: u16 = 13;
+const ID_PROMPT: u16 = 14;
+const ID_NOTE: u16 = 15;
+const SS_OWNERDRAW: u32 = 0x000D;
+const BS_OWNERDRAW: u32 = 0x000B;
+const BS_AUTOCHECKBOX: u32 = 0x0003;
+const ES_AUTOHSCROLL: u32 = 0x0080;
 
 #[cfg(test)]
 mod tests {
@@ -134,6 +162,7 @@ mod tests {
         // "Segoe UI" ends at word 22, so the first item starts at the next DWORD, word 24.
         assert_eq!(String::from_utf16_lossy(&words[15..23]), "egoe UI\0");
         assert_eq!(t[12], WS_CHILD.0 | WS_VISIBLE.0, "the first item's style");
+        assert_eq!(header_style & WS_VISIBLE.0, 0, "a dialog shows only when it is run");
         assert_eq!(&words[28..35], [7, 7, 50, 10, 0xFFFF, 0xFFFF, 0x0082], "rect, id, the static class");
         assert_eq!(&words[35..39], ['H' as u16, 'i' as u16, 0, 0], "its text and no creation data");
         assert_eq!(&words[44..47], [1, 2, 3], "the second item starts on a DWORD");

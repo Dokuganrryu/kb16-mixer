@@ -1,194 +1,188 @@
-//! Where every control of the window goes, and which of them the open tab shows.
+//! Where every control of the window goes (the numbers of the design, in pixels at 100 %), and
+//! which of them the open tab shows. The cards and frames around them are painted by `scene`.
 
 use super::checks::CHANNEL_NAME_LEN;
 use super::choices::{BRIGHTNESS_PERCENT, KNOB_NAMES, ROW_NAMES};
-use super::controls::{BUILDING, CONTROLS, button, combo, control, label, scale, show};
+use super::controls::*;
 use super::ids::*;
-use super::{HIDDEN, PANE, PANE_BRUSH, STATUS_IDLE, TAB, TABS, Tab};
+use super::{HIDDEN, STATUS_IDLE, TAB, TABS, Tab};
+use crate::ui::canvas::R;
+use crate::ui::theme::Tok;
+use crate::ui::{Align, Font, Label};
 use crate::win::send;
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DeleteDC, DeleteObject, GetDC, GetPixel, ReleaseDC,
-    SelectObject,
-};
-use windows::Win32::UI::Controls::{TCIF_TEXT, TCITEMW, WC_TABCONTROLW};
-use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::core::{PWSTR, w};
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::WindowsAndMessaging::WS_TABSTOP;
+use windows::core::w;
 
 /// Client area at 96 dpi.
-pub const WIDTH: i32 = 680;
-pub const HEIGHT: i32 = 532;
-const COL_X: i32 = 126;
-const COL_W: i32 = 136;
-const CH_X: i32 = 24;
-const CH_W: i32 = 150;
-const CH_STEP: i32 = 160;
+pub const WIDTH: i32 = 712;
+pub const HEIGHT: i32 = 424;
+/// The page under the header: tab contents are laid out from here down.
+const PAGE: i32 = 48;
+/// The footer starts here, with a line.
+pub const FOOTER: i32 = 368;
+
+pub const TAB_TRACK: R = R::new(16, 8, 270, 32);
+pub const TAB_ITEM: (i32, i32) = (88, 26);
+pub const PAGE_TRACK: R = R::new(16, PAGE + 8, 182, 28);
+pub const PAGE_ITEM: (i32, i32) = (88, 22);
+pub const KEY_CARD: R = R::new(16, PAGE + 44, 680, 160);
+const KEY_COL: i32 = 112;
+const KEY_PITCH: i32 = 140;
+
+/// Channel card `i`.
+pub fn channel_card(i: i32) -> R {
+    R::new(16 + i * 172, PAGE + 8, 164, 264)
+}
+
+pub const SCREEN_CARD: R = R::new(16, PAGE + 8, 376, 192);
+pub const KNOBS_CARD: R = R::new(16, PAGE + 208, 376, 104);
+pub const LIGHTS_CARD: R = R::new(400, PAGE + 8, 296, 144);
+pub const SYSTEM_CARD: R = R::new(400, PAGE + 160, 296, 152);
+pub const CHIP: (i32, i32, i32) = (528, 384, 24);
+
+const fn look(font: Font, color: Tok, align: Align, wrap: bool) -> Label {
+    Label { font, color, align, wrap, quiet: None }
+}
+
+const HINT: Label = look(Font::Small, Tok::Text2, Align::Left, true);
+const ROW: Label = look(Font::Body, Tok::Text2, Align::Left, false);
+const FORM: Label = look(Font::Body, Tok::Text, Align::Left, false);
+const TITLE: Label = look(Font::SmallStrong, Tok::Text, Align::Left, false);
+const COLUMN: Label = Label { quiet: Some("(no channel)"), ..look(Font::SmallStrong, Tok::Text, Align::Center, false) };
+const VALUE: Label = look(Font::Body, Tok::Text, Align::Right, false);
+
+fn text(hwnd: HWND, id: i32, s: &str, r: R, l: Label) {
+    label(hwnd, id, s, at(r.x, r.y, r.w, r.h), l);
+}
+
+/// A card's title and its rows: a label at the left, then what `control` makes at `x`.
+fn title(hwnd: HWND, card: R, name: &str) {
+    text(hwnd, -1, name, R::new(card.x + 12, card.y + 12, 200, 16), TITLE);
+}
+
+fn row(hwnd: HWND, card: R, y: i32, name: &str, width: i32) {
+    text(hwnd, -1, name, R::new(card.x + 12, card.y + y, width, 28), FORM);
+}
+
+fn hint(hwnd: HWND, card: R, y: i32, s: &str) {
+    text(hwnd, -1, s, R::new(card.x + 12, card.y + y, card.w - 24, 16), HINT);
+}
 
 pub fn build(hwnd: HWND) {
     let on = |tab: Tab| BUILDING.set(TABS.iter().position(|t| t.0 == tab));
 
+    // ---- The tab strip: real radio buttons, so the arrows move between them.
+    BUILDING.set(None);
+    for (i, (_, name)) in TABS.iter().enumerate() {
+        let x = TAB_TRACK.x + 3 + i as i32 * TAB_ITEM.0;
+        segment(hwnd, name, at(x, TAB_TRACK.y + 3, TAB_ITEM.0, TAB_ITEM.1), ID_TAB + i as i32, i == 0);
+    }
+    set_checked(ID_TAB + TAB.get() as i32, true);
+
     // ---- Keys
     on(Tab::Keys);
-    let radio = BS_AUTORADIOBUTTON as u32 | BS_PUSHLIKE as u32 | WS_TABSTOP.0;
-    control(hwnd, w!("BUTTON"), "Page 1", radio | WS_GROUP.0, 24, 46, 96, 28, ID_PAGE);
-    control(hwnd, w!("BUTTON"), "Page 2", radio, 124, 46, 96, 28, ID_PAGE + 1);
-    label(hwnd, "The pad starts on page 1. A Switch page key flips to the other page.", 232, 50, 420);
+    for p in 0..2 {
+        let r = at(PAGE_TRACK.x + 3 + p * PAGE_ITEM.0, PAGE_TRACK.y + 3, PAGE_ITEM.0, PAGE_ITEM.1);
+        segment(hwnd, &format!("Page {}", p + 1), r, ID_PAGE + p, p == 0);
+    }
+    let first = "The pad starts on page 1. A Switch page key flips to the other page.";
+    label(hwnd, -1, first, at(204, PAGE + 14, 492, 16), Label { wrap: false, ..HINT });
+    let k = KEY_CARD;
     for c in 0..4 {
-        control(hwnd, w!("STATIC"), "", SS_CENTER, COL_X + c * COL_W, 88, COL_W - 8, 18, ID_COLUMN + c);
+        text(hwnd, ID_COLUMN + c, "", R::new(k.x + KEY_COL + c * KEY_PITCH, k.y + 8, 132, 16), COLUMN);
     }
     for r in 0..4 {
-        label(hwnd, ROW_NAMES[r as usize], 24, 108 + r * 32, 100);
+        text(hwnd, -1, ROW_NAMES[r as usize], R::new(k.x + 12, k.y + 28 + r * 32, 96, 28), ROW);
         for c in 0..4 {
-            combo(hwnd, ID_KEY + r * 4 + c, COL_X + c * COL_W, 108 + r * 32, COL_W - 8);
+            combo(hwnd, ID_KEY + r * 4 + c, k.x + KEY_COL + c * KEY_PITCH, k.y + 28 + r * 32, 132);
         }
     }
-    label(
-        hwnd,
-        "Keys that type (media keys, F13 to F24, shortcuts) are typed by the pad itself as normal keyboard input.",
-        24,
-        238,
-        630,
-    );
+    let typing =
+        "Keys that type (media keys, F13 to F24, shortcuts) are typed by the pad itself as normal keyboard input.";
+    text(hwnd, -1, typing, R::new(16, PAGE + 212, 680, 16), HINT);
     for i in 0..3 {
-        let x = 24 + i * 214;
-        label(hwnd, KNOB_NAMES[i as usize], x, 276, 200);
-        combo(hwnd, ID_KNOB + i, x, 298, 200);
+        let x = 16 + i * 228;
+        text(hwnd, -1, KNOB_NAMES[i as usize], R::new(x, PAGE + 240, 216, 16), TITLE);
+        combo(hwnd, ID_KNOB + i, x, PAGE + 260, 216);
     }
-    label(
-        hwnd,
-        "Press a knob to pick one app in its channel. It goes back to the whole channel after 8 seconds.",
-        24,
-        332,
-        630,
-    );
+    let knobs = "Press a knob to pick one app in its channel. It goes back to the whole channel after 8 seconds.";
+    text(hwnd, -1, knobs, R::new(16, PAGE + 296, 680, 16), HINT);
 
     // ---- Channels
     on(Tab::Channels);
     for i in 0..4 {
-        let x = CH_X + i * CH_STEP;
-        control(hwnd, w!("STATIC"), "Name", 0, x, 46, CH_W, 18, ID_CH_LABEL + i * 2);
-        let name = control(
-            hwnd,
-            w!("EDIT"),
-            "",
-            WS_BORDER.0 | WS_TABSTOP.0 | ES_AUTOHSCROLL as u32,
-            x,
-            66,
-            CH_W,
-            24,
-            ID_CH_NAME + i,
-        );
+        let card = channel_card(i);
+        let (x, y) = (card.x + 8, card.y);
+        let frame = at(x, y + 12, 148, 28);
+        text(hwnd, ID_CH_LABEL + i * 2, "Name", R::new(x + 10, y + 12, 40, 28), ROW);
+        let name = edit(hwnd, ID_CH_NAME + i, frame, 52, 0);
         send(name, EM_LIMITTEXT, CHANNEL_NAME_LEN, 0);
-        control(hwnd, w!("STATIC"), "Plays", 0, x, 98, CH_W, 18, ID_CH_LABEL + i * 2 + 1);
-        combo(hwnd, ID_CH_KIND + i, x, 118, CH_W);
-        control(hwnd, w!("STATIC"), "", 0, x, 150, CH_W, 34, ID_CH_ABOUT + i);
-        let list = WS_BORDER.0 | WS_VSCROLL.0 | WS_TABSTOP.0 | LBS_NOINTEGRALHEIGHT as u32;
-        control(hwnd, w!("LISTBOX"), "", list, x, 188, CH_W, 176, ID_CH_LIST + i);
-        button(hwnd, "Add...", x, 370, 72, ID_CH_ADD + i);
-        button(hwnd, "Remove", x + 78, 370, 72, ID_CH_REMOVE + i);
+        text(hwnd, ID_CH_LABEL + i * 2 + 1, "Plays", R::new(x, y + 48, 148, 16), TITLE);
+        combo(hwnd, ID_CH_KIND + i, x, y + 68, 148);
+        text(hwnd, ID_CH_ABOUT + i, "", R::new(x, y + 104, 148, 32), HINT);
+        list(hwnd, ID_CH_LIST + i, at(x, y + 140, 148, 76));
+        button(hwnd, "Add...", x, y + 224, 72, ID_CH_ADD + i);
+        button(hwnd, "Remove", x + 76, y + 224, 72, ID_CH_REMOVE + i);
     }
-    label(hwnd, "Windows has one volume slider per program. All tabs of one browser move together.", 24, 404, 630);
-    label(
-        hwnd,
-        "(moved) = put there with the pad's Move key, which wins over the lists. Remove undoes it.",
-        24,
-        424,
-        630,
-    );
+    let sliders = "Windows has one volume slider per program. All tabs of one browser move together.";
+    text(hwnd, -1, sliders, R::new(16, PAGE + 280, 680, 16), HINT);
+    let moved = "(moved) = put there with the pad's Move key, which wins over the lists. Remove undoes it.";
+    text(hwnd, -1, moved, R::new(16, PAGE + 296, 680, 16), HINT);
 
     // ---- Pad
     on(Tab::Pad);
-    let rows = [
-        "Name on the screen",
-        "Light brightness",
-        "Knob step",
-        "Focus turns the others down to",
-        "Screen shift",
-        "Screen off after",
-        "Dim lights after",
-    ];
-    for (i, text) in rows.iter().enumerate() {
-        label(hwnd, text, 24, 50 + i as i32 * 36, 200);
-    }
-    let name = control(
-        hwnd,
-        w!("EDIT"),
-        "",
-        WS_BORDER.0 | WS_TABSTOP.0 | ES_AUTOHSCROLL as u32 | ES_UPPERCASE as u32,
-        232,
-        50,
-        160,
-        24,
-        ID_NAME,
-    );
+    let counted = "Counted while nothing plays or is touched.";
+    let s = SCREEN_CARD;
+    title(hwnd, s, "Screen");
+    row(hwnd, s, 36, "Name on the screen", 184);
+    let name = edit(hwnd, ID_NAME, at(s.x + 204, s.y + 36, 160, 28), 10, ES_UPPERCASE);
     send(name, EM_LIMITTEXT, kb16_mixer_protocol::LOGO_NAME_LEN, 0);
-    label(hwnd, "1 to 10 letters, digits or spaces", 404, 50, 250);
-    let bar = control(hwnd, w!("msctls_trackbar32"), "", WS_TABSTOP.0, 226, 84, 250, 30, ID_BRIGHTNESS);
-    send(bar, TBM_SETRANGE, 1, (BRIGHTNESS_PERCENT.1 << 16) | BRIGHTNESS_PERCENT.0);
-    combo(hwnd, ID_STEP, 232, 122, 180);
-    combo(hwnd, ID_DUCK, 232, 158, 180);
-    combo(hwnd, ID_SHIFT, 232, 194, 180);
-    control(hwnd, w!("STATIC"), "Moves the picture down if its top is cut off.", 0, 424, 197, 240, 36, -1);
-    combo(hwnd, ID_SCREEN_OFF, 232, 230, 180);
-    combo(hwnd, ID_LIGHTS_DIM, 232, 266, 180);
-    control(hwnd, w!("STATIC"), "Counted while nothing plays or is touched.", 0, 424, 236, 240, 40, -1);
-    control(
-        hwnd,
-        w!("BUTTON"),
-        "Start with Windows",
-        BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
-        24,
-        308,
-        300,
-        24,
-        ID_AUTOSTART,
-    );
-    button(hwnd, "Open config file", 24, 346, 160, ID_OPEN_FILE);
-    button(hwnd, "Open settings folder", 192, 346, 180, ID_OPEN_FOLDER);
-    control(hwnd, w!("STATIC"), "", 0, 24, 392, 630, 18, ID_VERSION);
+    hint(hwnd, s, 66, "1 to 10 letters, digits or spaces");
+    row(hwnd, s, 86, "Screen shift", 184);
+    combo(hwnd, ID_SHIFT, s.x + 204, s.y + 86, 160);
+    hint(hwnd, s, 116, "Moves the picture down if its top is cut off.");
+    row(hwnd, s, 136, "Screen off after", 184);
+    combo(hwnd, ID_SCREEN_OFF, s.x + 204, s.y + 136, 160);
+    hint(hwnd, s, 166, counted);
 
-    // ---- around the tabs. The tab strip comes last so it sits under the pages.
+    let k = KNOBS_CARD;
+    title(hwnd, k, "Knobs");
+    row(hwnd, k, 36, "Knob step", 184);
+    combo(hwnd, ID_STEP, k.x + 204, k.y + 36, 160);
+    row(hwnd, k, 68, "Focus turns the others down to", 184);
+    combo(hwnd, ID_DUCK, k.x + 204, k.y + 68, 160);
+
+    let l = LIGHTS_CARD;
+    title(hwnd, l, "Lights");
+    row(hwnd, l, 36, "Light brightness", 112);
+    let style = WS_TABSTOP.0 | TBS_NOTICKS | TBS_FIXEDLENGTH;
+    let bar = control(hwnd, w!("msctls_trackbar32"), "", style, l.x + 124, l.y + 36, 116, 28, ID_BRIGHTNESS);
+    send(bar, TBM_SETTHUMBLENGTH, scale(18) as usize, 0);
+    send(bar, TBM_SETRANGE, 1, (BRIGHTNESS_PERCENT.1 << 16) | BRIGHTNESS_PERCENT.0);
+    crate::ui::widget::add(bar, crate::ui::widget::Kind::Slider, None);
+    text(hwnd, ID_BRIGHTNESS_VALUE, "", R::new(l.x + 248, l.y + 36, 36, 28), VALUE);
+    row(hwnd, l, 76, "Dim lights after", 112);
+    combo(hwnd, ID_LIGHTS_DIM, l.x + 132, l.y + 76, 152);
+    hint(hwnd, l, 106, counted);
+
+    let y = SYSTEM_CARD;
+    title(hwnd, y, "System");
+    toggle(hwnd, "Start with Windows", y.x + 12, y.y + 36, ID_AUTOSTART);
+    button(hwnd, "Open config file", y.x + 12, y.y + 76, 120, ID_OPEN_FILE);
+    button(hwnd, "Open settings folder", y.x + 140, y.y + 76, 144, ID_OPEN_FOLDER);
+    text(hwnd, ID_VERSION, "", R::new(y.x + 12, y.y + 116, 272, 32), HINT);
+
+    // ---- The footer.
     BUILDING.set(None);
-    control(hwnd, w!("STATIC"), STATUS_IDLE, 0, 16, 468, 548, 54, ID_STATUS);
-    button(hwnd, "Close", 572, 470, 92, ID_CLOSE);
-    let tabs = control(hwnd, WC_TABCONTROLW, "", WS_CLIPSIBLINGS.0 | WS_TABSTOP.0, 8, 8, WIDTH - 16, 448, ID_TABS);
-    for (i, (_, name)) in TABS.iter().enumerate() {
-        let mut text: Vec<u16> = name.encode_utf16().chain([0]).collect();
-        let item = TCITEMW { mask: TCIF_TEXT, pszText: PWSTR(text.as_mut_ptr()), ..Default::default() };
-        // SAFETY: the item and its NUL-terminated text live until the call returns; the tab
-        // control copies the text.
-        unsafe { SendMessageW(tabs, TCM_INSERTITEMW, Some(WPARAM(i)), Some(LPARAM(&raw const item as isize))) };
-    }
-    send(tabs, TCM_SETCURSEL, TAB.get(), 0);
-    PANE.set(pane_color(tabs));
-    if let Some(color) = PANE.get() {
-        // SAFETY: a plain GDI call; the window deletes the brush when it is destroyed.
-        PANE_BRUSH.set(unsafe { CreateSolidBrush(color) });
-    }
+    let status = control_at(hwnd, w!("STATIC"), STATUS_IDLE, SS_OWNERDRAW, at(16, FOOTER + 1, 500, 55), ID_STATUS);
+    crate::ui::widget::add(status, crate::ui::widget::Kind::Status, None);
+    button(hwnd, "Close", 608, FOOTER + 14, 88, ID_CLOSE);
 }
 
-/// The colour the tab control fills its pages with. It differs between Windows versions and
-/// themes, so it is read from the control itself, once.
-fn pane_color(tabs: HWND) -> Option<COLORREF> {
-    const PRF_CLIENT: isize = 4;
-    const PRF_ERASEBKGND: isize = 8;
-    // SAFETY: GDI calls on a memory DC and bitmap made here, freed here in reverse order with
-    // the DC's old bitmap put back first; the screen DC is released once.
-    unsafe {
-        let mut r = RECT::default();
-        GetClientRect(tabs, &mut r).ok()?;
-        let screen = GetDC(None);
-        let dc = CreateCompatibleDC(Some(screen));
-        let bitmap = CreateCompatibleBitmap(screen, r.right, r.bottom);
-        let old = SelectObject(dc, bitmap.into());
-        send(tabs, WM_PRINTCLIENT, dc.0 as usize, PRF_CLIENT | PRF_ERASEBKGND);
-        let color = GetPixel(dc, r.right / 2, r.bottom - scale(24));
-        SelectObject(dc, old);
-        let _ = DeleteObject(bitmap.into());
-        let _ = DeleteDC(dc);
-        ReleaseDC(None, screen);
-        (color.0 != 0xFFFF_FFFF).then_some(color)
-    }
+/// Remove sits where Add is when a channel has no Add button.
+pub fn place_remove(i: i32, add_shown: bool) {
+    move_x(ID_CH_REMOVE + i, channel_card(i).x + if add_shown { 84 } else { 8 });
 }
 
 /// Shows the controls of the open tab, minus those hidden by what they show.
@@ -200,4 +194,66 @@ pub fn show_tab() {
             show(h, on.is_none_or(|t| t == tab) && !hidden.contains(&id));
         }
     });
+    if let Some(hwnd) = super::window() {
+        crate::ui::anim::redraw(hwnd, crate::ui::anim::Paint::Own);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every box the layout places, by tab (None: the header and footer), at 96 dpi.
+    fn boxes() -> Vec<(Option<usize>, &'static str, R)> {
+        let mut b = vec![(None, "tabs", TAB_TRACK), (None, "close", R::new(608, FOOTER + 14, 88, 28))];
+        b.push((None, "status", R::new(16, FOOTER + 1, 500, 55)));
+        b.push((Some(0), "page switch", PAGE_TRACK));
+        b.push((Some(0), "key card", KEY_CARD));
+        for k in 0..3 {
+            b.push((Some(0), "knob select", R::new(16 + k * 228, PAGE + 260, 216, 28)));
+        }
+        for i in 0..4 {
+            b.push((Some(1), "channel card", channel_card(i)));
+        }
+        for card in [SCREEN_CARD, KNOBS_CARD, LIGHTS_CARD, SYSTEM_CARD] {
+            b.push((Some(2), "pad card", card));
+        }
+        b
+    }
+
+    #[test]
+    fn the_layout_fits_the_window_without_overlaps_at_every_scale() {
+        for dpi in [96, 120, 144, 192] {
+            let s = |v: i32| v * dpi / 96;
+            let window = R::new(0, 0, s(WIDTH), s(HEIGHT));
+            let page = R::new(0, s(PAGE), s(WIDTH), s(FOOTER - PAGE));
+            let scaled: Vec<_> =
+                boxes().into_iter().map(|(t, n, r)| (t, n, R::new(s(r.x), s(r.y), s(r.w), s(r.h)))).collect();
+            for (tab, name, r) in &scaled {
+                assert!(window.contains(*r), "{name} at {dpi} dpi leaves the window: {r:?}");
+                if tab.is_some() {
+                    assert!(page.contains(*r), "{name} at {dpi} dpi leaves the page: {r:?}");
+                }
+            }
+            for (i, (ta, na, a)) in scaled.iter().enumerate() {
+                for (tb, nb, b) in &scaled[i + 1..] {
+                    let same_view = ta.is_none() || tb.is_none() || ta == tb;
+                    let nested = a.contains(*b) || b.contains(*a);
+                    assert!(!same_view || nested || !a.overlaps(*b), "{na} and {nb} overlap at {dpi} dpi");
+                }
+            }
+            let footer_line = s(FOOTER);
+            assert!(scaled.iter().all(|(t, _, r)| t.is_none() || r.bottom() <= footer_line), "{dpi}");
+        }
+    }
+
+    #[test]
+    fn the_key_grid_fits_its_card() {
+        let last = KEY_CARD.x + KEY_COL + 3 * KEY_PITCH + 132;
+        assert!(last <= KEY_CARD.right() - 4, "the last column ends at {last}");
+        assert_eq!(KEY_CARD.y + 28 + 3 * 32 + 28 + 8, KEY_CARD.bottom(), "four rows and the card's margin");
+        assert_eq!(TAB_TRACK.w, 3 * TAB_ITEM.0 + 6, "three items, a 2 px pad and a 1 px border on each side");
+        assert_eq!(PAGE_TRACK.w, 2 * PAGE_ITEM.0 + 6);
+        assert!(channel_card(3).right() <= WIDTH - 16);
+    }
 }

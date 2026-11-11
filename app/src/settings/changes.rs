@@ -8,9 +8,11 @@ use super::controls::{FILLING, checked, child, choice, set_checked, status, text
 use super::file::{edit, put, rename_channel, set_key, set_kind, set_knob, set_number};
 use super::fill::{fill, problem_text};
 use super::ids::*;
+use super::scene::{hide_chip, saved_chip};
 use super::{EDITING, PAGE, window};
 use crate::config::{self, Config};
 use crate::dialog;
+use crate::ui::widget;
 use crate::win::send;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -186,7 +188,8 @@ pub fn changed(hwnd: HWND, id: i32, code: u32) {
     let cfg = crate::current_config();
     let outcome = match (id, code) {
         (ID_PAGE..=21, BN_CLICKED) => {
-            PAGE.set((id - ID_PAGE) as usize);
+            let page = (id - ID_PAGE) as usize;
+            super::scene::slide(super::scene::PART_PAGE, PAGE.replace(page), page);
             Ok(None)
         }
         (ID_KEY..=115, CBN_SELCHANGE) => change_key(hwnd, &cfg, id),
@@ -204,7 +207,10 @@ pub fn changed(hwnd: HWND, id: i32, code: u32) {
             EDITING.set(Some(id));
             return;
         }
-        (ID_CH_NAME..=203 | ID_NAME, EN_CHANGE) => return typing(&cfg, id),
+        (ID_CH_NAME..=203 | ID_NAME, EN_CHANGE) => {
+            widget::set_error(child(id), false);
+            return typing(&cfg, id);
+        }
         (ID_CH_NAME..=203 | ID_NAME, EN_KILLFOCUS) => {
             EDITING.set(None);
             apply_box(&cfg, id)
@@ -246,12 +252,37 @@ pub fn changed(hwnd: HWND, id: i32, code: u32) {
         }
         _ => return,
     };
+    // The text box a refusal is about, if any: its frame turns amber until the next keystroke.
+    let refused_box = match (id, code) {
+        (ID_CH_NAME..=203 | ID_NAME, EN_KILLFOCUS) => Some(id),
+        (ENTER, _) => EDITING.get(),
+        _ => None,
+    };
     match (outcome, fill(false)) {
-        (_, Some(e)) => status(&problem_text(&e)),
-        (Ok(Some(text)), None) => status(&text),
+        (_, Some(e)) => {
+            hide_chip();
+            status(&problem_text(&e));
+        }
+        (Ok(Some(text)), None) => {
+            if shows_saved(&text) {
+                saved_chip();
+            }
+            status(&text);
+        }
         (Ok(None), None) => {}
-        (Err(why), None) => status(&format!("Not changed: {why}.")),
+        (Err(why), None) => {
+            hide_chip();
+            if let Some(b) = refused_box {
+                widget::set_error(child(b), true);
+            }
+            status(&format!("Not changed: {why}."));
+        }
     }
+}
+
+/// The changes the "Saved" chip confirms: the ones saved to config.toml, and Start with Windows.
+fn shows_saved(text: &str) -> bool {
+    text.ends_with("Saved and applied.") || text.contains("starts with Windows.")
 }
 
 #[cfg(test)]
@@ -273,6 +304,17 @@ mod tests {
         assert_eq!(slider_brightness(40), 0.4);
         assert_eq!(slider_brightness(0), 0.1, "the lights never go fully dark from the slider");
         assert_eq!(slider_brightness(250), 1.0);
+    }
+
+    #[test]
+    fn the_saved_chip_confirms_saved_changes_only() {
+        assert!(shows_saved("Page 1, row 2, Chat column: F13. Saved and applied."));
+        assert!(shows_saved("KB16 mixer now starts with Windows."));
+        assert!(shows_saved("KB16 mixer no longer starts with Windows."));
+        assert!(!shows_saved(
+            "config.toml is open in Notepad. Save it there; this window picks it up when you come back."
+        ));
+        assert!(!shows_saved("Spotify.exe is already in Media."));
     }
 
     #[test]

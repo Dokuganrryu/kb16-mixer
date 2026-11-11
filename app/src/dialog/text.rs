@@ -1,8 +1,11 @@
 //! A line of text with a Browse button: what an "open:" key opens, or a program to add to a
 //! channel by name.
 
-use super::{Class, EM_SETSEL, ID_EXTRA, ID_FIELD, ID_HINT, Item, TEXT_RESULT};
-use super::{end, item_text, run, set_item_text, template};
+use super::look::{self, HINT, PROMPT, Place};
+use super::{BS_OWNERDRAW, Class, EM_SETSEL, ES_AUTOHSCROLL, ID_EXTRA, ID_FIELD, ID_HINT, ID_PROMPT, Item};
+use super::{SS_OWNERDRAW, TEXT_RESULT, end, item_text, run, set_item_text, template};
+use crate::ui::canvas::R;
+use crate::ui::widget::Kind;
 use crate::win::{self, send};
 use std::cell::{Cell, RefCell};
 use windows::Win32::Foundation::*;
@@ -65,9 +68,26 @@ fn browse(dlg: HWND) {
     }
 }
 
-unsafe extern "system" fn text_proc(dlg: HWND, msg: u32, wparam: WPARAM, _: LPARAM) -> isize {
+/// Where the dialog's controls go, in the design's pixels (a 424 x 164 client area).
+const PLACES: [Place; 6] = [
+    Place { id: ID_PROMPT, at: R::new(16, 12, 392, 20), kind: Kind::Label(PROMPT) },
+    Place { id: ID_FIELD, at: R::new(16, 36, 296, 28), kind: Kind::Edit },
+    Place { id: ID_EXTRA, at: R::new(320, 36, 88, 28), kind: Kind::Button { primary: false } },
+    Place { id: ID_HINT, at: R::new(16, 72, 392, 32), kind: Kind::Label(HINT) },
+    Place { id: 1, at: R::new(232, 120, 84, 28), kind: Kind::Button { primary: true } },
+    Place { id: 2, at: R::new(324, 120, 84, 28), kind: Kind::Button { primary: false } },
+];
+
+/// The dialog procedure (the hidden renderer makes the dialog with it too).
+pub const PROC: DLGPROC = Some(text_proc);
+
+unsafe extern "system" fn text_proc(dlg: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> isize {
+    if let Some(r) = look::dialog_msg(dlg, msg, wparam, lparam) {
+        return r;
+    }
     match msg {
         WM_INITDIALOG => {
+            look::dress(dlg, (424, 164), &PLACES);
             set_item_text(dlg, ID_FIELD as i32, &TEXT_INITIAL.with_borrow(Clone::clone));
             if let Some(field) = win::dlg_item(Some(dlg), ID_FIELD as i32) {
                 send(field, EM_SETSEL, 0, -1);
@@ -93,52 +113,52 @@ unsafe extern "system" fn text_proc(dlg: HWND, msg: u32, wparam: WPARAM, _: LPAR
     }
 }
 
-fn ask_text(owner: HWND, title: &str, prompt: &str, hint: &str, initial: &str, program: bool) -> Option<String> {
+/// The dialog's state and template.
+fn prepare(title: &str, prompt: &str, hint: &str, initial: &str, program: bool) -> Vec<u32> {
     TEXT_INITIAL.set(initial.to_string());
     TEXT_PROGRAM.set(program);
     TEXT_RESULT.set(None);
     let tab = WS_TABSTOP.0;
+    let button = tab | BS_OWNERDRAW;
     let items = [
-        Item { class: Class::Static, text: prompt, id: 0xFFFF, style: 0, rect: [7, 7, 270, 10] },
-        Item {
-            class: Class::Edit,
-            text: "",
-            id: ID_FIELD,
-            style: tab | WS_BORDER.0 | ES_AUTOHSCROLL as u32,
-            rect: [7, 20, 210, 14],
-        },
-        Item { class: Class::Button, text: "Browse...", id: ID_EXTRA, style: tab, rect: [221, 19, 56, 16] },
-        Item { class: Class::Static, text: hint, id: ID_HINT, style: 0, rect: [7, 40, 270, 28] },
-        Item { class: Class::Button, text: "OK", id: 1, style: tab | BS_DEFPUSHBUTTON as u32, rect: [161, 72, 56, 15] },
-        Item { class: Class::Button, text: "Cancel", id: 2, style: tab, rect: [221, 72, 56, 15] },
+        Item { class: Class::Static, text: prompt, id: ID_PROMPT, style: SS_OWNERDRAW, rect: [7, 7, 270, 10] },
+        Item { class: Class::Edit, text: "", id: ID_FIELD, style: tab | ES_AUTOHSCROLL, rect: [7, 20, 210, 14] },
+        Item { class: Class::Button, text: "Browse...", id: ID_EXTRA, style: button, rect: [221, 19, 56, 16] },
+        Item { class: Class::Static, text: hint, id: ID_HINT, style: SS_OWNERDRAW, rect: [7, 40, 270, 28] },
+        Item { class: Class::Button, text: "OK", id: 1, style: button, rect: [161, 72, 56, 15] },
+        Item { class: Class::Button, text: "Cancel", id: 2, style: button, rect: [221, 72, 56, 15] },
     ];
-    let t = template(title, [284, 94], &items);
-    (run(owner, &t, Some(text_proc)) == 1).then(|| TEXT_RESULT.take()).flatten()
+    template(title, [284, 94], &items)
+}
+
+const OPEN: [&str; 3] = [
+    "Open",
+    "Program, folder, file or web address to open:",
+    "For example C:\\Tools\\obs64.exe, %USERPROFILE%\\Downloads or https://example.com. \
+     It opens the way a double-click would.",
+];
+const PROGRAM: [&str; 3] = [
+    "Add a program",
+    "Program name, as Task Manager shows it under Details:",
+    "For example Spotify.exe. It joins the channel the next time it makes sound.",
+];
+
+pub fn prepare_open(current: &str) -> Vec<u32> {
+    prepare(OPEN[0], OPEN[1], OPEN[2], current, false)
+}
+
+pub fn prepare_program() -> Vec<u32> {
+    prepare(PROGRAM[0], PROGRAM[1], PROGRAM[2], "", true)
 }
 
 /// What an "open:" key should open.
 pub fn open_target(owner: HWND, current: &str) -> Option<String> {
-    ask_text(
-        owner,
-        "Open",
-        "Program, folder, file or web address to open:",
-        "For example C:\\Tools\\obs64.exe, %USERPROFILE%\\Downloads or https://example.com. \
-         It opens the way a double-click would.",
-        current,
-        false,
-    )
+    (run(owner, &prepare_open(current), PROC) == 1).then(|| TEXT_RESULT.take()).flatten()
 }
 
 /// A program to add to a channel by name.
 pub fn program(owner: HWND) -> Option<String> {
-    ask_text(
-        owner,
-        "Add a program",
-        "Program name, as Task Manager shows it under Details:",
-        "For example Spotify.exe. It joins the channel the next time it makes sound.",
-        "",
-        true,
-    )
+    (run(owner, &prepare_program(), PROC) == 1).then(|| TEXT_RESULT.take()).flatten()
 }
 
 #[cfg(test)]

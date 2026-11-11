@@ -23,10 +23,14 @@ pub mod procs;
 mod settings;
 mod tray;
 pub mod trim;
+mod ui;
 mod win;
 mod worker;
 
 pub use autostart::{autostart_enabled, set_autostart};
+/// Pictures of the settings window and its dialogs, drawn hidden (examples/render_settings.rs).
+pub use settings::{Options, Picture, Preview, Tab, render_hidden};
+pub use ui::theme::Look;
 
 use config::Config;
 use pad::PadEvent;

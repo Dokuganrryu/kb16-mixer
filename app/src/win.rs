@@ -53,3 +53,75 @@ pub fn instance() -> HINSTANCE {
     // SAFETY: with no name, GetModuleHandleW returns the running exe's handle; nothing is freed.
     unsafe { GetModuleHandleW(None).map(|m| m.into()).unwrap_or_default() }
 }
+
+/// Five user32 functions, declared here with their documented signatures. The `windows` crate
+/// keeps all but NotifyWinEvent in its keyboard-and-mouse module, which stays disabled because
+/// it also holds the input-injection calls, and NotifyWinEvent in its large accessibility
+/// module. None of them sends input or observes another window.
+mod user32 {
+    use windows::Win32::Foundation::HWND;
+    use windows::core::BOOL;
+
+    /// TRACKMOUSEEVENT.
+    #[repr(C)]
+    pub struct TrackMouse {
+        pub size: u32,
+        pub flags: u32,
+        pub hwnd: HWND,
+        pub hover_time: u32,
+    }
+
+    #[link(name = "user32", kind = "raw-dylib")]
+    unsafe extern "system" {
+        pub fn TrackMouseEvent(event: *mut TrackMouse) -> BOOL;
+        pub fn GetKeyState(vk: i32) -> i16;
+        pub fn GetFocus() -> HWND;
+        pub fn SetFocus(hwnd: HWND) -> HWND;
+        pub fn NotifyWinEvent(event: u32, hwnd: HWND, object: i32, child: i32);
+    }
+}
+
+/// Asks for one WM_MOUSELEAVE when the mouse leaves `h` (TME_LEAVE).
+pub fn track_leave(h: HWND) {
+    let mut e = user32::TrackMouse { size: size_of::<user32::TrackMouse>() as u32, flags: 2, hwnd: h, hover_time: 0 };
+    // SAFETY: the struct carries its own size and lives until the call returns.
+    unsafe {
+        let _ = user32::TrackMouseEvent(&mut e);
+    }
+}
+
+/// True while `vk` is down, as this thread's own key messages left it (not the live keyboard).
+pub fn key_down(vk: i32) -> bool {
+    // SAFETY: GetKeyState only reads this thread's input state.
+    unsafe { user32::GetKeyState(vk) < 0 }
+}
+
+/// The control of this thread that has the keyboard focus (null for none).
+pub fn focus() -> HWND {
+    // SAFETY: GetFocus takes no arguments and only reads this thread's state.
+    unsafe { user32::GetFocus() }
+}
+
+/// Gives `h`, a window of this thread, the keyboard focus.
+pub fn set_focus(h: HWND) {
+    // SAFETY: SetFocus fails harmlessly on a stale handle or another thread's window.
+    unsafe {
+        user32::SetFocus(h);
+    }
+}
+
+/// Virtual-key codes, from WinUser.h.
+pub const VK_TAB: u16 = 0x09;
+pub const VK_SHIFT: u16 = 0x10;
+pub const VK_CONTROL: u16 = 0x11;
+pub const VK_END: u16 = 0x23;
+pub const VK_HOME: u16 = 0x24;
+
+/// Tells screen readers that the text of `h` changed (EVENT_OBJECT_LIVEREGIONCHANGED).
+pub fn live_region_changed(h: HWND) {
+    const EVENT_OBJECT_LIVEREGIONCHANGED: u32 = 0x8019;
+    const OBJID_CLIENT: i32 = -4;
+    // SAFETY: NotifyWinEvent only queues an event for accessibility clients; a stale handle is
+    // ignored.
+    unsafe { user32::NotifyWinEvent(EVENT_OBJECT_LIVEREGIONCHANGED, h, OBJID_CLIENT, 0) }
+}

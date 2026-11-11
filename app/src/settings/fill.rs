@@ -5,22 +5,30 @@ use super::checks::{Member, members};
 use super::choices::*;
 use super::controls::{child, fill_combo, fill_list, set_checked, set_text, status};
 use super::ids::*;
-use super::layout::show_tab;
+use super::layout::{place_remove, show_tab};
 use super::{HIDDEN, MEMBERS, PAGE, SEEN, window};
 use crate::config::{self, PAGES};
 use crate::win::send;
 
-pub fn version_line() -> String {
-    let app = format!("KB16 mixer {}.", env!("CARGO_PKG_VERSION"));
-    let pad = match crate::pad::connected_release() {
+/// The pad half of the version line, which the header shows too.
+pub fn pad_line() -> String {
+    match crate::pad::connected_release() {
         None => "Pad not connected.".to_string(),
         Some(kb16_mixer_protocol::UNVERSIONED_RELEASE) => "Pad firmware: an early build without a version.".into(),
         Some(r) => {
             let (a, b, c) = kb16_mixer_protocol::release_version(r);
             format!("Pad firmware {a}.{b}.{c}.")
         }
-    };
-    format!("{app}   {pad}")
+    }
+}
+
+pub fn version_line() -> String {
+    format!("KB16 mixer {}.   {}", env!("CARGO_PKG_VERSION"), pad_line())
+}
+
+/// The slider's value as the text beside it ("65%").
+pub fn show_brightness() {
+    set_text(ID_BRIGHTNESS_VALUE, &format!("{}%", send(child(ID_BRIGHTNESS), TBM_GETPOS, 0, 0)));
 }
 
 /// One line of a channel's app list.
@@ -101,7 +109,9 @@ pub fn fill(boxes: bool) -> Option<String> {
         if MEMBERS.with_borrow(|m| m.get(i).map(Vec::as_slice) != Some(here)) {
             fill_list(ID_CH_LIST + i as i32, &here.iter().map(member_line).collect::<Vec<_>>());
         }
-        hidden.extend(channel_hidden(i, Some(kind)));
+        let hides = channel_hidden(i, Some(kind));
+        place_remove(i as i32, !hides.contains(&(ID_CH_ADD + i as i32)));
+        hidden.extend(hides);
     }
     MEMBERS.set(all);
 
@@ -113,6 +123,7 @@ pub fn fill(boxes: bool) -> Option<String> {
     if send(child(ID_BRIGHTNESS), TBM_GETPOS, 0, 0) != percent {
         send(child(ID_BRIGHTNESS), TBM_SETPOS, 1, percent);
     }
+    show_brightness();
     fill_combo(ID_STEP, labelled(STEPS), nearest(STEPS, |v| (v - cfg.step as f64).abs()));
     fill_combo(ID_DUCK, labelled(DUCKS), nearest(DUCKS, |v| (v - cfg.duck as f64).abs()));
     fill_combo(ID_SHIFT, shift_entries(), cfg.oled_top as usize);
@@ -165,10 +176,11 @@ pub fn apps_moved() {
     }
 }
 
-/// The pad came or went: the version line says so.
+/// The pad came or went: the version line and the header say so.
 pub fn pad_changed() {
     if window().is_some() {
         set_text(ID_VERSION, &version_line());
+        super::scene::pad_status_changed();
     }
 }
 

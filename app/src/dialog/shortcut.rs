@@ -5,15 +5,18 @@
 //! no hooks, no raw input, no polling of key state.
 
 use super::keys::{Capture, WIN};
-use super::{BM_GETCHECK, BM_SETCHECK, Class, ID_CLEAR, ID_EXTRA, ID_FIELD, ID_HINT, Item, TEXT_RESULT};
-use super::{end, run, set_item_text, template};
+use super::look::{self, HINT, PROMPT, Place, WARN};
+use super::{BM_GETCHECK, BM_SETCHECK, Class, ID_CLEAR, ID_EXTRA, ID_FIELD, ID_HINT, ID_NOTE, ID_PROMPT, Item};
+use super::{BS_AUTOCHECKBOX, BS_OWNERDRAW, SS_OWNERDRAW, TEXT_RESULT, end, run, set_item_text, template};
+use crate::ui::canvas::R;
+use crate::ui::theme::{Tok, theme};
+use crate::ui::widget::{self, Kind};
+use crate::ui::{Font, draw, font, px};
 use crate::win::{self, send};
 use std::cell::{Cell, RefCell};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, COLOR_WINDOW, COLOR_WINDOWTEXT, DT_CENTER, DT_SINGLELINE, DT_VCENTER, DrawFocusRect, DrawTextW,
-    EndPaint, FillRect, FrameRect, GetSysColor, GetSysColorBrush, HFONT, InvalidateRect, PAINTSTRUCT, SelectObject,
-    SetBkMode, SetTextColor, TRANSPARENT,
+    BeginPaint, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, EndPaint, HDC, PAINTSTRUCT,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{PCWSTR, w};
@@ -26,7 +29,6 @@ pub enum Shortcut {
 
 thread_local! {
     static CAPTURE: RefCell<Capture> = RefCell::new(Capture::default());
-    static CAPTURE_FONT: Cell<HFONT> = const { Cell::new(HFONT(std::ptr::null_mut())) };
     static CAPTURE_FOCUSED: Cell<bool> = const { Cell::new(false) };
     static WIN_PREFILL: Cell<bool> = const { Cell::new(false) };
 }
@@ -69,21 +71,36 @@ fn win_ticked(dlg: HWND) -> bool {
     win::dlg_item(Some(dlg), ID_EXTRA as i32).is_some_and(|h| send(h, BM_GETCHECK, 0, 0) == 1)
 }
 
-/// Repaints the box and says in the hint line what the combination needs, if anything.
+/// Repaints the box and says in the hint line what the combination needs, if anything: a key
+/// the pad cannot type is a warning.
 fn capture_changed(dlg: HWND) {
     if let Some(h) = win::dlg_item(Some(dlg), ID_FIELD as i32) {
-        // SAFETY: InvalidateRect only marks the control for repainting; no rectangle is passed.
-        unsafe {
-            let _ = InvalidateRect(Some(h), None, true);
-        }
+        crate::ui::anim::redraw(h, crate::ui::anim::Paint::Own);
+    }
+    if let Some(h) = win::dlg_item(Some(dlg), ID_HINT as i32) {
+        widget::set_look(h, if CAPTURE.with_borrow(Capture::refused) { WARN } else { HINT });
     }
     set_item_text(dlg, ID_HINT as i32, CAPTURE.with_borrow(hint));
 }
 
+/// The box: its chips, or how to start.
+fn paint_capture(hwnd: HWND, dc: HDC, dlg: HWND) {
+    let label = CAPTURE.with_borrow(|c| c.label(win_ticked(dlg)));
+    widget::paint_over(hwnd, dc, |cv, r| {
+        draw::capture_box(cv, r, CAPTURE_FOCUSED.get());
+        if label.is_empty() {
+            let flags = DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX;
+            cv.text(r, &shown(label), font(Font::Body), theme().get(Tok::Text2), flags);
+        } else {
+            draw::key_chips(cv, r, &label);
+        }
+    });
+}
+
 unsafe extern "system" fn capture_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // SAFETY: Windows calls this on the box's own thread with the message's real parameters:
-    // WM_GETDLGCODE's lParam is null or points to a MSG, and WM_PAINT is answered between
-    // BeginPaint and EndPaint with the font the dialog set, put back before EndPaint.
+    // WM_GETDLGCODE's lParam is null or points to a MSG, WM_PAINT is answered between
+    // BeginPaint and EndPaint, and WM_PRINTCLIENT's wParam is a live DC.
     unsafe {
         let dlg = GetParent(hwnd).unwrap_or_default();
         match msg {
@@ -120,30 +137,16 @@ unsafe extern "system" fn capture_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lpa
                 send(dlg, WM_NEXTDLGCTL, hwnd.0 as usize, 1);
                 LRESULT(0)
             }
-            WM_SETFONT => {
-                CAPTURE_FONT.set(HFONT(wparam.0 as *mut _));
-                LRESULT(0)
-            }
+            WM_ERASEBKGND => LRESULT(1),
             WM_PAINT => {
                 let mut ps = PAINTSTRUCT::default();
                 let dc = BeginPaint(hwnd, &mut ps);
-                let mut rect = RECT::default();
-                let _ = GetClientRect(hwnd, &mut rect);
-                FillRect(dc, &rect, GetSysColorBrush(COLOR_WINDOW));
-                FrameRect(dc, &rect, GetSysColorBrush(COLOR_WINDOWTEXT));
-                let old = SelectObject(dc, CAPTURE_FONT.get().into());
-                SetBkMode(dc, TRANSPARENT);
-                SetTextColor(dc, COLORREF(GetSysColor(COLOR_WINDOWTEXT)));
-                let label = CAPTURE.with_borrow(|c| c.label(win_ticked(dlg)));
-                let mut text: Vec<u16> = shown(label).encode_utf16().collect();
-                DrawTextW(dc, &mut text, &mut rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-                if CAPTURE_FOCUSED.get() {
-                    let inner =
-                        RECT { left: rect.left + 3, top: rect.top + 3, right: rect.right - 3, bottom: rect.bottom - 3 };
-                    let _ = DrawFocusRect(dc, &inner);
-                }
-                SelectObject(dc, old);
+                paint_capture(hwnd, dc, dlg);
                 let _ = EndPaint(hwnd, &ps);
+                LRESULT(0)
+            }
+            WM_PRINTCLIENT => {
+                paint_capture(hwnd, HDC(wparam.0 as *mut _), dlg);
                 LRESULT(0)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
@@ -151,9 +154,40 @@ unsafe extern "system" fn capture_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lpa
     }
 }
 
-unsafe extern "system" fn shortcut_proc(dlg: HWND, msg: u32, wparam: WPARAM, _: LPARAM) -> isize {
+/// Where the dialog's controls go, in the design's pixels (a 424 x 248 client area).
+fn places(dlg: HWND) -> Vec<Place> {
+    let label = |id, at, l| Place { id, at, kind: Kind::Label(l) };
+    let button = |id, x, primary| Place { id, at: R::new(x, 204, 84, 28), kind: Kind::Button { primary } };
+    let text = crate::ui::canvas::measure("Add the Win key", font(Font::Body), None).cx;
+    let tick = text * 96 / crate::ui::dpi() + 56;
+    // The box is a class of ours, not a widget: it is placed here and paints itself.
+    if let Some(h) = win::dlg_item(Some(dlg), ID_FIELD as i32) {
+        // SAFETY: a child of our own dialog, moved and sized.
+        unsafe {
+            let _ = SetWindowPos(h, None, px(16), px(40), px(392), px(44), SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+    vec![
+        label(ID_PROMPT, R::new(16, 12, 392, 20), PROMPT),
+        label(ID_HINT, R::new(16, 92, 392, 16), HINT),
+        Place { id: ID_EXTRA, at: R::new(16, 112, tick, 28), kind: Kind::Toggle },
+        label(ID_NOTE, R::new(16, 148, 392, 32), HINT),
+        button(ID_CLEAR, 16, false),
+        button(1, 232, true),
+        button(2, 324, false),
+    ]
+}
+
+/// The dialog procedure (the hidden renderer makes the dialog with it too).
+pub const PROC: DLGPROC = Some(shortcut_proc);
+
+unsafe extern "system" fn shortcut_proc(dlg: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> isize {
+    if let Some(r) = look::dialog_msg(dlg, msg, wparam, lparam) {
+        return r;
+    }
     match msg {
         WM_INITDIALOG => {
+            look::dress(dlg, (424, 248), &places(dlg));
             if WIN_PREFILL.get() {
                 send(win::dlg_item(Some(dlg), ID_EXTRA as i32).unwrap_or_default(), BM_SETCHECK, 1, 0);
             }
@@ -185,6 +219,13 @@ unsafe extern "system" fn shortcut_proc(dlg: HWND, msg: u32, wparam: WPARAM, _: 
 
 /// "Press the keys you want" for one pad key. `current` prefills it (mods, key name).
 pub fn shortcut(owner: HWND, current: Option<(u8, String)>) -> Shortcut {
+    let t = prepare(current);
+    let code = run(owner, &t, PROC);
+    outcome(code, TEXT_RESULT.take())
+}
+
+/// The dialog's state and template, for a dialog that starts from `current`.
+pub fn prepare(current: Option<(u8, String)>) -> Vec<u32> {
     // SAFETY: the class name is a static string and the procedure is `capture_proc` above. A
     // second registration fails harmlessly: the class from the first one is used.
     unsafe {
@@ -199,13 +240,14 @@ pub fn shortcut(owner: HWND, current: Option<(u8, String)>) -> Shortcut {
     let (capture, win) = prefill(current);
     CAPTURE.set(capture);
     TEXT_RESULT.set(None);
-    let tick = BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0;
+    let tick = BS_AUTOCHECKBOX | WS_TABSTOP.0;
+    let button = BS_OWNERDRAW | WS_TABSTOP.0;
     let items = [
         Item {
             class: Class::Static,
             text: "Press the keys you want, for example Ctrl+Shift+M.",
-            id: 0xFFFF,
-            style: 0,
+            id: ID_PROMPT,
+            style: SS_OWNERDRAW,
             rect: [7, 7, 250, 10],
         },
         Item {
@@ -215,30 +257,22 @@ pub fn shortcut(owner: HWND, current: Option<(u8, String)>) -> Shortcut {
             style: WS_TABSTOP.0,
             rect: [7, 20, 250, 20],
         },
-        Item { class: Class::Static, text: "", id: ID_HINT, style: 0, rect: [7, 44, 250, 18] },
+        Item { class: Class::Static, text: "", id: ID_HINT, style: SS_OWNERDRAW, rect: [7, 44, 250, 18] },
         Item { class: Class::Button, text: "Add the Win key", id: ID_EXTRA, style: tick, rect: [7, 64, 250, 12] },
         Item {
             class: Class::Static,
             text: "Windows keeps some combinations for itself (Win+L, Ctrl+Alt+Del, often the Win key). \
                    Those can be typed into the config file instead.",
-            id: 0xFFFF,
-            style: 0,
+            id: ID_NOTE,
+            style: SS_OWNERDRAW,
             rect: [7, 80, 250, 20],
         },
-        Item { class: Class::Button, text: "Clear", id: ID_CLEAR, style: WS_TABSTOP.0, rect: [7, 108, 56, 15] },
-        Item {
-            class: Class::Button,
-            text: "OK",
-            id: 1,
-            style: BS_DEFPUSHBUTTON as u32 | WS_TABSTOP.0,
-            rect: [141, 108, 56, 15],
-        },
-        Item { class: Class::Button, text: "Cancel", id: 2, style: WS_TABSTOP.0, rect: [201, 108, 56, 15] },
+        Item { class: Class::Button, text: "Clear", id: ID_CLEAR, style: button, rect: [7, 108, 56, 15] },
+        Item { class: Class::Button, text: "OK", id: 1, style: button, rect: [141, 108, 56, 15] },
+        Item { class: Class::Button, text: "Cancel", id: 2, style: button, rect: [201, 108, 56, 15] },
     ];
-    let t = template("Shortcut", [264, 130], &items);
     WIN_PREFILL.set(win);
-    let code = run(owner, &t, Some(shortcut_proc));
-    outcome(code, TEXT_RESULT.take())
+    template("Shortcut", [264, 130], &items)
 }
 
 #[cfg(test)]
