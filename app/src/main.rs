@@ -266,6 +266,7 @@ fn worker(
         let n = channels.len();
         let g = generation.load(Ordering::Relaxed);
         if g != seen_generation {
+            let starting = seen_generation == u64::MAX;
             seen_generation = g;
             // A renamed channel keeps its remembered level and the apps moved into it.
             let renamed = config::renames(&names, channels);
@@ -289,7 +290,10 @@ fn worker(
             mixer.set_focus(None, channels);
             mixer.reset(channels, &saved.levels);
             mixer.duck = cfg.duck;
-            mixer.restore = saved.restore.clone();
+            // After that the mixer keeps its own: Focus has just put back what it turned down.
+            if starting {
+                mixer.restore = saved.restore.clone();
+            }
             mixer.trims = saved.trims.clone();
             aims = Default::default();
             focus_key = None;

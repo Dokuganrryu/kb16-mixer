@@ -38,10 +38,41 @@ const AUDIBLE_RISE: Duration = Duration::from_millis(1000);
 /// ...and silence this long to end it (the gap between two songs does not).
 const AUDIBLE_FALL: Duration = Duration::from_millis(2500);
 
+/// One session's slider in the Windows mixer. A trait so the rules above can be tested
+/// without Core Audio.
+trait Slider {
+    fn level(&self) -> Option<f32>;
+    fn set_level(&self, v: f32);
+    fn muted(&self) -> Option<bool>;
+    fn set_muted(&self, muted: bool);
+}
+
+impl Slider for ISimpleAudioVolume {
+    fn level(&self) -> Option<f32> {
+        unsafe { self.GetMasterVolume().ok() }
+    }
+    fn set_level(&self, v: f32) {
+        unsafe {
+            let _ = self.SetMasterVolume(v, NO_CONTEXT);
+        }
+    }
+    fn muted(&self) -> Option<bool> {
+        unsafe { self.GetMute().ok().map(|b| b.as_bool()) }
+    }
+    fn set_muted(&self, muted: bool) {
+        unsafe {
+            let _ = self.SetMute(muted, NO_CONTEXT);
+        }
+    }
+}
+
 struct Session {
     pid: u32,
+    /// Windows' session instance id. One process can have several sessions, each with a
+    /// slider of its own (one per output device, or per stream), so the pid does not name one.
+    id: String,
     exe: String,
-    volume: ISimpleAudioVolume,
+    volume: Box<dyn Slider>,
     meter: Option<IAudioMeterInformation>,
     channel: Option<usize>,
 }
@@ -100,10 +131,11 @@ pub struct Mixer {
     /// Focus: this channel stands out, every other app channel plays at `duck` of its level.
     focus: Option<usize>,
     pub duck: f32,
-    /// Real level of each session Focus has turned down, by pid.
-    ducked: HashMap<u32, f32>,
-    /// The same by exe name. Saved to disk while Focus is on; anything still in here when no
-    /// Focus is active is left over from a run that ended mid-focus and gets its level back.
+    /// Real level of each session Focus has turned down, by session id.
+    ducked: HashMap<String, f32>,
+    /// The same by exe name (see `sync_restore`), plus the real level of apps that were turned
+    /// down when they closed or when the last run ended: their slider may still show the
+    /// turned-down level, so they get the real one back when they appear. Saved to disk.
     pub restore: HashMap<String, f32>,
     /// Each app's share of its channel level, by exe; missing = `trim::FULL`. Saved to disk.
     pub trims: HashMap<String, f32>,
@@ -161,29 +193,22 @@ impl Mixer {
             return;
         }
         let now = Instant::now();
-        unsafe {
-            for s in &self.sessions {
-                if let Some(&level) = self.ducked.get(&s.pid) {
-                    let _ = s.volume.SetMasterVolume(level, NO_CONTEXT);
-                }
+        let real = std::mem::take(&mut self.ducked);
+        for s in &self.sessions {
+            if let Some(&level) = real.get(&s.id) {
+                s.volume.set_level(level);
             }
         }
-        self.ducked.clear();
-        self.restore.clear();
         self.focus = focus;
-        for i in 0..self.sessions.len() {
-            let Some(c) = self.sessions[i].channel else { continue };
-            if !self.is_ducked(c, channels) {
+        for s in &self.sessions {
+            if !s.channel.is_some_and(|c| self.is_ducked(c, channels)) {
                 continue;
             }
-            let s = &self.sessions[i];
-            let level = unsafe { s.volume.GetMasterVolume().unwrap_or(1.0) };
-            unsafe {
-                let _ = s.volume.SetMasterVolume(level * self.duck, NO_CONTEXT);
-            }
-            self.ducked.insert(s.pid, level);
-            self.restore.insert(s.exe.clone(), level);
+            let level = real.get(&s.id).copied().or_else(|| s.volume.level()).unwrap_or(1.0);
+            s.volume.set_level(level * self.duck);
+            self.ducked.insert(s.id.clone(), level);
         }
+        self.sync_restore();
         // Sessions report the change a little late; do not read it back as a new level.
         for f in &mut self.faders {
             f.touched = Some(now);
@@ -201,7 +226,6 @@ impl Mixer {
             self.faders.resize(channels.len(), Fader::default());
         }
 
-        let before: HashSet<u32> = self.sessions.iter().map(|s| s.pid).collect();
         let mut sessions = self.enumerate();
         self.name_processes(&mut sessions);
         let needs_focus = channels.iter().any(|c| matches!(c.target, ChannelTarget::Focused));
@@ -209,105 +233,7 @@ impl Mixer {
         for s in &mut sessions {
             s.channel = assign(channels, &self.moved, &s.exe, s.pid, focus.as_ref());
         }
-
-        // Left over from a run that ended while Focus was on: give those apps their level back.
-        if self.focus.is_none() && !self.restore.is_empty() {
-            for s in &sessions {
-                if let Some(level) = self.restore.remove(&s.exe) {
-                    unsafe {
-                        let _ = s.volume.SetMasterVolume(level, NO_CONTEXT);
-                    }
-                    // Windows reports it late; reading it back now would look like a user change.
-                    if let Some(f) = s.channel.and_then(|c| self.faders.get_mut(c)) {
-                        f.touched = Some(Instant::now());
-                    }
-                }
-            }
-        }
-
-        // Sessions already playing tell us where Windows stands; new ones take the channel level.
-        let mut adopted = vec![false; channels.len()];
-        let mut followed: HashSet<&str> = HashSet::new();
-        let mut push = vec![false; channels.len()];
-        for s in &sessions {
-            let Some(c) = s.channel else { continue };
-            let ducked = self.is_ducked(c, channels);
-            let t = self.trim(&s.exe);
-            let f = &mut self.faders[c];
-            let settled = f.touched.is_none_or(|t| t.elapsed() >= SETTLE);
-            let is_new = !first && !before.contains(&s.pid);
-            if ducked {
-                // A turned-down level is ours, never Windows' truth. An app that appears
-                // mid-focus is turned down too, remembering what it should be.
-                if !self.ducked.contains_key(&s.pid) {
-                    let level = if is_new && f.pinned {
-                        trim::heard(f.volume, t)
-                    } else {
-                        unsafe { s.volume.GetMasterVolume().unwrap_or(1.0) }
-                    };
-                    unsafe {
-                        let _ = s.volume.SetMasterVolume(level * self.duck, NO_CONTEXT);
-                    }
-                    self.ducked.insert(s.pid, level);
-                    self.restore.insert(s.exe.clone(), level);
-                }
-                continue;
-            }
-            unsafe {
-                if is_new && f.muted {
-                    let _ = s.volume.SetMute(true, NO_CONTEXT);
-                }
-                if is_new && f.pinned {
-                    // An app joining a channel takes its dialled-in level times its trim.
-                    let _ = s.volume.SetMasterVolume(trim::heard(f.volume, t), NO_CONTEXT);
-                    continue;
-                }
-                if !settled {
-                    continue;
-                }
-                if !adopted[c] && !is_new {
-                    f.muted = s.volume.GetMute().map(|b| b.as_bool()).unwrap_or(f.muted);
-                    adopted[c] = true;
-                }
-                let Ok(v) = s.volume.GetMasterVolume() else { continue };
-                if !f.known {
-                    // First sight of a channel nobody has set: its level follows this app.
-                    f.volume = if t >= MOVED { (v / t).min(1.0) } else { v };
-                    f.known = true;
-                }
-                // Several sessions of one app follow the first that moved.
-                if (v - trim::heard(f.volume, t)).abs() < MOVED || !followed.insert(&s.exe) {
-                    continue;
-                }
-                let placed = place(f.volume, v);
-                let was_off = f.volume < MOVED;
-                f.volume = placed.level;
-                push[c] |= was_off && placed.level >= MOVED;
-                self.trims.insert(s.exe.clone(), placed.trim);
-                if placed.others != 1.0 {
-                    let others = sessions.iter().filter(|o| o.channel == Some(c) && o.exe != s.exe);
-                    scale_trims(&mut self.trims, others.map(|o| o.exe.as_str()), placed.others);
-                }
-                for twin in sessions.iter().filter(|o| o.exe == s.exe && o.pid != s.pid) {
-                    let _ = twin.volume.SetMasterVolume(v, NO_CONTEXT);
-                }
-            }
-        }
-        // A channel that was off came back on through one app: the rest return at their balance.
-        for (c, _) in push.iter().enumerate().filter(|(_, p)| **p) {
-            if self.is_ducked(c, channels) {
-                continue;
-            }
-            let level = self.faders[c].volume;
-            for s in sessions.iter().filter(|s| s.channel == Some(c) && !followed.contains(s.exe.as_str())) {
-                unsafe {
-                    let _ = s.volume.SetMasterVolume(trim::heard(level, self.trim(&s.exe)), NO_CONTEXT);
-                }
-            }
-        }
-        let live: HashSet<u32> = sessions.iter().map(|s| s.pid).collect();
-        self.ducked.retain(|pid, _| live.contains(pid));
-        self.sessions = sessions;
+        self.follow(sessions, channels, first);
 
         self.mic = self.open_mic();
         self.output_muted = self.device_muted(Device::Master);
@@ -319,6 +245,119 @@ impl Mixer {
                     f.muted = mic.volume.GetMute().map(|b| b.as_bool()).unwrap_or(f.muted);
                     f.known = true;
                 }
+            }
+        }
+    }
+
+    /// Takes in the sessions Windows has now, each with its channel, by the rules at the top.
+    fn follow(&mut self, sessions: Vec<Session>, channels: &[ChannelCfg], first: bool) {
+        let now = Instant::now();
+        let before: HashSet<String> = self.sessions.iter().map(|s| s.id.clone()).collect();
+        // Real levels no live turned-down session stands for: an app that closed while it was
+        // turned down, or one from a run that ended mid-focus (a crash, a power cut).
+        let held: HashSet<&str> =
+            self.sessions.iter().filter(|s| self.ducked.contains_key(&s.id)).map(|s| s.exe.as_str()).collect();
+        let left_over: HashMap<String, f32> =
+            self.restore.iter().filter(|(exe, _)| !held.contains(exe.as_str())).map(|(e, l)| (e.clone(), *l)).collect();
+
+        // Sessions already playing tell us where Windows stands; new ones take the channel level.
+        let mut adopted = vec![false; channels.len()];
+        let mut followed: HashSet<&str> = HashSet::new();
+        let mut push = vec![false; channels.len()];
+        for s in &sessions {
+            let ducked = s.channel.is_some_and(|c| self.is_ducked(c, channels));
+            let left = if self.ducked.contains_key(&s.id) { None } else { left_over.get(&s.exe).copied() };
+            if !ducked && let Some(level) = self.ducked.remove(&s.id).or(left) {
+                // No longer turned down (Focus ended while the app was gone, or the session left
+                // a turned-down channel), but its slider still shows the reduced level: put the
+                // real one back, and learn nothing until Windows reports it.
+                s.volume.set_level(level);
+                if let Some(f) = s.channel.and_then(|c| self.faders.get_mut(c)) {
+                    f.touched = Some(now);
+                }
+                continue;
+            }
+            let Some(c) = s.channel else { continue };
+            let t = self.trim(&s.exe);
+            let f = &mut self.faders[c];
+            let settled = f.touched.is_none_or(|t| t.elapsed() >= SETTLE);
+            let is_new = !first && !before.contains(&s.id);
+            if ducked {
+                // A turned-down level is ours, never Windows' truth. An app that appears
+                // mid-focus is turned down too, remembering what it should be.
+                if !self.ducked.contains_key(&s.id) {
+                    let level = match left {
+                        Some(level) => level,
+                        None if is_new && f.pinned => trim::heard(f.volume, t),
+                        None => s.volume.level().unwrap_or(1.0),
+                    };
+                    s.volume.set_level(level * self.duck);
+                    self.ducked.insert(s.id.clone(), level);
+                }
+                continue;
+            }
+            if is_new && f.muted {
+                s.volume.set_muted(true);
+            }
+            if is_new && f.pinned {
+                // An app joining a channel takes its dialled-in level times its trim.
+                s.volume.set_level(trim::heard(f.volume, t));
+                continue;
+            }
+            if !settled {
+                continue;
+            }
+            if !adopted[c] && !is_new {
+                f.muted = s.volume.muted().unwrap_or(f.muted);
+                adopted[c] = true;
+            }
+            let Some(v) = s.volume.level() else { continue };
+            if !f.known {
+                // First sight of a channel nobody has set: its level follows this app.
+                f.volume = if t >= MOVED { (v / t).min(1.0) } else { v };
+                f.known = true;
+            }
+            // Several sessions of one app follow the first that moved.
+            if (v - trim::heard(f.volume, t)).abs() < MOVED || !followed.insert(&s.exe) {
+                continue;
+            }
+            let placed = place(f.volume, v);
+            let was_off = f.volume < MOVED;
+            f.volume = placed.level;
+            push[c] |= was_off && placed.level >= MOVED;
+            self.trims.insert(s.exe.clone(), placed.trim);
+            if placed.others != 1.0 {
+                let others = sessions.iter().filter(|o| o.channel == Some(c) && o.exe != s.exe);
+                scale_trims(&mut self.trims, others.map(|o| o.exe.as_str()), placed.others);
+            }
+            for twin in sessions.iter().filter(|o| o.exe == s.exe && o.id != s.id) {
+                twin.volume.set_level(v);
+            }
+        }
+        // A channel that was off came back on through one app: the rest return at their balance.
+        for (c, _) in push.iter().enumerate().filter(|(_, p)| **p) {
+            if self.is_ducked(c, channels) {
+                continue;
+            }
+            let level = self.faders[c].volume;
+            for s in sessions.iter().filter(|s| s.channel == Some(c) && !followed.contains(s.exe.as_str())) {
+                s.volume.set_level(trim::heard(level, self.trim(&s.exe)));
+            }
+        }
+        let live: HashSet<&str> = sessions.iter().map(|s| s.id.as_str()).collect();
+        self.ducked.retain(|id, _| live.contains(id.as_str()));
+        self.sessions = sessions;
+        self.sync_restore();
+    }
+
+    /// Rebuilds `restore` from `ducked`. An app that is not running keeps its entry, so it gets
+    /// its real level back when it returns, whether or not Focus is still on then.
+    fn sync_restore(&mut self) {
+        let live: HashSet<&str> = self.sessions.iter().map(|s| s.exe.as_str()).collect();
+        self.restore.retain(|exe, _| !live.contains(exe.as_str()));
+        for s in &self.sessions {
+            if let Some(&level) = self.ducked.get(&s.id) {
+                self.restore.insert(s.exe.clone(), level);
             }
         }
     }
@@ -342,10 +381,20 @@ impl Mixer {
                         continue;
                     }
                     let Ok(volume) = ctl.cast::<ISimpleAudioVolume>() else { continue };
+                    let pid = ctl2.GetProcessId().unwrap_or(0);
+                    let id = match ctl2.GetSessionInstanceIdentifier() {
+                        Ok(p) => {
+                            let id = p.to_string().unwrap_or_default();
+                            CoTaskMemFree(Some(p.0 as *const _));
+                            id
+                        }
+                        Err(_) => String::new(),
+                    };
                     out.push(Session {
-                        pid: ctl2.GetProcessId().unwrap_or(0),
+                        pid,
+                        id: if id.is_empty() { format!("{pid}/{i}/{j}") } else { id },
                         exe: String::new(),
-                        volume,
+                        volume: Box::new(volume),
                         meter: ctl.cast::<IAudioMeterInformation>().ok(),
                         channel: None,
                     });
@@ -398,19 +447,14 @@ impl Mixer {
             if let Some(c) = s.channel.filter(|&c| c < 4) {
                 peak[c] = peak[c].max(p);
             }
-            if p > AUDIBLE && !self.output_muted {
-                let (volume, muted) = unsafe {
-                    (s.volume.GetMasterVolume().unwrap_or(1.0), s.volume.GetMute().is_ok_and(|b| b.as_bool()))
-                };
-                if !muted {
-                    heard = heard.max(p * volume);
-                }
+            if p > AUDIBLE && !self.output_muted && !s.volume.muted().unwrap_or(false) {
+                heard = heard.max(p * s.volume.level().unwrap_or(1.0));
             }
         }
-        if let (Some(c), Some(Mic { meter: Some(m), .. })) = (mic_channel(channels), &self.mic) {
-            if c < 4 {
-                peak[c] = unsafe { m.GetPeakValue().unwrap_or(0.0) };
-            }
+        if let (Some(c), Some(Mic { meter: Some(m), .. })) = (mic_channel(channels), &self.mic)
+            && c < 4
+        {
+            peak[c] = unsafe { m.GetPeakValue().unwrap_or(0.0) };
         }
         (peak.map(to_level), heard)
     }
@@ -458,19 +502,19 @@ impl Mixer {
                 }
             } else {
                 for s in self.sessions.iter().filter(|s| s.channel == Some(channel)) {
-                    let _ = s.volume.SetMute(f.muted, NO_CONTEXT);
+                    s.volume.set_muted(f.muted);
                     if !set_level {
                         continue;
                     }
                     let level = trim::heard(f.volume, self.trims.get(&s.exe).copied().unwrap_or(trim::FULL));
-                    let _ = s.volume.SetMasterVolume(if ducked { level * self.duck } else { level }, NO_CONTEXT);
+                    s.volume.set_level(if ducked { level * self.duck } else { level });
                     if ducked {
-                        self.ducked.insert(s.pid, level);
-                        self.restore.insert(s.exe.clone(), level);
+                        self.ducked.insert(s.id.clone(), level);
                     }
                 }
             }
         }
+        self.sync_restore();
         self.channel_readout(channel, channels)
     }
 
@@ -529,14 +573,12 @@ impl Mixer {
             } else {
                 continue;
             };
-            unsafe {
-                let _ = s.volume.SetMasterVolume(if ducked { target * self.duck } else { target }, NO_CONTEXT);
-            }
+            s.volume.set_level(if ducked { target * self.duck } else { target });
             if ducked {
-                self.ducked.insert(s.pid, target);
-                self.restore.insert(s.exe.clone(), target);
+                self.ducked.insert(s.id.clone(), target);
             }
         }
+        self.sync_restore();
         self.app_readout(channel, exe)
     }
 
@@ -588,32 +630,50 @@ impl Mixer {
         };
         let fg_exe = snap.exe(fg).unwrap_or("").to_string();
         let name = pretty(&fg_exe);
-        let hits: Vec<&Session> = self
-            .sessions
-            .iter()
-            .filter(|s| snap.descends_from(s.pid, fg) || (!fg_exe.is_empty() && s.exe == fg_exe))
+        let hits: Vec<usize> = (0..self.sessions.len())
+            .filter(|&i| {
+                let s = &self.sessions[i];
+                snap.descends_from(s.pid, fg) || (!fg_exe.is_empty() && s.exe == fg_exe)
+            })
             .collect();
-        let Some(first) = hits.first() else { return Readout { name, volume: 0, muted: false, live: false } };
-        unsafe {
-            let mut vol = first.volume.GetMasterVolume().unwrap_or(1.0);
-            let mut muted = first.volume.GetMute().map(|b| b.as_bool()).unwrap_or(false);
-            match delta_pct {
-                Some(d) => {
-                    vol = (vol + d / 100.0).clamp(0.0, 1.0);
-                    if d > 0.0 {
-                        muted = false;
-                    }
-                }
-                None => muted = !muted,
-            }
-            for s in &hits {
-                let _ = s.volume.SetMasterVolume(vol, NO_CONTEXT);
-                let _ = s.volume.SetMute(muted, NO_CONTEXT);
-            }
-            // Its channel's fader follows on the next refresh.
-            self.refreshed = Some(Instant::now() - REFRESH_EVERY + Duration::from_millis(300));
-            Readout { name, volume: pct(vol), muted, live: true }
+        if hits.is_empty() {
+            return Readout { name, volume: 0, muted: false, live: false };
         }
+        let (vol, muted) = self.turn_sessions(&hits, delta_pct);
+        // Its channel's fader follows on the next refresh.
+        self.refreshed = Some(Instant::now() - REFRESH_EVERY + Duration::from_millis(300));
+        Readout { name, volume: pct(vol), muted, live: true }
+    }
+
+    /// Turns these sessions together by `delta_pct` from the first one's level, or toggles their
+    /// mute when it is None. Returns the new level and mute. A session Focus has turned down is
+    /// turned from its real level, which it plays at times the duck and gets back after Focus.
+    fn turn_sessions(&mut self, hits: &[usize], delta_pct: Option<f32>) -> (f32, bool) {
+        let first = &self.sessions[hits[0]];
+        let mut vol = self.ducked.get(&first.id).copied().or_else(|| first.volume.level()).unwrap_or(1.0);
+        let mut muted = first.volume.muted().unwrap_or(false);
+        match delta_pct {
+            Some(d) => {
+                vol = (vol + d / 100.0).clamp(0.0, 1.0);
+                if d > 0.0 {
+                    muted = false;
+                }
+            }
+            None => muted = !muted,
+        }
+        for &i in hits {
+            let s = &self.sessions[i];
+            match self.ducked.get_mut(&s.id) {
+                Some(real) => {
+                    *real = vol;
+                    s.volume.set_level(vol * self.duck);
+                }
+                None => s.volume.set_level(vol),
+            }
+            s.volume.set_muted(muted);
+        }
+        self.sync_restore();
+        (vol, muted)
     }
 
     fn endpoint(&self, device: Device) -> Option<IAudioEndpointVolume> {
@@ -681,15 +741,22 @@ impl Mixer {
             Moved::To
         };
         self.refresh(channels, true);
-        // The app takes on the level of the channel it landed in, times its own trim.
+        // The app takes on the level of the channel it landed in, times its own trim (turned
+        // down with the rest of that channel if Focus is on another one).
         let t = self.trim(&exe);
         for s in self.sessions.iter().filter(|s| s.exe == exe) {
-            let Some(f) = s.channel.and_then(|c| self.faders.get(c)).filter(|f| f.pinned) else { continue };
-            unsafe {
-                let _ = s.volume.SetMasterVolume(trim::heard(f.volume, t), NO_CONTEXT);
-                let _ = s.volume.SetMute(f.muted, NO_CONTEXT);
+            let Some(c) = s.channel else { continue };
+            let Some(f) = self.faders.get(c).filter(|f| f.pinned) else { continue };
+            let level = trim::heard(f.volume, t);
+            if self.is_ducked(c, channels) {
+                s.volume.set_level(level * self.duck);
+                self.ducked.insert(s.id.clone(), level);
+            } else {
+                s.volume.set_level(level);
             }
+            s.volume.set_muted(f.muted);
         }
+        self.sync_restore();
         (outcome, pretty(&exe))
     }
 
@@ -705,8 +772,8 @@ impl Mixer {
     pub fn describe(&self) -> Vec<String> {
         self.sessions
             .iter()
-            .map(|s| unsafe {
-                let v = s.volume.GetMasterVolume().unwrap_or(-1.0);
+            .map(|s| {
+                let v = s.volume.level().unwrap_or(-1.0);
                 format!("pid {:>6}  {:<26} channel {:?}  vol {:>3.0}%", s.pid, s.exe, s.channel, v * 100.0)
             })
             .collect()
@@ -799,6 +866,178 @@ pub fn pretty(exe: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    /// A slider in a pretend Windows mixer; clones share it, as two looks at one session do.
+    #[derive(Clone)]
+    struct Fake(Rc<Cell<f32>>);
+
+    impl Fake {
+        fn at(level: f32) -> Fake {
+            Fake(Rc::new(Cell::new(level)))
+        }
+        fn get(&self) -> f32 {
+            self.0.get()
+        }
+    }
+
+    impl Slider for Fake {
+        fn level(&self) -> Option<f32> {
+            Some(self.0.get())
+        }
+        fn set_level(&self, v: f32) {
+            self.0.set(v);
+        }
+        fn muted(&self) -> Option<bool> {
+            Some(false)
+        }
+        fn set_muted(&self, _: bool) {}
+    }
+
+    const MEDIA: usize = 0;
+    const GAME: usize = 1;
+
+    fn channels() -> Vec<ChannelCfg> {
+        let ch = |name: &str, target| ChannelCfg { name: name.into(), color: [0; 3], target };
+        vec![ch("Media", ChannelTarget::Apps(vec!["spotify.exe".into()])), ch("Game", ChannelTarget::Other)]
+    }
+
+    /// A mixer whose channels were set on the pad to these levels, with no app seen yet.
+    fn mixer(levels: [f32; 2]) -> Mixer {
+        let mut m = Mixer::new().expect("COM");
+        m.faders =
+            levels.iter().map(|&volume| Fader { volume, known: true, pinned: true, ..Fader::default() }).collect();
+        m
+    }
+
+    /// What Windows lists now: (session id, exe, its slider, its channel). One process each.
+    fn windows_has(sessions: &[(&str, &str, &Fake, usize)]) -> Vec<Session> {
+        sessions
+            .iter()
+            .map(|&(id, exe, fake, channel)| Session {
+                pid: 7,
+                id: id.into(),
+                exe: exe.into(),
+                volume: Box::new(fake.clone()),
+                meter: None,
+                channel: Some(channel),
+            })
+            .collect()
+    }
+
+    /// One refresh, long enough after the last change for Windows to be read back.
+    fn settled_refresh(m: &mut Mixer, sessions: Vec<Session>, first: bool) {
+        for f in &mut m.faders {
+            f.touched = None;
+        }
+        m.follow(sessions, &channels(), first);
+    }
+
+    fn close(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-4
+    }
+
+    #[test]
+    fn every_session_of_an_app_follows_the_one_that_moved() {
+        // Spotify plays on two output devices: one process, two sliders.
+        let (a, b) = (Fake::at(0.5), Fake::at(0.5));
+        let spotify = || windows_has(&[("a", "spotify.exe", &a, MEDIA), ("b", "spotify.exe", &b, MEDIA)]);
+        let mut m = mixer([0.5, 0.5]);
+        settled_refresh(&mut m, spotify(), true);
+        a.set_level(0.8); // moved in the Windows mixer
+        settled_refresh(&mut m, spotify(), false);
+        assert!(close(b.get(), 0.8), "the other session follows: {}", b.get());
+        for _ in 0..3 {
+            settled_refresh(&mut m, spotify(), false);
+        }
+        assert!(close(m.faders[MEDIA].volume, 0.8) && m.trim("spotify.exe") == trim::FULL, "and it stays put");
+        assert!(close(a.get(), 0.8) && close(b.get(), 0.8));
+    }
+
+    #[test]
+    fn a_second_session_that_starts_during_focus_is_turned_down_too() {
+        let (a, b) = (Fake::at(0.5), Fake::at(0.5));
+        let mut m = mixer([0.5, 0.5]);
+        settled_refresh(&mut m, windows_has(&[("a", "spotify.exe", &a, MEDIA)]), true);
+        m.set_focus(Some(GAME), &channels());
+        assert!(close(a.get(), 0.125));
+        settled_refresh(
+            &mut m,
+            windows_has(&[("a", "spotify.exe", &a, MEDIA), ("b", "spotify.exe", &b, MEDIA)]),
+            false,
+        );
+        assert!(close(b.get(), 0.125), "the new one is turned down: {}", b.get());
+        m.set_focus(None, &channels());
+        assert!(close(a.get(), 0.5) && close(b.get(), 0.5));
+    }
+
+    #[test]
+    fn sessions_of_one_app_get_their_own_level_back() {
+        let (a, b) = (Fake::at(0.4), Fake::at(0.8));
+        let mut m = mixer([0.8, 0.5]);
+        m.faders[MEDIA].touched = Some(Instant::now()); // just turned: Windows is not read back
+        m.follow(windows_has(&[("a", "spotify.exe", &a, MEDIA), ("b", "spotify.exe", &b, MEDIA)]), &channels(), true);
+        m.set_focus(Some(GAME), &channels());
+        assert!(close(a.get(), 0.1) && close(b.get(), 0.2));
+        m.set_focus(None, &channels());
+        assert!(close(a.get(), 0.4) && close(b.get(), 0.8), "{} {}", a.get(), b.get());
+    }
+
+    #[test]
+    fn an_app_closed_during_focus_comes_back_at_its_real_level() {
+        let a = Fake::at(0.6);
+        let mut m = mixer([0.5, 0.5]);
+        m.faders[MEDIA] = Fader::default(); // never set on the pad: it follows the app
+        settled_refresh(&mut m, windows_has(&[("a", "spotify.exe", &a, MEDIA)]), true);
+        assert!(close(m.faders[MEDIA].volume, 0.6));
+        m.set_focus(Some(GAME), &channels());
+        settled_refresh(&mut m, Vec::new(), false); // Spotify is closed
+        m.set_focus(None, &channels());
+        // Windows remembers the turned-down level for the app's next session.
+        let again = Fake::at(0.15);
+        settled_refresh(&mut m, windows_has(&[("a2", "spotify.exe", &again, MEDIA)]), false);
+        assert!(close(again.get(), 0.6), "its real level is put back: {}", again.get());
+        settled_refresh(&mut m, windows_has(&[("a2", "spotify.exe", &again, MEDIA)]), false);
+        assert!(close(m.faders[MEDIA].volume, 0.6), "and nothing is learned from the turned-down one");
+        assert!(m.restore.is_empty());
+    }
+
+    #[test]
+    fn a_session_that_leaves_a_turned_down_channel_gets_its_real_level() {
+        let x = Fake::at(0.5);
+        let mut m = mixer([0.5, 0.9]);
+        settled_refresh(&mut m, windows_has(&[("x", "spotify.exe", &x, MEDIA)]), true);
+        m.set_focus(Some(GAME), &channels());
+        assert!(close(x.get(), 0.125));
+        // Moved into the channel that stands out (the Move key, or it is now the app in front).
+        settled_refresh(&mut m, windows_has(&[("x", "spotify.exe", &x, GAME)]), false);
+        assert!(close(x.get(), 0.5), "real level back: {}", x.get());
+        assert!(close(m.faders[GAME].volume, 0.9) && m.trim("spotify.exe") == trim::FULL, "nothing learned");
+    }
+
+    #[test]
+    fn crash_recovery_gives_every_session_of_an_app_its_level() {
+        let (a, b) = (Fake::at(0.175), Fake::at(0.175));
+        let mut m = mixer([0.7, 0.5]);
+        m.restore.insert("spotify.exe".into(), 0.7); // the last run ended mid-focus
+        settled_refresh(&mut m, windows_has(&[("a", "spotify.exe", &a, MEDIA), ("b", "spotify.exe", &b, MEDIA)]), true);
+        assert!(close(a.get(), 0.7) && close(b.get(), 0.7), "{} {}", a.get(), b.get());
+        assert!(m.restore.is_empty());
+    }
+
+    #[test]
+    fn the_app_in_front_knob_moves_the_real_level_under_focus() {
+        let a = Fake::at(0.6);
+        let mut m = mixer([0.6, 0.5]);
+        settled_refresh(&mut m, windows_has(&[("a", "spotify.exe", &a, MEDIA)]), true);
+        m.set_focus(Some(GAME), &channels());
+        let (vol, _) = m.turn_sessions(&[0], Some(10.0));
+        assert!(close(vol, 0.7), "the readout shows the real level: {vol}");
+        assert!(close(a.get(), 0.175), "still turned down: {}", a.get());
+        m.set_focus(None, &channels());
+        assert!(close(a.get(), 0.7), "the change survives Focus: {}", a.get());
+    }
 
     #[test]
     fn only_sustained_sound_counts_as_playing() {
