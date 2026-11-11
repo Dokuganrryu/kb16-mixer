@@ -325,7 +325,7 @@ row1 = ["page", "open:C:\\Tools\\obs64.exe", "open:%USERPROFILE%\\Downloads", "o
 
 ### Keys that the pad types
 
-The pad sends these keys itself, as a USB keyboard. They work in all programs, also in games.
+The pad sends these keys itself, as a USB keyboard. Windows receives them as normal keyboard input, so most programs and games see them.
 
 | Value | Key |
 |---|---|

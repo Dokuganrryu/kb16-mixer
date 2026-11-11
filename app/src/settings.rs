@@ -653,7 +653,7 @@ fn build(hwnd: HWND) {
     }
     label(
         hwnd,
-        "Keys that type (media keys, F13 to F24, shortcuts) are pressed by the pad itself, so they work everywhere.",
+        "Keys that type (media keys, F13 to F24, shortcuts) are typed by the pad itself as normal keyboard input.",
         24,
         238,
         630,

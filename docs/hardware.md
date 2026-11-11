@@ -130,7 +130,7 @@ Thus each flash ends with one disconnect and one connect of the pad.
 | Normal start | Writes `0x424D` to `BKP_DR10`, so that a reset starts the firmware again |
 | Panic or hard fault | Writes a mark to `BKP_DR8` and resets. The bootloader starts the firmware again. |
 | Watchdog reset | The firmware starts again. |
-| Three crashed starts in a row | The firmware writes `0x424C` and resets. The pad stays in the bootloader. |
+| Three crashed starts in a row | The firmware writes `0x424C` and resets. The pad is designed to stay in the bootloader. This was not tested on the pad. |
 
 The independent watchdog has a timeout of approximately 2 seconds. A firmware task feeds it every 250 ms.
 

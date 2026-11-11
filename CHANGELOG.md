@@ -18,7 +18,7 @@ No release exists yet. Build from source for now.
 - Key releases are never dropped. On USB suspend or reset, the pad releases all typed keys.
 - The firmware version in the USB device release number.
 - Three ways into the bootloader: the top-left key at start, the four corner keys for 2 seconds, and a command from the app.
-- Watchdog, restart after a crash, and a stop in the bootloader after three crashed starts in a row.
+- Watchdog and restart after a crash. After three crashed starts in a row, the firmware is designed to stop in the bootloader. This was not tested on the pad.
 - Crash log in the flash page at `0x0801F800`.
 
 ### App
@@ -56,3 +56,6 @@ No release exists yet. Build from source for now.
   - the stored name
   - `open:`
   - the settings window with three tabs
+- Not tested:
+  - the stop in the bootloader after three crashed starts in a row
+  - a firmware image that does not start at all

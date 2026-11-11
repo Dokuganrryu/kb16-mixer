@@ -40,7 +40,7 @@ This project does not include `dfu-util`, a driver installer or a driver.
 
 | Item | Command or notes |
 |---|---|
-| Rust (stable), 1.85 or later | Install with rustup. The crates use Rust edition 2024. |
+| Rust (stable), 1.90 or later | Install with rustup. The crates use Rust edition 2024. The app needs 1.90 and the firmware needs 1.88. |
 | Firmware target | `rustup target add thumbv7m-none-eabi` |
 | `objcopy` and `nm` | `rustup component add llvm-tools`, or the `arm-none-eabi` binutils |
 | Python 3 | The firmware build script uses it for the image check. |
@@ -232,7 +232,7 @@ If the pad does not start, see [Recovery](#recovery).
 
 ## Recovery
 
-The firmware never writes the bootloader. Thus the bootloader stays available to flash a new image.
+This firmware never writes the bootloader region, so the bootloader should stay available for a new image. This is not a guarantee: see the cases that are not tested in [A firmware that does not start at all](#a-firmware-that-does-not-start-at-all) and in the [Status table](../README.md#status).
 
 There are three ways into the bootloader while the firmware of this project runs:
 
@@ -246,14 +246,14 @@ The firmware also recovers by itself:
 
 - A watchdog resets the chip if the firmware stops for approximately 2 seconds. The firmware then starts again.
 - After a crash, the firmware starts again.
-- After three crashed starts in a row, the pad stays in the bootloader. Then flash a correct image.
+- After three crashed starts in a row, the firmware is designed to keep the pad in the bootloader. Then flash a correct image. This was not tested on the pad.
 
 ### A firmware that does not start at all
 
 This case (for example, after an interrupted download) was **not tested**. The project can make no promise about it.
 These facts are known:
 
-- The bootloader is never overwritten.
+- This firmware never writes the bootloader region.
 - The QMK readme for this board names a reset button on the back of the PCB. This project did not test it.
 
 ## Return to the stock firmware

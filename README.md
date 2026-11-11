@@ -25,11 +25,11 @@ This is an unofficial project. It is not affiliated with DOIO or endorsed by DOI
 The app changes the things that you see in the Windows volume mixer: the slider and the mute switch of each program.
 It also changes the level and the mute of your microphone. If you set a knob to "master", it changes the master volume.
 
-## Is it safe to try?
+## Risks and safeguards
 
-- The bootloader of the pad is never written. Thus you can always flash a new firmware image from the bootloader.
+- This firmware never writes the bootloader region, so the bootloader should stay available for a new image. This is not a guarantee: see the cases that are not tested in [Status](#status).
 - There are three ways to put the pad into the bootloader. One of them uses only the keys. See [Recovery](#recovery).
-- The firmware restarts itself after a crash. After three crashes in a row, it stays in the bootloader. Then you can flash again.
+- The firmware restarts itself after a crash. After three crashes in a row, it is designed to stay in the bootloader. Then you can flash again. This was not tested on the pad.
 - The project was tested on **one** pad only (KB16-01 rev2, Windows 11). Other units can be different.
 - A firmware image that does not start at all (for example, after an interrupted download) was not tested.
 
@@ -39,20 +39,22 @@ You flash firmware at your own risk. Flashing can void the warranty of the pad.
 
 The project has one tested pad. This is what was tested, and how:
 
-| Item | Tested on the real pad | Tested by automated tests and builds only |
-|---|---|---|
-| Basic mixer: a knob moves a channel, Mute keys, meters (earlier version) | yes | |
-| Focus, Talk, Move (earlier version) | yes | |
-| Keys, knob turns, key lights, screen | yes | |
-| Flashing and recovery | yes, with earlier versions of the firmware | |
-| Two key pages | | yes |
-| Knob press to select one program in a channel | | yes |
-| Volume balance (trim) rules | | yes |
-| Focus with several audio sessions of one program | | yes |
-| Idle rule (screen off and lights dim only after no sound and no touch) | | yes |
-| Name on the logo screen, kept in the pad | | yes |
-| `open:` key action | | yes |
-| Settings window with three tabs | | yes |
+| Item | Tested on the real pad | Tested by automated tests and builds only | Not tested |
+|---|---|---|---|
+| Basic mixer: a knob moves a channel, Mute keys, meters (earlier version) | yes | | |
+| Focus, Talk, Move (earlier version) | yes | | |
+| Keys, knob turns, key lights, screen | yes | | |
+| Flashing and recovery | yes, with earlier versions of the firmware | | |
+| Two key pages | | yes | |
+| Knob press to select one program in a channel | | yes | |
+| Volume balance (trim) rules | | yes | |
+| Focus with several audio sessions of one program | | yes | |
+| Idle rule (screen off and lights dim only after no sound and no touch) | | yes | |
+| Name on the logo screen, kept in the pad | | yes | |
+| `open:` key action | | yes | |
+| Settings window with three tabs | | yes | |
+| The pad stays in the bootloader after three crashed starts in a row | | | yes |
+| A firmware image that does not start at all (for example, after an interrupted download) | | | yes |
 
 The table shows the state at the time of writing. Please report your results, good or bad, in an issue.
 

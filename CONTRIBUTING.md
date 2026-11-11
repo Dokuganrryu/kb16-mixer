@@ -19,6 +19,7 @@ Each crate has its own `Cargo.toml` and `Cargo.lock`. There is no Cargo workspac
 
 For the tools that you need, see [docs/flashing.md](docs/flashing.md#prerequisites).
 CI (`.github/workflows/ci.yml`) runs the same commands as below. Run them before you open a pull request.
+In CI, a Clippy warning fails the protocol and the app jobs. The firmware Clippy step is advisory: it shows the warnings, but it does not fail the job.
 
 ### Protocol
 
@@ -49,7 +50,7 @@ This writes `firmware/target/kb16-mixer-firmware-diag.bin`.
 ```sh
 cd app
 cargo fmt --check
-cargo clippy --all-targets --locked
+cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 cd ..
 sh scripts/build-app.sh
@@ -133,7 +134,7 @@ A pull request that breaks one of these rules will not be merged.
 ### All code
 
 - Format the code with `cargo fmt`. The settings are in `rustfmt.toml`.
-- Fix all Clippy warnings.
+- Fix all Clippy warnings in the protocol and the app. Do not add Clippy warnings to the firmware.
 - Keep build-machine paths out of release binaries. The build scripts do this with `scripts/remap-paths.sh`.
 
 ## Versions and releases

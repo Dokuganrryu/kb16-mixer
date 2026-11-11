@@ -53,6 +53,7 @@ jobs:
       - name: Format
         working-directory: firmware
         run: cargo fmt --check
+      # Advisory: the firmware still has Clippy warnings, so they do not fail the job.
       - name: Clippy
         working-directory: firmware
         run: cargo clippy --release --locked
@@ -83,7 +84,7 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         working-directory: app
-        run: cargo clippy --all-targets --locked
+        run: cargo clippy --all-targets --locked -- -D warnings
       - name: Test
         working-directory: app
         run: cargo test --locked
