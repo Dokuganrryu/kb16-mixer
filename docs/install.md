@@ -82,8 +82,8 @@ The zip holds these files (planned layout):
    Get-FileHash .\kb16-mixer-0.1.0-windows-x64.zip -Algorithm SHA256
    ```
 
-3. Open `SHA256SUMS` in a text editor.
-4. Compare the two values. They must be the same.
+3. Open `SHA256SUMS` in a text editor. Find the line that ends with the name of the zip.
+4. Compare the two values. They must be the same. Upper case and lower case letters do not matter.
 
 If you use the GitHub CLI, you can also check where GitHub built the file:
 
