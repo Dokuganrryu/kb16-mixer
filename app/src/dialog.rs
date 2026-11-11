@@ -507,9 +507,9 @@ fn browse(dlg: HWND) {
     let mut file = [0u16; 1024];
     let program = TEXT_PROGRAM.get();
     let filter = if program {
-        "Programs *.exe  "
+        "Programs\0*.exe\0\0"
     } else {
-        "Programs and shortcuts *.exe;*.lnk;*.bat;*.cmd;*.url All files *.*  "
+        "Programs and shortcuts\0*.exe;*.lnk;*.bat;*.cmd;*.url\0All files\0*.*\0\0"
     };
     let filter: Vec<u16> = filter.encode_utf16().collect();
     let mut ofn = OPENFILENAMEW {

@@ -270,7 +270,8 @@ pub fn restart_after_crash() -> ! {
     cortex_m::peripheral::SCB::sys_reset()
 }
 
-/// Restart into the bootloader's DFU mode (what QMK's `bootloader_jump` does on this board).
+/// Restart into the bootloader's DFU mode: write the stay-in-bootloader mark that the
+/// stm32duino bootloader reads from BKP_DR10, then reset.
 pub fn enter_bootloader() -> ! {
     cortex_m::interrupt::disable();
     backup_access();

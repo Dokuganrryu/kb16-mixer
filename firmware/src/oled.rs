@@ -306,7 +306,7 @@ async fn cmd(i2c: &mut Bus, bytes: &[u8]) -> bool {
 }
 
 async fn init(i2c: &mut Bus) -> bool {
-    // The sequence QMK uses for this panel (SSD1306, 128x32, rotation 0).
+    // Standard SSD1306 128x32 initialisation values.
     cmd(
         i2c,
         &[
