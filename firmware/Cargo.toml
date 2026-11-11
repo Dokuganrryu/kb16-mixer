@@ -1,0 +1,34 @@
+[package]
+name = "kb16-mixer-firmware"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+cortex-m = { version = "0.7.10", features = ["critical-section-single-core", "inline-asm"] }
+cortex-m-rt = { version = "0.7.7", features = ["set-vtor"] }
+embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread"] }
+embassy-futures = "0.1.2"
+embassy-stm32 = { version = "0.6.0", features = ["rt", "stm32f103cb", "time-driver-tim2", "exti", "unstable-pac"], default-features = false }
+embassy-sync = "0.8.0"
+embassy-time = "0.5.1"
+embassy-usb = "0.6.0"
+kb16-mixer-protocol = { path = "../protocol" }
+static_cell = "2.1.1"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+debug = false
+panic = "abort"
+incremental = false
+
+[profile.dev]
+opt-level = "s"
+panic = "abort"
+
+[features]
+# Stage breadcrumbs in flash at every boot (see src/diag.rs). Crash logging is always on.
+diag = []
