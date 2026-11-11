@@ -1,0 +1,9 @@
+[package]
+name = "kb16-mixer-protocol"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Raw-HID wire protocol between the KB16 mixer firmware and the PC app"
+publish = false
+
+[dependencies]
