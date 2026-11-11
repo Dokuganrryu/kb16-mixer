@@ -1,5 +1,6 @@
 # Configuration
 
+Read this document after the install, when you want to change the keys, the channels or the knobs.
 This document describes the settings window and the config file of the app, `config.toml`.
 The source of the default file is `DEFAULT` in `app/src/config.rs`.
 For the definition of each term, see [glossary.md](glossary.md).

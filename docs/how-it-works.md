@@ -1,6 +1,7 @@
 # How it works
 
-This document describes the architecture of KB16 Mixer.
+This document is for contributors, and for users who want to know what the app does in Windows.
+It describes the architecture of KB16 Mixer.
 It also gives the volume rules, and lists what the app touches in Windows and what it never touches.
 For the definition of each term, see [glossary.md](glossary.md).
 

@@ -1,6 +1,6 @@
 # Testing
 
-This document tells you what the tests check, where the tests are, and how to run them.
+This document is for contributors and reviewers. It tells you what the tests check, where the tests are, and how to run them.
 It also lists which functions somebody tested on a real pad.
 For the definition of each term, see [glossary.md](glossary.md).
 

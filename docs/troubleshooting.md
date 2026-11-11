@@ -1,5 +1,6 @@
 # Troubleshooting
 
+Read this document if a step of [install.md](install.md) or the pad does not work as the documents say.
 Find your symptom. Each entry gives the cause and the fix.
 Many entries start from a line of `kb16-mixer.exe --check`. To run it, see [install.md](install.md#what---check-tells-you).
 

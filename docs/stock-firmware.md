@@ -1,6 +1,7 @@
 # Stock firmware: back up, restore, go back
 
-This document tells you how to put a pad with its stock firmware into the bootloader. It also tells you how to make a backup of that firmware and how to write the backup back.
+Read this document before your first flash, and when you want to go back to the stock firmware.
+It tells you how to put a pad with its stock firmware into the bootloader. It also tells you how to make a backup of that firmware and how to write the backup back.
 "Stock firmware" here means the firmware in your pad before you flash KB16 Mixer. It can be the factory firmware from DOIO, or a different firmware that a person installed before you.
 
 This project does not include, host or link a copy of any stock firmware. The firmware from the factory is the work of its maker.

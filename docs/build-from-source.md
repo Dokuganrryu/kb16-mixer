@@ -1,6 +1,6 @@
 # Build from source on Windows
 
-This document tells you how to build the firmware image and the app yourself, on Windows 10 or 11.
+Read this document if you want to build the firmware image and the app yourself, on Windows 10 or 11. Until the first release, users also need it.
 To install a release without a build, see [install.md](install.md).
 
 The author wrote the steps on Windows 11 with Rust 1.99.1, Python 3.14, the Build Tools for Visual Studio 2026 and Git for Windows.

@@ -1,6 +1,6 @@
 # Raw HID protocol
 
-This document describes the messages between the firmware and the app.
+This document is for people who change the firmware or the app. It describes the messages between the firmware and the app.
 For the definition of each term, see [glossary.md](glossary.md).
 
 **The source of truth is `protocol/src/lib.rs`.** This document is a copy in table form.

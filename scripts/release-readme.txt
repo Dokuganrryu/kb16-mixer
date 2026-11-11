@@ -27,7 +27,8 @@ Quick steps
 3. Install the bootloader driver one time only.
 4. Run flash.ps1 with -Backup to keep the stock firmware and to write the new firmware.
 5. Unplug the pad and plug it in again.
-6. Start kb16-mixer.exe and run "kb16-mixer.exe --check".
+6. Start kb16-mixer.exe. Then, in a command prompt in this folder, run
+   "kb16-mixer.exe --check | more".
 
 Full guide
 ----------

@@ -1,6 +1,7 @@
 # Install KB16 Mixer on Windows
 
-This document takes you from a new pad to a mixer that works. You do not need a compiler.
+Read this document if you own the DOIO KB16-01 rev2 and want to use it as a mixer. You do not need to write code, and you do not need a compiler.
+The document takes you from a new pad to a mixer that works.
 Do the steps in sequence. Each step tells you what to do, what you must see, and what to do if you do not see it.
 
 You flash firmware at your own risk. A flash can void the warranty of the pad.
@@ -8,7 +9,7 @@ You flash firmware at your own risk. A flash can void the warranty of the pad.
 > **Status:** These steps are for the **planned first release, 0.1.0**. That release is not published yet.
 > Until it is published, build the files yourself. See [build-from-source.md](build-from-source.md).
 > The author did the flash, the driver installation and the app steps on one pad with Windows 11, with `dfu-util` and `scripts/flash.sh`.
-> The end-to-end flash with `flash.ps1` is **not tested** on the pad yet. Its checks were tested with a simulated `dfu-util`.
+> The end-to-end flash with `flash.ps1` is **not tested** on the pad yet. A person tried its checks with a simulated `dfu-util`. No automated test runs the script.
 > Windows 10 is **not tested**.
 
 ## How to go back
@@ -45,6 +46,15 @@ The backup (step 5) comes after the driver (step 4), because `dfu-util` needs th
 | The QMK driver installer (or Zadig) | https://github.com/qmk/qmk_driver_installer/releases. It is not part of this project. |
 | Administrator rights | One time only, for the driver in step 4. The app and `flash.ps1` do not need them. |
 
+### How to open PowerShell or a command prompt in a folder
+
+Some steps tell you to open PowerShell in a folder. Do this:
+
+1. Open the folder in File Explorer.
+2. Click the address bar.
+3. Type `powershell`. For a command prompt, type `cmd`.
+4. Press Enter. A window opens in this folder.
+
 ## 1. Get the files
 
 ### 1.1 Download the release
@@ -65,7 +75,7 @@ The zip holds these files (planned layout):
 
 ### 1.2 Check the download
 
-1. Open PowerShell in your Downloads folder.
+1. Open PowerShell in your Downloads folder (see [How to open PowerShell](#how-to-open-powershell-or-a-command-prompt-in-a-folder)).
 2. Run this command:
 
    ```powershell
@@ -95,7 +105,7 @@ The command must show that the verification succeeded. The attestation shows tha
 ### 1.4 Get dfu-util
 
 1. Download `dfu-util-0.11-binaries.tar.xz` from https://dfu-util.sourceforge.net/releases/.
-2. Open PowerShell in your Downloads folder.
+2. Open PowerShell in your Downloads folder (see [How to open PowerShell](#how-to-open-powershell-or-a-command-prompt-in-a-folder)).
 3. Unpack the archive:
 
    ```powershell
@@ -176,6 +186,8 @@ The check only reads. It does not change the pad, the settings or Windows. Its r
 
 ## 3. Put the pad into the bootloader
 
+The bootloader is a small program in the pad. It stays in the pad, and it can write a new firmware. In the bootloader, the pad does not type and its lights are off.
+
 **Do:**
 
 1. Disconnect the pad.
@@ -217,7 +229,7 @@ Status: **done on the author's PC**. The installer comes from QMK. It uses libwd
    ```
 
    This line is the same as the STM32duino line in the driver list of QMK Toolbox. The line has the format `driver,name,VID,PID,GUID`.
-5. Open PowerShell in the folder.
+5. Open PowerShell in the folder (see [How to open PowerShell](#how-to-open-powershell-or-a-command-prompt-in-a-folder)).
 6. Run this command:
 
    ```powershell
@@ -253,7 +265,7 @@ Do this step. Without a backup, you possibly cannot go back to your stock firmwa
 **Do:**
 
 1. Put the pad into the bootloader (step 3).
-2. Open PowerShell in the folder of the release.
+2. Open PowerShell in the folder of the release (see [How to open PowerShell](#how-to-open-powershell-or-a-command-prompt-in-a-folder)).
 3. Run this command:
 
    ```powershell

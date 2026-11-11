@@ -1,5 +1,7 @@
 # Frequently asked questions
 
+This document answers the questions of pad owners before and after the install: drivers, anti-cheat, rights, stored data, the network and the uninstall.
+
 ## Contents
 
 - [Does it need a driver?](#does-it-need-a-driver)

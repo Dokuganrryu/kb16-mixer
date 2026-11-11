@@ -2,6 +2,8 @@
 
 KB16 Mixer is firmware and a small Windows tray app. They make the **DOIO KB16-01 rev2** macro pad a per-app volume mixer that is also a normal keypad.
 
+**Where to start:** you own the pad and want to use it, read [docs/install.md](docs/install.md). You want to change the code, read [CONTRIBUTING.md](CONTRIBUTING.md).
+
 It is not a driver, and it does not route audio. The app uses no keyboard hooks and injects no input. It moves only the sliders of the Windows volume mixer.
 
 **Status: pre-release.** The project plans a first release (0.1.0). It has not published it yet. Tested on one pad with Windows 11. Not tested: Windows 10, other units, the Windows flasher on the pad, a restore of the stock firmware. See [Status](#status).

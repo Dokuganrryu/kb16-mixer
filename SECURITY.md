@@ -1,5 +1,7 @@
 # Security policy
 
+Read this document if you found a security problem. It also tells you what the pad and the app can do on your PC.
+
 ## Report a vulnerability
 
 Do not report a security problem in a public issue.
