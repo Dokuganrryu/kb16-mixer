@@ -493,11 +493,11 @@ impl RawConfig {
         };
         Ok(Config {
             name: parse_name(&self.name)?,
-            step: self.step.clamp(0.5, 20.0),
+            step: in_range("step", self.step, 0.5, 20.0)?,
             mixer_keys: self.mixer_keys,
-            brightness: (self.brightness.clamp(0.1, 1.0) * 255.0) as u8,
+            brightness: (in_range("brightness", self.brightness, 0.1, 1.0)? * 255.0) as u8,
             oled_top: self.oled_top.min(6),
-            duck: self.duck.clamp(0.0, 1.0),
+            duck: in_range("duck", self.duck, 0.0, 1.0)?,
             screen_off_min: self.screen_off_min.min(240) as u8,
             lights_dim_min: self.lights_dim_min.min(240) as u8,
             pages: parse_pages(self.keys, self.keys2)?,
@@ -509,6 +509,22 @@ impl RawConfig {
             channels,
         })
     }
+}
+
+/// A number outside its range goes to the nearest limit, but TOML also accepts nan, inf and
+/// -inf: nan passes `clamp` unchanged, and no limit is "nearest" to it, so these are errors.
+fn in_range(key: &str, value: f32, low: f32, high: f32) -> Result<f32, String> {
+    if value.is_finite() {
+        return Ok(value.clamp(low, high));
+    }
+    let written = if value.is_nan() {
+        "nan"
+    } else if value > 0.0 {
+        "inf"
+    } else {
+        "-inf"
+    };
+    Err(format!("{key} = {written}: a number from {low:?} to {high:?}"))
 }
 
 const DIR_NAME: &str = "kb16-mixer";
@@ -834,6 +850,19 @@ mod tests {
                 problem(&format!("name = {bad:?}\n[[channel]]\nname = \"A\"\ntarget = \"other\"")).contains("1 to 10")
             );
         }
+    }
+
+    #[test]
+    fn numbers_that_are_not_finite_are_rejected() {
+        let with = |line: &str| parse(&format!("{line}\n[[channel]]\nname = \"A\"\ntarget = \"other\""));
+        for (key, range) in [("step", "0.5 to 20.0"), ("brightness", "0.1 to 1.0"), ("duck", "0.0 to 1.0")] {
+            for bad in ["nan", "inf", "-inf"] {
+                let e = with(&format!("{key} = {bad}")).err().expect("should be rejected");
+                assert_eq!(e, format!("{key} = {bad}: a number from {range}"));
+            }
+        }
+        let c = with("step = 5\nbrightness = 0.5\nduck = 0.5").unwrap();
+        assert_eq!((c.step, c.brightness, c.duck), (5.0, 127, 0.5));
     }
 
     #[test]

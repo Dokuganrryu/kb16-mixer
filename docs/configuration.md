@@ -209,6 +209,7 @@ A reload sets the pad back to page 1, stops Focus, and sets each knob back to it
 | `mixer_keys` | `true` | `true`, `false` | `false` = the keys type their keyboard-mode keys. The knobs and the lights stay in mixer mode. |
 
 The app changes a number outside its range to the nearest limit. For example, `step = 900` becomes `20`, and `oled_top = 9` becomes `6`.
+The value `nan`, `inf` or `-inf` for `step`, `brightness` or `duck` is a mistake: the app does not load the file.
 A negative number for `oled_top`, `screen_off_min` or `lights_dim_min` is a mistake, and so is an `oled_top` above 255.
 A `name` outside its rule is a mistake: the app does not load the file.
 
