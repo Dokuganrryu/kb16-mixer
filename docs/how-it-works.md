@@ -59,7 +59,7 @@ In mixer mode, `mixer_keys = false` in the config file gives the keys their keyb
 | `host_rx` | on each message | Reads raw HID messages from the app, updates the shared state, and saves a new logo name |
 | `usb_task` | continuous | Runs the USB device |
 | `leds::run` | 200 Hz | Calculates the key lights and sends the data to the 16 WS2812 LEDs |
-| `oled::run` | approximately 30 Hz | Draws the screen and sends a frame over I2C with DMA, only when the frame changed |
+| `oled::run` | approximately 30 Hz | Draws the screen. Sends the picture over I2C with DMA, only when the picture changed |
 | `watchdog` | 4 Hz | Feeds the watchdog. Marks the firmware as healthy after 10 seconds. |
 
 A key that types (a `Keyboard` or `Media` key) goes from the pad directly to Windows. The app does not see it.
