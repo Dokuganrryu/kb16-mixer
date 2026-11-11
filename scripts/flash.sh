@@ -1,6 +1,7 @@
 #!/bin/sh
 # Flashes the pad's app region only (DFU alt 2 = 0x08002000); the bootloader is never touched.
 # Usage: scripts/flash.sh [firmware.bin]     (default: firmware/target/kb16-mixer-firmware.bin)
+# For Git Bash and Linux. On Windows without Git Bash, use scripts/flash.ps1 (same checks).
 #
 # dfu-util is taken from $DFU_UTIL, else PATH, else anywhere under the git-ignored tools/ folder.
 # If the pad does not answer the bootloader request, unplug it, hold the top-left key,
@@ -32,7 +33,20 @@ if [ ! -f "$BIN" ]; then
   exit 1
 fi
 
-echo "firmware: $BIN ($(wc -c < "$BIN") bytes)"
+# The same image check as flash.ps1: not empty, below the name page (0x1D400 bytes), and a
+# vector table that starts with a stack pointer in RAM and a Thumb reset vector in the app area.
+SIZE=$(wc -c < "$BIN" | tr -d ' ')
+set -- $(od -An -t x4 -N 8 "$BIN")
+SP=$((0x${1:-0})); RESET=$((0x${2:-0}))
+if [ "$SIZE" -lt 8 ] || [ "$SIZE" -gt $((0x1D400)) ] ||
+  [ "$SP" -le $((0x20000000)) ] || [ "$SP" -gt $((0x20005000)) ] ||
+  [ "$RESET" -le $((0x08002000)) ] || [ "$RESET" -ge $((0x0801F400)) ] || [ $((RESET & 1)) -ne 1 ]; then
+  printf 'REFUSED: %s is not a firmware image for this pad (%s bytes, stack pointer 0x%08x, reset 0x%08x)\n' \
+    "$BIN" "$SIZE" "$SP" "$RESET" >&2
+  exit 1
+fi
+echo "firmware: $BIN ($SIZE bytes, vectors OK)"
+if command -v sha256sum >/dev/null 2>&1; then echo "  SHA-256: $(sha256sum < "$BIN" | cut -d' ' -f1)"; fi
 echo "dfu-util: $DFU"
 # The running app would take the pad back between the bootloader request and the download, so
 # it is stopped here and started again from the same exe after the download.
