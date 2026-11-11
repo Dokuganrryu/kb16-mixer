@@ -1,0 +1,8 @@
+# The toolchain that CI and the release builds use. rustup installs it on first use.
+# Raise it on purpose, in its own commit, after the firmware image and the app build and test
+# with the new version. The MSRV in each Cargo.toml (rust-version) must not be higher.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+components = ["clippy", "rustfmt", "llvm-tools"]
+targets = ["thumbv7m-none-eabi"]
