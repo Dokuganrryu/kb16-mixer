@@ -506,11 +506,50 @@ You cannot change this layout in the config file.
 | `--settings=keys`, `--settings=channels`, `--settings=pad` | Starts the app with the settings window open on that tab |
 | `--no-pad` | The app never looks for the pad. The volume control still runs. Use it to try the settings window while another copy of the app has the pad. |
 | `--bootloader` | Tells the pad to restart into its bootloader, then stops. Exit code 0 = the app sent the command. Exit code 1 = the app found no pad, or the write failed. |
-| `--check` | Prints a short report about the app, the pad, the settings, **Start with Windows** and audio, then stops. Exit code 0 = no line says `FAIL`. Exit code 1 = one or more lines say `FAIL`. The report contains no program names, user names or serial numbers, so you can paste it into a bug report. In a command prompt, type `kb16-mixer.exe --check \| more`. |
-| `--selftest` | Writes the audio sessions, their channels and their levels to `selftest.txt`, then stops |
+| `--check` | Prints a short report about the app, the pad, the settings, **Start with Windows** and audio, then stops. It only reads. You can paste the report into a bug report. See [The `--check` report](#the---check-report). |
+| `--selftest` | Writes the audio sessions, their programs, their channels and their peak levels to `selftest.txt` in the settings folder, then stops. It prints nothing. See [The `--selftest` file](#the---selftest-file). |
 | `--help` (also `-h` or `/?`) | Shows a window with these options, then stops |
 
 Only one copy of the app runs for each settings folder. A second start for the same folder stops at once.
+
+### The `--check` report
+
+The report has one line for each topic: `app`, `pad`, `settings`, `autostart`, `audio`. Each line shows `OK`, `WARN` or `FAIL`, and a message. The last line is `Result: OK`, `Result: 1 problem` or `Result: <n> problems`.
+A report from a pad that works can look like this:
+
+```text
+app        OK    kb16-mixer 0.1.0, settings in the default folder
+pad        OK    KB16 Mixer, firmware 0.1.0 (USB D010:1601)
+settings   OK    config.toml is valid (4 channels).
+autostart  OK    Start with Windows is off.
+audio      OK    2 output device(s), 5 app session(s), a microphone.
+Result: OK
+```
+
+These are the `pad` messages:
+
+| Message | Meaning |
+|---|---|
+| `OK    KB16 Mixer, firmware <version> (USB D010:1601)` | The pad has the KB16 Mixer firmware. |
+| `WARN  A pad with other firmware is connected (USB D010:1601, product "<product string>"). ...` | The pad has the stock firmware or other firmware. The app cannot use it. |
+| `FAIL  The pad is in bootloader mode (USB 1EAF:0003). Unplug it and plug it in again.` | The pad waits for a flash. |
+| `FAIL  No pad found. Check the USB cable and port.` | Windows does not see the pad. |
+| `WARN  <n> pads are connected (...). The app uses only one. Connect only one pad.` | More than one pad is connected. |
+
+The exit code is 0 when no line shows `FAIL`. Otherwise it is 1.
+The report gives no program names, user names, folder names, pad names or serial numbers. The only text from a device is the product string of a pad with other firmware.
+The report does not change a file. It also does not move the settings of an old version.
+
+In a command prompt, type `kb16-mixer.exe --check | more`. In PowerShell, type `.\kb16-mixer.exe --check | more`.
+
+### The `--selftest` file
+
+`--selftest` is for your own diagnosis. It writes `selftest.txt` in the settings folder:
+
+- One line for each audio session: the process ID, the program name, the channel and the volume.
+- One line for each channel: the name, the volume, the mute, and the peak level in 1.5 seconds. The line also tells if a program plays in the channel.
+
+> **CAUTION:** `selftest.txt` names the programs that run on your PC. Do not paste it into a bug report. Use the `--check` report instead.
 
 ### Environment variables
 
