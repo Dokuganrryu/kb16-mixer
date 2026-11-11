@@ -41,6 +41,7 @@ fn snapshot(hwnd: HWND) -> Option<(i32, i32, Vec<u32>)> {
     unsafe { GetClientRect(hwnd, &mut client).ok()? };
     let mut cv = Canvas::new(R::of(client))?;
     let dc = cv.dc();
+    widget::printing(true);
     const PRF: isize = 0x4 | 0x8 | 0x10 | 0x2; // client, erase background, children, non-client
     crate::win::send(hwnd, WM_PRINTCLIENT, dc.0 as usize, PRF);
     // The children, from the bottom of the z-order up.
@@ -71,6 +72,7 @@ fn snapshot(hwnd: HWND) -> Option<(i32, i32, Vec<u32>)> {
             let _ = SetViewportOrgEx(dc, 0, 0, None);
         }
     }
+    widget::printing(false);
     let (w, h) = (client.right, client.bottom);
     Some((w, h, cv.pixels().to_vec()))
 }
@@ -103,7 +105,7 @@ pub fn render_hidden(what: Preview, o: &Options) -> Result<Picture, String> {
                 widget::show_focus(true);
                 crate::win::set_focus(super::controls::child(id));
             }
-            let shot = snapshot(hwnd).ok_or("the window could not be drawn");
+            let shot = snapshot(hwnd).ok_or("the window could not be drawn").map(|s| (s, start.elapsed()));
             widget::show_focus(false);
             if let Some(f) = o.while_open {
                 f();
@@ -124,7 +126,7 @@ pub fn render_hidden(what: Preview, o: &Options) -> Result<Picture, String> {
                 _ => Which::Program,
             };
             let shot = crate::dialog::hidden(which).ok_or("the dialog could not be made").and_then(|dlg| {
-                let shot = snapshot(dlg).ok_or("the dialog could not be drawn");
+                let shot = snapshot(dlg).ok_or("the dialog could not be drawn").map(|s| (s, start.elapsed()));
                 // SAFETY: the dialog is ours (modeless and hidden), on this thread.
                 unsafe {
                     let _ = DestroyWindow(dlg);
@@ -135,9 +137,8 @@ pub fn render_hidden(what: Preview, o: &Options) -> Result<Picture, String> {
             shot
         }
     };
-    let took = start.elapsed();
     theme::force(None);
     force_dpi(None);
-    let (width, height, pixels) = picture?;
+    let ((width, height, pixels), took) = picture?;
     Ok(Picture { width, height, pixels, took })
 }

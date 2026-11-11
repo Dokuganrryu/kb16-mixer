@@ -13,7 +13,7 @@ use windows::Win32::UI::HiDpi::GetDpiForSystem;
 use windows::Win32::UI::WindowsAndMessaging::{
     CBS_DROPDOWNLIST, CreateWindowExW, GWL_STYLE, GetWindowLongPtrW, GetWindowRect, HMENU, SW_HIDE, SW_SHOWNA,
     SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_SETFONT,
-    WS_CHILD, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    WM_SETREDRAW, WS_CHILD, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -153,14 +153,18 @@ pub fn combo(parent: HWND, id: i32, x: i32, y: i32, w: i32) {
     let h = control(parent, w!("COMBOBOX"), "", style, x, y, w, 28 + 10 * 28 + 8, id);
     send(h, CB_SETMINVISIBLE, 10, 0);
     send(h, CB_SETDROPPEDWIDTH, scale(w.max(200)) as usize, 0);
-    // The closed box is as high as its selection field plus the frame: make it 28.
+    // The closed box is as high as its selection field plus its frame. The first select of a
+    // window measures the frame; later ones get the right field height when they are made.
     let mut r = RECT::default();
     // SAFETY: reads the closed box's size.
     unsafe {
         let _ = GetWindowRect(h, &mut r);
     }
-    let field = send(h, CB_GETITEMHEIGHT, usize::MAX, 0) as i32;
-    send(h, CB_SETITEMHEIGHT, usize::MAX, (field + scale(28) - (r.bottom - r.top)) as isize);
+    if r.bottom - r.top != scale(28) {
+        let field = send(h, CB_GETITEMHEIGHT, usize::MAX, 0) as i32;
+        widget::set_select_frame(r.bottom - r.top - field);
+        send(h, CB_SETITEMHEIGHT, usize::MAX, (scale(28) - (r.bottom - r.top - field)) as isize);
+    }
     widget::add(h, Kind::Select, None);
 }
 
@@ -218,12 +222,17 @@ pub fn fill_combo(id: i32, entries: Vec<(String, String)>, at: usize) {
     let h = child(id);
     let same = CHOICES.with_borrow(|c| c.get(&id) == Some(&entries));
     if !same {
+        // With drawing off while the entries go in, a fill costs about half.
+        send(h, WM_SETREDRAW, 0, 0);
         send(h, CB_RESETCONTENT, 0, 0);
+        send(h, CB_INITSTORAGE, entries.len(), entries.iter().map(|e| 2 * e.0.len() + 2).sum::<usize>() as isize);
         for (i, (label, value)) in entries.iter().enumerate() {
             send_text(h, CB_ADDSTRING, 0, label);
             // Entries that open a dialog are drawn quieter.
             send(h, CB_SETITEMDATA, i, value.starts_with('\u{1}') as isize);
         }
+        send(h, WM_SETREDRAW, 1, 0);
+        crate::ui::anim::redraw(h, crate::ui::anim::Paint::Own);
         CHOICES.with_borrow_mut(|c| c.insert(id, entries));
     }
     widget::set_value(h, at as i32);

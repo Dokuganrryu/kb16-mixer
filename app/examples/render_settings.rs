@@ -160,7 +160,13 @@ fn measure() {
             unsafe {
                 let _ = MsgWaitForMultipleObjects(None, false, 50, QS_ALLINPUT);
                 while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
-                    timers += (msg.message == WM_TIMER) as u32;
+                    if msg.message == WM_TIMER {
+                        timers += 1;
+                        let mut class = [0u16; 64];
+                        let n = GetClassNameW(msg.hwnd, &mut class);
+                        let class = String::from_utf16_lossy(&class[..n.max(0) as usize]);
+                        println!("  timer message: window class {class:?}, timer id {}", msg.wParam.0);
+                    }
                     DispatchMessageW(&msg);
                 }
             }
@@ -182,16 +188,20 @@ fn measure() {
             );
         }
     }
+    // Once each first, so that what Windows loads on first use (themes, the dialog class) is not
+    // counted as growth.
+    let _ = render_hidden(Preview::Shortcut("win+shift+s"), &o);
+    let _ = render_hidden(Preview::Open("C:\\Tools\\obs64.exe"), &o);
     let start = objects();
     for i in 0..20 {
         let tab = [Tab::Keys, Tab::Channels, Tab::Pad][i % 3];
         let _ = render_hidden(Preview::Tab(tab), &o);
+        let _ = render_hidden(Preview::Shortcut("win+shift+s"), &o);
+        let _ = render_hidden(Preview::Open("C:\\Tools\\obs64.exe"), &o);
     }
-    let _ = render_hidden(Preview::Shortcut("win+shift+s"), &o);
-    let _ = render_hidden(Preview::Open("C:\\Tools\\obs64.exe"), &o);
     let end = objects();
-    println!("before 20 open/close cycles: GDI {}, USER {}, handles {}", start.0, start.1, start.2);
-    println!("after 20 open/close cycles:  GDI {}, USER {}, handles {}", end.0, end.1, end.2);
+    println!("before 20 cycles of the window and both dialogs: GDI {}, USER {}, handles {}", start.0, start.1, start.2);
+    println!("after them:                                      GDI {}, USER {}, handles {}", end.0, end.1, end.2);
     println!("working set now: {} KB (before the first window: {} KB)", working_set() / 1024, before / 1024);
 }
 

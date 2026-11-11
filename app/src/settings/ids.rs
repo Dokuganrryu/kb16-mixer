@@ -36,6 +36,7 @@ pub const CB_SETITEMDATA: u32 = 0x0151;
 pub const CB_SETITEMHEIGHT: u32 = 0x0153;
 pub const CB_GETITEMHEIGHT: u32 = 0x0154;
 pub const CB_SETMINVISIBLE: u32 = 0x1701;
+pub const CB_INITSTORAGE: u32 = 0x0161;
 pub const CB_GETCURSEL: u32 = 0x0147;
 pub const CB_RESETCONTENT: u32 = 0x014B;
 pub const CB_SETCURSEL: u32 = 0x014E;

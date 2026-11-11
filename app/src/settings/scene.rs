@@ -81,9 +81,11 @@ pub fn paint(cv: &mut Canvas, hwnd: HWND) {
     widget::paint_frames(cv, hwnd);
 
     let footer = px(FOOTER);
-    cv.fill(R::new(0, footer, px(WIDTH), line()), t.get(Tok::Line));
-    let shown = anim::value(hwnd, PART_CHIP, CHIP_SHOWN.get() as i32 as f32);
-    draw::chip(cv, chip_area(), shown);
+    if cv.area().bottom() > footer {
+        cv.fill(R::new(0, footer, px(WIDTH), line()), t.get(Tok::Line));
+        let shown = anim::value(hwnd, PART_CHIP, CHIP_SHOWN.get() as i32 as f32);
+        draw::chip(cv, chip_area(), shown);
+    }
 
     widget::paint_ring(cv, hwnd);
 }

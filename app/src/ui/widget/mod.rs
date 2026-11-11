@@ -79,6 +79,26 @@ thread_local! {
     static CTRL_TAB: Cell<Option<fn(bool)>> = const { Cell::new(None) };
     /// The hidden renderer draws the focus ring even though no key was pressed.
     static SHOW_FOCUS: Cell<bool> = const { Cell::new(false) };
+    /// The hidden renderer is printing a window that is not shown.
+    static PRINTING: Cell<bool> = const { Cell::new(false) };
+    /// A closed select's height above its selection field, once measured.
+    static SELECT_FRAME: Cell<i32> = const { Cell::new(6) };
+}
+
+pub fn set_select_frame(frame: i32) {
+    SELECT_FRAME.set(frame);
+}
+
+/// The hidden renderer prints: paint even though the window is not shown.
+pub fn printing(on: bool) {
+    PRINTING.set(on);
+}
+
+/// False while the window of `hwnd` is not shown (it is still being filled, say): a select
+/// repaints itself at once on each change, and such paints would be thrown away.
+fn worth_painting(hwnd: HWND) -> bool {
+    // SAFETY: IsWindowVisible only reads window styles.
+    PRINTING.get() || unsafe { IsWindowVisible(hwnd) }.as_bool()
 }
 
 fn with<T>(hwnd: HWND, f: impl FnOnce(&mut Entry) -> T) -> Option<T> {
@@ -314,7 +334,7 @@ pub fn parent_msg(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> Optio
                 let m = &mut *(lparam.0 as *mut MEASUREITEMSTRUCT);
                 m.itemHeight = match (m.CtlType, m.itemID) {
                     (ODT_LISTBOX, _) => px(20),
-                    (_, u32::MAX) => px(22),
+                    (_, u32::MAX) => px(28) - SELECT_FRAME.get(),
                     _ => px(28),
                 } as u32;
                 Some(LRESULT(1))

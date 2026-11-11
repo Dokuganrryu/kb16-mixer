@@ -6,6 +6,9 @@ use super::*;
 /// Paints a whole control (not a list row) into `dc`, the control's own.
 pub(super) fn paint_control(hwnd: HWND, dc: HDC, item_state: Option<ODS_FLAGS>) {
     let Some(kind) = kind(hwnd) else { return };
+    if !worth_painting(hwnd) {
+        return;
+    }
     let Some((mut cv, r)) = backdrop(hwnd) else { return };
     let text = win::window_text(hwnd);
     match kind {
