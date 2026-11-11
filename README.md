@@ -12,32 +12,6 @@ It is not a driver, and it does not route audio. The app uses no keyboard hooks 
 |---|---|---|
 | ![The Keys tab of the settings window: the 16 keys of page 1 and their actions](docs/images/settings-keys.png) | ![The Channels tab: the four channels and the programs in each channel](docs/images/settings-channels.png) | ![The Pad tab: the name on the screen, the light brightness, the knob step, the Focus level, the screen and light timers, and Start with Windows](docs/images/settings-pad.png) |
 
-## How it fits together
-
-```mermaid
-flowchart LR
-    subgraph Pad["Pad: DOIO KB16-01 rev2 with KB16 Mixer firmware"]
-        Controls["16 keys, 3 knobs"]
-        Show["Screen, 16 key lights"]
-    end
-    subgraph PC["Windows PC"]
-        HID["Windows HID driver (built in)"]
-        App["kb16-mixer.exe (tray app)"]
-        Mixer["Windows volume mixer: one slider per program, microphone"]
-        Focus["Program in front"]
-    end
-    Controls -- "typed keys and media keys (USB keyboard)" --> HID
-    HID --> Focus
-    Controls -- "knob turns, knob presses, mixer keys (raw HID)" --> HID
-    HID <--> App
-    App -- "names, levels, volumes (raw HID)" --> Show
-    App -- "volume and mute (Core Audio)" --> Mixer
-    Mixer -- "sound levels" --> App
-```
-
-The pad is a standard USB HID device. Windows uses its own driver. The app talks to the pad through one vendor-defined HID interface, and to the volume mixer through the Windows Core Audio API.
-For the details, see [docs/how-it-works.md](docs/how-it-works.md).
-
 ## What it does
 
 - A knob turn changes the volume of a **channel**: a named list of programs, for example "Chat" or "Media".
@@ -47,6 +21,18 @@ For the details, see [docs/how-it-works.md](docs/how-it-works.md).
 - Other keys type F13–F24, media keys or key combinations, as a normal USB keyboard.
 - A second page of keys is a number pad. A key can also open a program, a file, a folder or a web address.
 - Without the app, the pad is a normal keyboard with media knobs.
+
+## What the pad shows
+
+The screen has 128 x 32 pixels. The firmware code drew these pictures (`pad-core/examples/render_oled.rs`), at four times the size.
+
+| Screen | When the pad shows it |
+|---|---|
+| ![The logo screen: the name KB16 in large letters](docs/images/oled-logo.png) | The logo with the name (default `KB16`). For 1.8 seconds after start, in keyboard mode, and after 45 seconds without activity. |
+| ![The mixer screen: four columns GAME, MUSIC, CHAT and WEB, each with a meter, a volume bar and a value; GAME is inverted, and CHAT shows MUTE](docs/images/oled-mixer.png) | The mixer screen, while the app runs. Each column shows a channel: the name, the live meter, the volume bar and the value. An inverted name is the channel that has Focus. `MUTE` shows a muted channel. |
+| ![A readout: MUSIC, 64 % and a bar](docs/images/oled-popup.png) | A readout for 1.3 seconds after a knob turn, a knob press or a mute: the name, the value and a bar |
+| ![A notice: Config loaded](docs/images/oled-notice.png) | A notice for 1.3 seconds, for example `Config loaded` |
+| ![The mixer screen with a short mark at the right edge](docs/images/oled-page2.png) | The mixer screen while page 2 is active. A short mark is at the right edge. |
 
 ## Is my pad supported?
 
@@ -129,34 +115,55 @@ When the app does not run, the keys type `1`–`0`, arrows, Enter and Backspace,
 
 Click the tray icon to open the settings window. A change applies immediately. The app keeps the settings in `%APPDATA%\kb16-mixer\config.toml`. See [docs/configuration.md](docs/configuration.md).
 
+## How it fits together
+
+```mermaid
+flowchart LR
+    subgraph Pad["Pad: DOIO KB16-01 rev2 with KB16 Mixer firmware"]
+        Controls["16 keys, 3 knobs"]
+        Show["Screen, 16 key lights"]
+    end
+    subgraph PC["Windows PC"]
+        HID["Windows HID driver (built in)"]
+        App["kb16-mixer.exe (tray app)"]
+        Mixer["Windows volume mixer: one slider per program, microphone"]
+        Focus["Program in front"]
+    end
+    Controls -- "typed keys and media keys (USB keyboard)" --> HID
+    HID --> Focus
+    Controls -- "knob turns, knob presses, mixer keys (raw HID)" --> HID
+    HID <--> App
+    App -- "names, levels, volumes (raw HID)" --> Show
+    App -- "volume and mute (Core Audio)" --> Mixer
+    Mixer -- "sound levels" --> App
+```
+
+The pad is a standard USB HID device. Windows uses its own driver. The app talks to the pad through one vendor-defined HID interface, and to the volume mixer through the Windows Core Audio API.
+For the details, see [docs/how-it-works.md](docs/how-it-works.md).
+
 ## Status
 
 The project has one tested pad (KB16-01 rev2, Windows 11). This table shows what the project tested, and how:
 
-| Item | Tested on the real pad | Tested by automated tests and builds only | Not tested |
-|---|---|---|---|
-| Basic mixer: a knob moves a channel, Mute keys, meters (earlier version) | yes | | |
-| Focus, Talk, Move (earlier version) | yes | | |
-| Keys, knob turns, key lights, screen | yes | | |
-| Flashing with `dfu-util` and `scripts/flash.sh`, and recovery with the keys | yes, with earlier versions of the firmware | | |
-| Bootloader entry with the top-left key, from a community firmware | yes | | |
-| WinUSB driver with the QMK driver installer | yes | | |
-| Two key pages | | yes | |
-| Knob press to select one program in a channel | | yes | |
-| Volume balance (trim) rules | | yes | |
-| Focus with several audio sessions of one program | | yes | |
-| Idle rule (screen off and lights dim only after no sound and no touch) | | yes | |
-| Name on the logo screen, kept in the pad | | yes | |
-| `open:` key action | | yes | |
-| Settings window with three tabs | | yes | |
-| `scripts/flash.ps1` (its checks, with a simulated `dfu-util`) | | yes | |
-| `scripts/flash.ps1` end to end on the pad | | | yes |
-| Bootloader entry from the DOIO factory firmware | | | yes |
-| Backup and restore of a factory firmware | | | yes |
-| The pad stays in the bootloader after three crashed starts in a row | | | yes |
-| A firmware image that does not start at all (for example, after an interrupted download) | | | yes |
-| Windows 10 | | | yes |
+| Item | On the real pad | Automated tests |
+|---|---|---|
+| Knob volume for each channel, the Mute row, key lights and screen (an earlier build, before 0.1.0) | VERIFIED |  |
+| Recovery with the top-left key at plug-in (an earlier build, before 0.1.0) | VERIFIED |  |
+| Two key pages | NOT YET VERIFIED | yes |
+| Knob press to select one program in a channel | NOT YET VERIFIED | yes |
+| Volume balance (trim) rules, and Focus with several audio sessions of one program | NOT YET VERIFIED | yes |
+| The feel of Focus, Talk and Move | NOT YET VERIFIED | yes (the logic only) |
+| Idle rule (screen off and lights dim only after no sound and no touch) | NOT YET VERIFIED | yes |
+| Name on the logo screen, kept in the pad | NOT YET VERIFIED | yes |
+| `open:` key action | NOT YET VERIFIED | yes |
+| Settings window: live clicks, and display scale 125 % and 150 % | NOT YET VERIFIED | yes (the logic only) |
+| `scripts/flash.ps1` and `scripts/flash.sh` from start to end | NOT YET VERIFIED | no |
+| Bootloader entry from the DOIO factory firmware, and restore of a factory backup | NOT YET VERIFIED |  |
+| The pad stays in the bootloader after three crashed starts in a row | NOT YET VERIFIED | yes (the counter rule) |
+| No flicker of the key lights, and the physical order of the knobs | NOT YET VERIFIED |  |
+| Windows 10 | NOT YET VERIFIED |  |
 
+The full record, with the dates and the firmware versions, is in [docs/testing.md](docs/testing.md#verified-on-the-real-pad).
 The table shows the state on the date of the last change. Report your results, good or bad, in an issue.
 
 Safeguards: the firmware never writes the bootloader region. Three ways lead into the bootloader while this firmware runs. Both flashers check the device and the image before they write. See [Recovery](docs/flashing.md#recovery).
