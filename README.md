@@ -1,101 +1,78 @@
-# kb16-mixer
+# KB16 Mixer
 
-kb16-mixer is custom firmware and a small Windows app for the **DOIO KB16-01 rev2** macro pad.
-Together they make the pad a per-app volume mixer, in the style of a hardware streaming mixer.
-The pad also stays a programmable keypad.
+KB16 Mixer is firmware and a small Windows tray app that make the **DOIO KB16-01 rev2** macro pad a per-app volume mixer, which is also a normal keypad.
 
-This is an unofficial project. It is not affiliated with DOIO or endorsed by DOIO.
+It is not a driver, and it does not route audio. The app uses no keyboard hooks and injects no input. It moves only the sliders of the Windows volume mixer.
+
+**Status: pre-release.** The first release (0.1.0) is planned but not published. Tested on one pad with Windows 11. Not tested: Windows 10, other units, the Windows flasher on the pad, a restore of the stock firmware. See [Status](#status).
+
+> **Unofficial project.** It is not affiliated with DOIO, or endorsed by DOIO. You flash firmware at your own risk. Flashing can void the warranty of the pad.
+
+| Keys tab | Channels tab | Pad tab |
+|---|---|---|
+| ![The Keys tab of the settings window: the 16 keys of page 1 and their actions](docs/images/settings-keys.png) | ![The Channels tab: the four channels and the programs in each channel](docs/images/settings-channels.png) | ![The Pad tab: the name on the screen, the light brightness, the knob step, the Focus level, the screen and light timers, and Start with Windows](docs/images/settings-pad.png) |
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    subgraph Pad["Pad: DOIO KB16-01 rev2 with KB16 Mixer firmware"]
+        Controls["16 keys, 3 knobs"]
+        Show["Screen, 16 key lights"]
+    end
+    subgraph PC["Windows PC"]
+        HID["Windows HID driver (built in)"]
+        App["kb16-mixer.exe (tray app)"]
+        Mixer["Windows volume mixer: one slider per program, microphone"]
+        Focus["Program in front"]
+    end
+    Controls -- "typed keys and media keys (USB keyboard)" --> HID
+    HID --> Focus
+    Controls -- "knob turns, knob presses, mixer keys (raw HID)" --> HID
+    HID <--> App
+    App -- "names, levels, volumes (raw HID)" --> Show
+    App -- "volume and mute (Core Audio)" --> Mixer
+    Mixer -- "sound levels" --> App
+```
+
+The pad is a standard USB HID device. Windows uses its own driver. The app talks to the pad through one vendor-defined HID interface, and to the volume mixer through the Windows Core Audio API.
+For the details, see [docs/how-it-works.md](docs/how-it-works.md).
 
 ## What it does
 
-- A knob turn changes the volume of a **channel**. A channel is a named list of programs, for example "Chat" (Discord, Teams) or "Media" (Spotify, browsers).
-- A knob press selects one program in the channel. The next turns then change only that program.
-- A key press mutes a channel, or turns the other channels down (Focus). A held key can unmute your microphone while you hold it (Talk).
-- The 16 key lights show the live sound level of each channel. The screen shows the names, levels and volumes.
-- Other keys type F13–F24, media keys or key combinations. The pad sends these keys itself, as a normal USB keyboard.
-- A second page of keys makes the pad a number pad. A key can also open a program, a file, a folder or a web address.
+- A knob turn changes the volume of a **channel**: a named list of programs, for example "Chat" or "Media".
+- A knob press selects one program in the channel. The next turns change only that program.
+- A key mutes a channel. A key turns the other channels down (Focus). A held key unmutes your microphone (Talk).
+- The key lights show the live sound level of each channel. The screen shows names, levels and volumes.
+- Other keys type F13–F24, media keys or key combinations, as a normal USB keyboard.
+- A second page of keys is a number pad. A key can also open a program, a file, a folder or a web address.
 - Without the app, the pad is a normal keyboard with media knobs.
 
-## What it does not do
+## Is my pad supported?
 
-- **It does not use a driver.** The pad is a standard USB HID device: a keyboard, media keys and one vendor-defined "raw HID" interface. Windows uses its own built-in HID driver. The only driver step is for flashing. See [Flashing](docs/flashing.md).
-- **It does not route audio.** The app does not create a virtual audio device. You do not need a virtual cable.
-- **It does not use keyboard hooks or inject input.** The app also does not open or read other processes.
+Do these checks before you change anything. If one check does not agree, **stop and do not flash**.
 
-The app changes the things that you see in the Windows volume mixer: the slider and the mute switch of each program.
-It also changes the level and the mute of your microphone. If you set a knob to "master", it changes the master volume.
+1. The model is **KB16-01** (16 keys, 2 small knobs, 1 big knob, a screen, a cable, no battery). The wireless KB16B-02 is not supported.
+2. Device Manager shows the USB ID `VID_D010&PID_1601`.
+3. `kb16-mixer.exe --check` shows `pad  WARN  A pad with other firmware is connected (USB D010:1601, ...)`.
+4. In the bootloader, Windows shows `Maple 003` with the USB ID `1EAF:0003`. A rev1 pad shows a different bootloader.
 
-## Risks and safeguards
-
-- This firmware never writes the bootloader region, so the bootloader should stay available for a new image. This is not a guarantee: see the cases that are not tested in [Status](#status).
-- There are three ways to put the pad into the bootloader. One of them uses only the keys. See [Recovery](#recovery).
-- The firmware restarts itself after a crash. After three crashes in a row, it is designed to stay in the bootloader. Then you can flash again. This was not tested on the pad.
-- The project was tested on **one** pad only (KB16-01 rev2, Windows 11). Other units can be different.
-- A firmware image that does not start at all (for example, after an interrupted download) was not tested.
-
-You flash firmware at your own risk. Flashing can void the warranty of the pad.
-
-## Status
-
-The project has one tested pad. This is what was tested, and how:
-
-| Item | Tested on the real pad | Tested by automated tests and builds only | Not tested |
-|---|---|---|---|
-| Basic mixer: a knob moves a channel, Mute keys, meters (earlier version) | yes | | |
-| Focus, Talk, Move (earlier version) | yes | | |
-| Keys, knob turns, key lights, screen | yes | | |
-| Flashing and recovery | yes, with earlier versions of the firmware | | |
-| Two key pages | | yes | |
-| Knob press to select one program in a channel | | yes | |
-| Volume balance (trim) rules | | yes | |
-| Focus with several audio sessions of one program | | yes | |
-| Idle rule (screen off and lights dim only after no sound and no touch) | | yes | |
-| Name on the logo screen, kept in the pad | | yes | |
-| `open:` key action | | yes | |
-| Settings window with three tabs | | yes | |
-| The pad stays in the bootloader after three crashed starts in a row | | | yes |
-| A firmware image that does not start at all (for example, after an interrupted download) | | | yes |
-
-The table shows the state at the time of writing. Please report your results, good or bad, in an issue.
-
-## Terms
-
-| Term | Meaning |
-|---|---|
-| pad | The DOIO KB16-01 rev2 |
-| firmware | The program in the pad. "Stock firmware" is the firmware from the factory. |
-| bootloader | The small program in the pad that receives a new firmware over USB |
-| app | `kb16-mixer.exe`, the Windows tray app of this project |
-| program | Any other Windows program, for example Discord. The settings window calls these "apps". |
-| channel | A named list of programs, or the microphone. Each channel has one column of keys. |
-| page | One set of 16 key actions. Page 1 is the mixer page. Page 2 is the keypad page. |
-| trim | The part of the channel level that one program gets, from 0 to 1 |
-
-## What you need
-
-| Item | Notes |
-|---|---|
-| DOIO KB16-01 **rev2** | rev2 has the APM32F103CBT6 chip. rev1 (ATmega32U4) and other DOIO models are not supported. |
-| Windows PC | The app runs only on Windows. It was tested on Windows 11 only. |
-| USB cable | A cable that carries data, not only power. |
-| `dfu-util` | The program that writes the firmware into the pad. |
-| WinUSB driver for the bootloader | You install it one time, for the USB ID `1EAF:0003` only. |
-| A copy of the stock firmware | Make it before the first flash. See [Make a backup](docs/flashing.md#make-a-backup-of-the-stock-firmware). |
-| Rust, Python 3, a POSIX shell | To build from source. See [Flashing](docs/flashing.md#prerequisites). |
+The full check, with the steps, is in [docs/install.md](docs/install.md#2-check-your-pad).
 
 ## Quick start
 
-There is no release yet. Build from source for now. A first release follows after more tests on hardware.
+The release is planned, not published. Until then, [build the files from source](docs/build-from-source.md).
 
-1. Build the firmware and the app. See [Build](docs/flashing.md#build).
-2. Install the WinUSB driver for the bootloader (one time only). See [Install the bootloader driver](docs/flashing.md#install-the-bootloader-driver-one-time-only).
-3. Make a backup of the stock firmware. See [Make a backup](docs/flashing.md#make-a-backup-of-the-stock-firmware).
-4. Flash the firmware. See [Flash the firmware](docs/flashing.md#flash-the-firmware).
-5. Disconnect the pad and connect it again.
-6. Start `kb16-mixer.exe`.
+1. Download the release zip and check its SHA-256 value. See [Get the files](docs/install.md#1-get-the-files).
+2. Check your pad. See [Check your pad](docs/install.md#2-check-your-pad).
+3. Install the WinUSB driver for the bootloader, one time. See [Install the bootloader driver](docs/install.md#4-install-the-bootloader-driver-one-time-only).
+4. Make a backup of the stock firmware. See [Make a backup](docs/install.md#5-make-a-backup-of-the-stock-firmware).
+5. Flash the firmware with `flash.ps1`, then disconnect the pad and connect it again. See [Flash the firmware](docs/install.md#6-flash-the-firmware).
+6. Start `kb16-mixer.exe` and run `kb16-mixer.exe --check`. See [Start the app](docs/install.md#8-start-the-app).
 
-On the first start, the app opens its settings window on the **Pad** tab. The window tells you where the tray icon is.
-The app does not start with Windows until you select **Start with Windows** on that tab.
+On the first start, the settings window opens on the **Pad** tab. The app does not start with Windows until you select **Start with Windows**.
+
+**Go back:** [Back to the stock firmware](docs/stock-firmware.md) · **Problems:** [Troubleshooting](docs/troubleshooting.md) · **Questions:** [FAQ](docs/faq.md)
 
 ## How to use the pad
 
@@ -148,68 +125,76 @@ This is page 2 (the keypad page) with the default settings:
 | F13–F24, media keys, shortcuts, digits | The pad types these keys itself. |
 
 A knob press does not mute. Use the Mute keys.
+When the app does not run, the keys type `1`–`0`, arrows, Enter and Backspace, and the knobs send media keys. See [Keyboard mode](docs/configuration.md#keyboard-mode).
 
-When the app does not run, the keys type `1`–`0`, arrows, Enter and Backspace.
-The knobs then send media keys. See [Keyboard mode](docs/configuration.md#keyboard-mode).
+Click the tray icon to open the settings window. A change applies immediately. The app keeps the settings in `%APPDATA%\kb16-mixer\config.toml`. See [docs/configuration.md](docs/configuration.md).
 
-## Settings
+## Status
 
-Click the tray icon to open the settings window. It has three tabs: **Keys**, **Channels** and **Pad**.
-A change applies immediately. A name in a text box applies when you press Enter or leave the box.
-The app writes the changes into `%APPDATA%\kb16-mixer\config.toml`.
-You can also edit this file by hand. A mistake in the file does not break the app: the last correct settings stay active, and the tray menu shows the problem.
+The project has one tested pad (KB16-01 rev2, Windows 11). This is what was tested, and how:
 
-See [Configuration](docs/configuration.md) for the window and for all settings.
+| Item | Tested on the real pad | Tested by automated tests and builds only | Not tested |
+|---|---|---|---|
+| Basic mixer: a knob moves a channel, Mute keys, meters (earlier version) | yes | | |
+| Focus, Talk, Move (earlier version) | yes | | |
+| Keys, knob turns, key lights, screen | yes | | |
+| Flashing with `dfu-util` and `scripts/flash.sh`, and recovery with the keys | yes, with earlier versions of the firmware | | |
+| Bootloader entry with the top-left key, from a community firmware | yes | | |
+| WinUSB driver with the QMK driver installer | yes | | |
+| Two key pages | | yes | |
+| Knob press to select one program in a channel | | yes | |
+| Volume balance (trim) rules | | yes | |
+| Focus with several audio sessions of one program | | yes | |
+| Idle rule (screen off and lights dim only after no sound and no touch) | | yes | |
+| Name on the logo screen, kept in the pad | | yes | |
+| `open:` key action | | yes | |
+| Settings window with three tabs | | yes | |
+| `scripts/flash.ps1` (its checks, with a simulated `dfu-util`) | | yes | |
+| `scripts/flash.ps1` end to end on the pad | | | yes |
+| Bootloader entry from the DOIO factory firmware | | | yes |
+| Backup and restore of a factory firmware | | | yes |
+| The pad stays in the bootloader after three crashed starts in a row | | | yes |
+| A firmware image that does not start at all (for example, after an interrupted download) | | | yes |
+| Windows 10 | | | yes |
 
-## Recovery
+The table shows the state at the time of writing. Please report your results, good or bad, in an issue.
 
-1. Disconnect the pad. Hold the top-left key. Connect the pad.
-2. Or hold all four corner keys for 2 seconds.
-3. Or run `kb16-mixer.exe --bootloader`.
+Safeguards: the firmware never writes the bootloader region. Three ways lead into the bootloader while this firmware runs. Both flashers check the device and the image before they write. See [Recovery](docs/flashing.md#recovery).
 
-Each of these puts the pad into the bootloader. Then flash again. See [Recovery](docs/flashing.md#recovery).
+## Repository map
 
-## FAQ
-
-**Does it need a driver?**
-No. The pad uses the HID driver that is part of Windows. Only the bootloader needs the generic WinUSB driver, one time, for flashing.
-
-**Is it safe with anti-cheat?**
-The app uses no keyboard hooks, injects no input, loads no driver, and does not open or read other processes.
-It gets the names of programs from a system snapshot only.
-Keys that type (media keys, F13–F24, shortcuts) come from the pad itself as real USB keyboard input.
-An `open:` key starts its target through the Windows shell, as a double-click in Explorer does.
-These are facts about the code. The project cannot guarantee how an anti-cheat system will judge it.
-
-**Can I change the volume of one browser tab?**
-No. Windows sets volume per process. All tabs of one browser share one slider.
-
-**How do I find the version?**
-The first line of the tray menu shows the version of the app and of the firmware. The **Pad** tab of the settings window shows them too.
-
-**Does it work with other pads?**
-It was tested on one DOIO KB16-01 rev2 only. rev1 and other DOIO models are not supported. Other pads need their own firmware.
-
-**Does it work on Linux or macOS?**
-The app runs only on Windows. Without the app, the pad is a standard USB keyboard. This was not tested on Linux or macOS.
-
-**Can I go back to the stock firmware?**
-Yes. This project does not include the stock firmware. Flash a stock image in the same way as this firmware. See [Return to the stock firmware](docs/flashing.md#return-to-the-stock-firmware).
+| Folder | Contents |
+|---|---|
+| `protocol/` | The raw HID wire format, shared by the firmware and the app |
+| `pad-core/` | The firmware logic that needs no hardware, with tests that run on the PC |
+| `firmware/` | The firmware for the pad (Rust, Embassy) |
+| `app/` | The Windows tray app (Rust) |
+| `scripts/` | Build scripts, the two flashers (`flash.ps1`, `flash.sh`), the licence-notice script |
+| `docs/` | The documentation |
+| `.github/` | CI, the release workflow, and the templates for issues and pull requests |
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [docs/flashing.md](docs/flashing.md) | Prerequisites, build, backup, flash, verify, recovery, back to stock |
+| [docs/install.md](docs/install.md) | Install on Windows, step by step, from the release zip |
+| [docs/stock-firmware.md](docs/stock-firmware.md) | Bootloader entry from the stock firmware, backup, restore |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Symptoms, causes and fixes |
+| [docs/faq.md](docs/faq.md) | Driver, anti-cheat, rights, stored data, network, uninstall |
 | [docs/configuration.md](docs/configuration.md) | The settings window and all settings of `config.toml` |
 | [docs/how-it-works.md](docs/how-it-works.md) | Architecture, the volume rules, and what the app touches in Windows |
 | [docs/protocol.md](docs/protocol.md) | The raw HID messages between the pad and the app |
+| [docs/flashing.md](docs/flashing.md) | Flashing for developers: `flash.sh`, `dfu-util`, recovery |
+| [docs/build-from-source.md](docs/build-from-source.md) | The Windows toolchain and the build scripts |
 | [docs/hardware.md](docs/hardware.md) | Chip, pins, memory map and bootloader, for firmware writers |
+| [docs/testing.md](docs/testing.md) | How the project is tested |
+| [docs/glossary.md](docs/glossary.md) | The terms of this project |
+| [docs/roadmap.md](docs/roadmap.md) | Planned work |
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). To report a security problem, see [SECURITY.md](SECURITY.md).
-For the list of changes, see [CHANGELOG.md](CHANGELOG.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). All contributors follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+To report a security problem, see [SECURITY.md](SECURITY.md). For the list of changes, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence and legal notes
 
@@ -217,7 +202,8 @@ For the list of changes, see [CHANGELOG.md](CHANGELOG.md).
 - The screen fonts are Open Sans (SIL Open Font License 1.1) and the public-domain X11 5x7 font. The build turns them into bitmaps.
 - All dependencies have permissive licences. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) gives their copyright notices and full licence texts.
 - The firmware code, including the knob decoder, is original to this project. The pin assignments come from the public QMK board definition, as facts.
-- This is an unofficial project. It is not affiliated with DOIO or endorsed by DOIO.
+- This project does not include `dfu-util`, a driver, a driver installer or any stock firmware.
+- This is an unofficial project. It is not affiliated with DOIO, or endorsed by DOIO.
 - All product names and company names are trademarks of their owners. This project uses them only to describe compatibility.
 - You flash firmware at your own risk. Flashing can void the warranty of the pad.
 - The software comes with no warranty. See the MIT licence.
