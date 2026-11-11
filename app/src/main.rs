@@ -21,13 +21,15 @@
 mod audio;
 mod config;
 mod dialog;
+mod keys;
 mod pad;
 mod procs;
 mod settings;
 mod trim;
 
 use audio::{Audible, Device, Mixer, Moved, Readout};
-use config::{Config, KeyAction, KnobBinding, Saved};
+use config::{ChannelCfg, Config, KnobBinding, Saved};
+use keys::Keys;
 use pad::{Link, PadEvent, Show};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -67,8 +69,6 @@ const IDLE_FRAME: Duration = Duration::from_millis(200);
 const STAY_ACTIVE: Duration = Duration::from_secs(3);
 /// Colors and names are sent on connect and on a config change; this is only a safety resync.
 const META_RESYNC: Duration = Duration::from_secs(30);
-/// A Focus key held this long is momentary: it ends on release instead of latching.
-const MOMENTARY: Duration = Duration::from_millis(350);
 const SAVE_AFTER: Duration = Duration::from_secs(3);
 
 /// What the tray and the settings window share (both live on the main thread).
@@ -231,18 +231,10 @@ fn worker(
     let mut mic_muted = false;
     let mut mic_checked: Option<Instant> = None;
     let mut audible = Audible::default();
-    // Focus key that is down: channel, since when, and whether it was already latched.
-    let mut focus_key: Option<(usize, Instant, bool)> = None;
-    // Talk key that is down: the mic mute state to go back to on release.
-    let mut talk_restore: Option<bool> = None;
-    let mut move_armed = false;
-    // Key page in use (0 = [keys]), and the page key that is down: since when, and the page
-    // to go back to if it turns out to be held rather than tapped.
-    let mut page = 0usize;
-    let mut page_key: Option<(Instant, usize)> = None;
-    // What each key meant when it went down, so its release does the matching thing even
-    // after the page changed underneath it.
-    let mut held: [[Option<KeyAction>; 4]; 4] = Default::default();
+    let mut keys = Keys::default();
+    let mut was_paused = false;
+    // Paused just now: one last full send so the pad is on page 1 too before it goes quiet.
+    let mut farewell = false;
     // What each knob is aimed at: its channel, or for a few seconds one app in it.
     let mut aims: [trim::Aim; 3] = Default::default();
     // Channel names of the config in force, to tell a rename from a new channel.
@@ -296,33 +288,34 @@ fn worker(
             }
             mixer.trims = saved.trims.clone();
             aims = Default::default();
-            focus_key = None;
-            page = 0;
-            page_key = None;
+            keys.reload();
             meta_sent = None;
         }
-        let shown_page = page;
+        let shown_page = keys.page();
         mixer.refresh(channels, false);
 
         // Coalesce: a fast spin becomes one change per knob.
         let mut turns = [0i32; 3];
         let mut presses = [0usize; 3];
-        let mut keys = Vec::new();
-        let mut released = Vec::new();
-        let mut let_go = false; // undo everything temporary (pad gone, app closing)
         let mut closing = false;
         let mut popup: Option<Show> = None;
+        let is_paused = paused.load(Ordering::Relaxed);
         if !batch.is_empty() {
             last_active = Instant::now();
         }
+        let now = Instant::now();
         for e in batch {
+            let mut desk = Desk { mixer: &mut mixer, channels, popup: &mut popup, notices: &notices, main_thread };
             match e {
+                // Input still on its way when Pause was chosen belongs to no one.
+                PadEvent::Turn { .. } | PadEvent::Press { .. } | PadEvent::Key { .. } | PadEvent::KeyUp { .. }
+                    if is_paused => {}
                 PadEvent::Turn { knob, delta } if knob < 3 => turns[knob as usize] += delta,
                 PadEvent::Press { knob } if knob < 3 => presses[knob as usize] += 1,
-                PadEvent::Key { row, col } => keys.push((row, col as usize)),
-                PadEvent::KeyUp { row, col } => released.push((row as usize, col as usize)),
+                PadEvent::Key { row, col } => keys.press(row as usize, col as usize, now, &cfg, &mut desk),
+                PadEvent::KeyUp { row, col } => keys.release(row as usize, col as usize, now, &cfg, &mut desk),
                 PadEvent::Shutdown => {
-                    let_go = true;
+                    keys.let_go(&mut desk);
                     closing = true;
                 }
                 PadEvent::Connected(c) => {
@@ -331,7 +324,7 @@ fn worker(
                         link.open();
                     } else {
                         link.close();
-                        let_go = true;
+                        keys.let_go(&mut desk);
                     }
                     meta_sent = None;
                     last_frame = [0; 32];
@@ -357,125 +350,18 @@ fn worker(
                 _ => {}
             }
         }
+        // Pause hands the pad to Windows as a plain keyboard, and unpausing hands it back: both
+        // ways the app and the pad start over on page 1 with nothing held.
+        if is_paused != was_paused {
+            was_paused = is_paused;
+            keys.let_go(&mut Desk { mixer: &mut mixer, channels, popup: &mut popup, notices: &notices, main_thread });
+            meta_sent = None;
+            last_frame = [0; 32];
+            farewell = is_paused;
+        }
 
-        let show = |r: Readout| {
-            let name = if r.live { r.name } else { format!("{} (idle)", r.name) };
-            Some(Show::Level { name, volume: r.volume, muted: r.muted })
-        };
+        let show = |r: Readout| Some(level_popup(r));
         let notice = |text: String| Some(Show::Notice(text));
-        for (row, col) in keys {
-            if row as usize >= 4 || col >= 4 {
-                continue;
-            }
-            let action = cfg.pages[page][row as usize][col].clone();
-            held[row as usize][col] = Some(action.clone());
-            // Move is held like a shift key: the next key picks the column.
-            if move_armed && action != KeyAction::Move && col < n {
-                let (outcome, app) = mixer.move_focused(col, channels);
-                let channel = &channels[col].name;
-                let tell_settings = || unsafe {
-                    let _ = PostThreadMessageW(main_thread, WM_APPS_MOVED, WPARAM(0), LPARAM(0));
-                };
-                popup = match outcome {
-                    Moved::To => {
-                        config::save_apps(&mixer.moved);
-                        tell_settings();
-                        notice(format!("{}>{}", clip(&app, 15usize.saturating_sub(channel.len())), channel))
-                    }
-                    Moved::BackToAuto => {
-                        config::save_apps(&mixer.moved);
-                        tell_settings();
-                        notice(format!("{}>auto", clip(&app, 11)))
-                    }
-                    Moved::NothingFocused => notice("No app in front".into()),
-                    Moved::NotAnAppChannel => notice("Apps only".into()),
-                };
-                continue;
-            }
-            match action {
-                KeyAction::Mute if col < n => popup = show(mixer.change_channel(col, None, channels)),
-                // Talk, or Focus on the microphone's column, which means the same thing.
-                _ if is_talk(&action, col, channels) => {
-                    if talk_restore.is_none() {
-                        let muted = mixer.mic_muted();
-                        talk_restore = Some(muted);
-                        mixer.set_mic_muted(!muted, channels);
-                        popup = notice(if muted { "Mic live".into() } else { "Mic off".into() });
-                    }
-                }
-                KeyAction::Focus if col < n => {
-                    let latched = mixer.focus() == Some(col);
-                    mixer.set_focus(Some(col), channels);
-                    focus_key = Some((col, Instant::now(), latched));
-                    if !latched {
-                        popup = notice(format!("Focus {}", channels[col].name));
-                    }
-                }
-                KeyAction::Page => {
-                    page_key = Some((Instant::now(), page));
-                    page = 1 - page;
-                }
-                KeyAction::Open(target) => open(target, notices.clone()),
-                KeyAction::Move => {
-                    move_armed = true;
-                    popup = match mixer.where_is_focused(channels) {
-                        Some((app, Some(c))) => notice(format!(
-                            "{}: {}",
-                            clip(&app, 14usize.saturating_sub(channels[c].name.len())),
-                            channels[c].name
-                        )),
-                        Some((app, None)) => notice(clip(&app, 16).to_string()),
-                        None => notice("No app in front".into()),
-                    };
-                }
-                _ => {}
-            }
-        }
-        for (row, col) in released {
-            if row >= 4 || col >= 4 {
-                continue;
-            }
-            let Some(action) = held[row][col].take() else { continue };
-            match action {
-                KeyAction::Move => move_armed = false,
-                KeyAction::Page => {
-                    // Same rule as Focus: a tap switches and stays, a hold lasts while held.
-                    if let Some((since, back)) = page_key.take()
-                        && since.elapsed() >= MOMENTARY
-                    {
-                        page = back;
-                    }
-                }
-                _ if is_talk(&action, col, channels) => {
-                    if let Some(muted) = talk_restore.take() {
-                        mixer.set_mic_muted(muted, channels);
-                        popup = notice(if muted { "Mic off".into() } else { "Mic live".into() });
-                    }
-                }
-                KeyAction::Focus => {
-                    if let Some((_, since, latched)) = focus_key.filter(|(c, ..)| *c == col) {
-                        focus_key = None;
-                        // A tap latches (or unlatches); a hold lasts only while held.
-                        if latched || since.elapsed() >= MOMENTARY {
-                            mixer.set_focus(None, channels);
-                            popup = notice("Focus off".into());
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        if let_go {
-            mixer.set_focus(None, channels);
-            focus_key = None;
-            move_armed = false;
-            page = 0;
-            page_key = None;
-            held = Default::default();
-            if let Some(muted) = talk_restore.take() {
-                mixer.set_mic_muted(muted, channels);
-            }
-        }
         for knob in 0..3 {
             if turns[knob] == 0 && presses[knob] == 0 {
                 continue;
@@ -551,7 +437,12 @@ fn worker(
         }
 
         // ---- the pad ----
-        if paused.load(Ordering::Relaxed) {
+        if farewell {
+            // The listener may already have let go of the pad; one write still reaches it.
+            if !link.is_open() {
+                link.open();
+            }
+        } else if is_paused {
             link.close();
         } else if pad_present && !link.is_open() && link_tried.elapsed() >= Duration::from_secs(1) {
             link_tried = Instant::now();
@@ -560,13 +451,15 @@ fn worker(
                 last_frame = [0; 32];
             }
         }
-        let tick = Instant::now() >= deadline;
+        let tick = Instant::now() >= deadline || farewell;
         if tick {
             last_tick = Instant::now();
         }
         if !link.is_open() {
+            farewell = false;
             continue;
         }
+        let page = keys.page();
         if page != shown_page && meta_sent.is_some() {
             for m in pad::key_messages(&cfg.pages[page]) {
                 link.send(&m);
@@ -623,12 +516,94 @@ fn worker(
             }
         }
         link.keep_alive();
+        if farewell {
+            link.close();
+            farewell = false;
+        }
     }
 }
 
-/// Talk, or a Focus key sitting in the microphone's column.
-fn is_talk(action: &KeyAction, col: usize, channels: &[config::ChannelCfg]) -> bool {
-    *action == KeyAction::Talk || (*action == KeyAction::Focus && audio::mic_channel(channels) == Some(col))
+fn level_popup(r: Readout) -> Show {
+    let name = if r.live { r.name } else { format!("{} (idle)", r.name) };
+    Show::Level { name, volume: r.volume, muted: r.muted }
+}
+
+/// What the keys act on in the worker: the mixer, and the popup the pad shows next.
+struct Desk<'a> {
+    mixer: &'a mut Mixer,
+    channels: &'a [ChannelCfg],
+    popup: &'a mut Option<Show>,
+    notices: &'a Sender<PadEvent>,
+    main_thread: u32,
+}
+
+impl Desk<'_> {
+    fn notice(&mut self, text: String) {
+        *self.popup = Some(Show::Notice(text));
+    }
+}
+
+impl keys::Hands for Desk<'_> {
+    fn focus(&self) -> Option<usize> {
+        self.mixer.focus()
+    }
+
+    fn set_focus(&mut self, focus: Option<usize>, announce: bool) {
+        self.mixer.set_focus(focus, self.channels);
+        if announce {
+            let text = focus.map_or("Focus off".into(), |c| format!("Focus {}", self.channels[c].name));
+            self.notice(text);
+        }
+    }
+
+    fn mic_muted(&self) -> bool {
+        self.mixer.mic_muted()
+    }
+
+    fn set_mic_muted(&mut self, muted: bool, announce: bool) {
+        self.mixer.set_mic_muted(muted, self.channels);
+        if announce {
+            self.notice(if muted { "Mic off" } else { "Mic live" }.into());
+        }
+    }
+
+    fn mute(&mut self, col: usize) {
+        *self.popup = Some(level_popup(self.mixer.change_channel(col, None, self.channels)));
+    }
+
+    fn move_to(&mut self, col: usize) {
+        let (outcome, app) = self.mixer.move_focused(col, self.channels);
+        let channel = &self.channels[col].name;
+        let text = match outcome {
+            Moved::To => format!("{}>{}", clip(&app, 15usize.saturating_sub(channel.len())), channel),
+            Moved::BackToAuto => format!("{}>auto", clip(&app, 11)),
+            Moved::NothingFocused => "No app in front".into(),
+            Moved::NotAnAppChannel => "Apps only".into(),
+        };
+        if matches!(outcome, Moved::To | Moved::BackToAuto) {
+            config::save_apps(&self.mixer.moved);
+            unsafe {
+                let _ = PostThreadMessageW(self.main_thread, WM_APPS_MOVED, WPARAM(0), LPARAM(0));
+            }
+        }
+        self.notice(text);
+    }
+
+    fn show_where(&mut self) {
+        let text = match self.mixer.where_is_focused(self.channels) {
+            Some((app, Some(c))) => {
+                let channel = &self.channels[c].name;
+                format!("{}: {}", clip(&app, 14usize.saturating_sub(channel.len())), channel)
+            }
+            Some((app, None)) => clip(&app, 16).to_string(),
+            None => "No app in front".into(),
+        };
+        self.notice(text);
+    }
+
+    fn open(&mut self, target: &str) {
+        open(target.to_string(), self.notices.clone());
+    }
 }
 
 /// Opens a program, file, folder or URL the way a double-click in Explorer would: the shell
