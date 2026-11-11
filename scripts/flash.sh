@@ -1,7 +1,7 @@
 #!/bin/sh
 # Flashes the pad's app region only (DFU alt 2 = 0x08002000); the bootloader is never touched.
 # Usage: scripts/flash.sh [firmware.bin]     (default: firmware/target/kb16-mixer-firmware.bin)
-# For Git Bash and Linux. On Windows without Git Bash, use scripts/flash.ps1 (same checks).
+# For Git Bash and Linux. For Windows users, scripts/flash.ps1 does the same image check and more device checks.
 #
 # dfu-util is taken from $DFU_UTIL, else PATH, else anywhere under the git-ignored tools/ folder.
 # If the pad does not answer the bootloader request, unplug it, hold the top-left key,
