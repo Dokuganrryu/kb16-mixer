@@ -257,10 +257,11 @@ In a channel that you never set on the pad, the app follows the level of the pro
 The app gives each audio session to one channel:
 
 1. A program that you moved with the Move key goes to the channel that you moved it to.
-2. Otherwise, the first channel that names the program in `apps` gets it.
-3. A channel with `target = "focused"` gets the sessions of the foreground program and of its child processes.
-4. A channel with `target = "other"` gets all other sessions.
-5. No channel controls a session that matches none of these rules.
+2. Otherwise, the first channel in the file that matches the session gets it. A channel with `apps` matches the programs that it names. A channel with `target = "focused"` matches the foreground program and its child processes.
+3. Otherwise, the first channel with `target = "other"` gets the session.
+4. No channel controls a session that matches none of these rules.
+
+Thus the order of the channels in the file is important. A `focused` channel above an `apps` channel takes the foreground program, also if the `apps` channel names it.
 
 The settings window shows the programs of each channel with the same rule.
 
@@ -274,7 +275,7 @@ The app skips the "System Sounds" session.
 |---|---|---|
 | Volume and mute of each audio session (one slider in the volume mixer) | Core Audio `ISimpleAudioVolume` | Read and write |
 | Peak level of each audio session (for the meters and the idle rule) | Core Audio `IAudioMeterInformation` | Read |
-| Level and mute of the default communications microphone | Core Audio `IAudioEndpointVolume` | Read and write |
+| Level and mute of the default communications microphone (if Windows has none, the default microphone) | Core Audio `IAudioEndpointVolume` | Read and write |
 | Level and mute of the default output device (write only for a knob set to `master`) | Core Audio `IAudioEndpointVolume` | Read and write |
 | Names of running programs, and their parent process | Toolhelp process snapshot (`CreateToolhelp32Snapshot`) | Read |
 | The process of the foreground window (for `focused` and Move) | `GetForegroundWindow`, `GetWindowThreadProcessId` | Read |

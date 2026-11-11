@@ -106,7 +106,7 @@ To set the key to nothing, click **Clear**. To keep the old setting, click **Can
 
 - The dialog reads keys only from its own box, while that box has the keyboard focus. It uses no hook.
 - Windows keeps some combinations for itself (for example Win+L and Ctrl+Alt+Del, and often the Win key). The dialog cannot see these. Type them into the config file instead, for example `"win+l"`.
-- The dialog refuses keys that the pad cannot type, for example the number-pad keys and the Pause key. It then shows: "The pad cannot type that key."
+- The dialog refuses keys that the pad cannot type, for example the number-pad keys and the Pause key. It then shows: "The pad cannot type that key. Letters, digits, F1 to F24, Enter, arrows and the like work."
 
 ### Open dialog
 
@@ -192,7 +192,7 @@ The tray menu then shows "Config problem" and the cause. The screen of the pad s
 If the file has a mistake when the app starts, the app uses the default settings and writes the cause to `log.txt`.
 
 The file uses the TOML format. Text values are in double quotes.
-A reload sets the pad back to page 1.
+A reload sets the pad back to page 1, stops Focus, and sets each knob back to its whole channel.
 
 ## General settings
 
@@ -207,7 +207,8 @@ A reload sets the pad back to page 1.
 | `lights_dim_min` | `10` | 0–240 | Minutes without activity before the key lights dim. 0 = never. |
 | `mixer_keys` | `true` | `true`, `false` | `false` = the keys type their keyboard-mode keys. The knobs and the lights stay in mixer mode. |
 
-The app changes a number outside its range to the nearest limit. For example, `step = 900` becomes `20`.
+The app changes a number outside its range to the nearest limit. For example, `step = 900` becomes `20`, and `oled_top = 9` becomes `6`.
+A negative number for `oled_top`, `screen_off_min` or `lights_dim_min` is a mistake, and so is an `oled_top` above 255.
 A `name` outside its rule is a mistake: the app does not load the file.
 
 Activity is a key press, a knob turn, or audible sound from a program. A readout or a notice on the screen is not activity.
@@ -468,11 +469,12 @@ The fourth column has no channel. Its `mute` and `focus` keys would do nothing. 
 | `channel name "...": 1 to 5 characters, what the pad's screen shows` | A channel name is empty or longer than 5 characters. |
 | `[keys] row1: 3 entries, a row has 4 keys` | A row does not have exactly 4 entries. The same for `[keys2]`. |
 | `[keys2] has no "page" key, so there would be no way back to [keys]` | Page 1 has a `page` key, and page 2 has none. |
-| `key "...": not an action, media key or key name` | The key name is not known. |
-| `key "...": one key plus modifiers, please` | The entry has more than one key. |
-| `key "...": tap\|hold works with media keys (play, next, prev, stop)` | A tap/hold entry has a value that is not a media key. |
-| `key "...": open: needs a program, file, folder or web address after it` | An `open:` entry has no target. |
+| `[keys] row1: key "...": not an action, media key or key name` | The key name is not known. |
+| `[keys] row1: key "...": one key plus modifiers, please` | The entry has more than one key. |
+| `[keys] row1: key "...": tap\|hold works with media keys (play, next, prev, stop)` | A tap/hold entry has a value that is not a media key. |
+| `[keys] row1: key "...": open: needs a program, file, folder or web address after it` | An `open:` entry has no target. |
 
+A key error starts with the page and the row, for example `[keys] row1:` or `[keys2] row3:`.
 A TOML syntax error shows the line number.
 
 ## Keyboard mode
