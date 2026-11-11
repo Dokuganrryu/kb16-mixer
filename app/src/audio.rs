@@ -647,10 +647,7 @@ impl Mixer {
     pub fn where_is_focused(&self, channels: &[ChannelCfg]) -> Option<(String, Option<usize>)> {
         let snap = Snapshot::take();
         let fg = procs::foreground_pid()?;
-        let exe = snap.exe(fg)?.to_string();
-        if exe.is_empty() || exe == "explorer.exe" {
-            return None;
-        }
+        let exe = procs::app_in_front(&snap, fg)?.to_string();
         let playing = self.sessions.iter().find(|s| s.exe == exe).and_then(|s| s.channel);
         Some((pretty(&exe), playing.or_else(|| assign(channels, &self.moved, &exe, fg, None))))
     }
@@ -668,16 +665,19 @@ impl Mixer {
 
     /// The app in front, whatever channel it is in.
     pub fn change_focused(&mut self, delta_pct: Option<f32>) -> Readout {
-        let snap = Snapshot::take();
-        let Some(fg) = procs::foreground_pid() else {
+        self.change_in_front(&Snapshot::take(), procs::foreground_pid(), delta_pct)
+    }
+
+    /// `change_focused` with the process list and the pid in front given.
+    fn change_in_front(&mut self, snap: &Snapshot, fg: Option<u32>, delta_pct: Option<f32>) -> Readout {
+        let Some((fg, fg_exe)) = fg.and_then(|fg| Some((fg, procs::app_in_front(snap, fg)?))) else {
             return Readout { name: "Nothing in front".into(), volume: 0, muted: false, live: false };
         };
-        let fg_exe = snap.exe(fg).unwrap_or("").to_string();
-        let name = pretty(&fg_exe);
+        let name = pretty(fg_exe);
         let hits: Vec<usize> = (0..self.sessions.len())
             .filter(|&i| {
                 let s = &self.sessions[i];
-                snap.descends_from(s.pid, fg) || (!fg_exe.is_empty() && s.exe == fg_exe)
+                snap.descends_from(s.pid, fg) || s.exe == fg_exe
             })
             .collect();
         if hits.is_empty() {
@@ -779,10 +779,9 @@ impl Mixer {
             return (Moved::NotAnAppChannel, String::new());
         }
         let snap = Snapshot::take();
-        let exe = procs::foreground_pid().and_then(|p| snap.exe(p)).unwrap_or("").to_string();
-        if exe.is_empty() || exe == "explorer.exe" {
+        let Some(exe) = procs::foreground_pid().and_then(|p| procs::app_in_front(&snap, p)).map(str::to_string) else {
             return (Moved::NothingFocused, String::new());
-        }
+        };
         let outcome = if self.moved.get(&exe).is_some_and(|c| c.eq_ignore_ascii_case(&cfg.name)) {
             self.moved.remove(&exe);
             Moved::BackToAuto
@@ -880,7 +879,9 @@ pub fn assign(
     }
     let named = channels.iter().position(|c| match &c.target {
         ChannelTarget::Apps(apps) => apps.iter().any(|a| a.eq_ignore_ascii_case(exe)),
-        ChannelTarget::Focused => focus.is_some_and(|(fg, snap)| snap.descends_from(pid, *fg)),
+        ChannelTarget::Focused => {
+            focus.is_some_and(|(fg, snap)| procs::app_in_front(snap, *fg).is_some() && snap.descends_from(pid, *fg))
+        }
         ChannelTarget::Other | ChannelTarget::Mic => false,
     });
     named.or_else(|| channels.iter().position(|c| matches!(c.target, ChannelTarget::Other)))
@@ -1132,6 +1133,40 @@ mod tests {
         assert!(close(a.get(), 0.175), "still turned down: {}", a.get());
         m.set_focus(None, &channels());
         assert!(close(a.get(), 0.7), "the change survives Focus: {}", a.get());
+    }
+
+    /// The desktop and taskbar (explorer.exe, pid 100) started Spotify (200) and a game (300).
+    fn started_from_explorer() -> Snapshot {
+        Snapshot::of(&[(100, "explorer.exe", 1), (200, "spotify.exe", 100), (300, "game.exe", 100)])
+    }
+
+    #[test]
+    fn the_desktop_in_front_puts_no_app_in_the_focused_channel() {
+        let ch = |name: &str, target| ChannelCfg { name: name.into(), color: [0; 3], target };
+        let channels = vec![ch("Front", ChannelTarget::Focused), ch("Rest", ChannelTarget::Other)];
+        let none = HashMap::new();
+        let in_front = |fg: u32| Some((fg, started_from_explorer()));
+        assert_eq!(assign(&channels, &none, "spotify.exe", 200, in_front(200).as_ref()), Some(0), "Spotify in front");
+        assert_eq!(assign(&channels, &none, "game.exe", 300, in_front(200).as_ref()), Some(1));
+        for exe_pid in [("spotify.exe", 200), ("game.exe", 300), ("explorer.exe", 100)] {
+            let (exe, pid) = exe_pid;
+            assert_eq!(assign(&channels, &none, exe, pid, in_front(100).as_ref()), Some(1), "desktop in front: {exe}");
+        }
+    }
+
+    #[test]
+    fn the_app_in_front_knob_turns_nothing_while_the_desktop_is_in_front() {
+        let (spotify, game) = (Fake::at(0.3), Fake::at(0.9));
+        let mut m = mixer([0.5, 0.5]);
+        m.sessions = windows_has(&[("s", "spotify.exe", &spotify, MEDIA), ("g", "game.exe", &game, GAME)]);
+        m.sessions[0].pid = 200;
+        m.sessions[1].pid = 300;
+        let r = m.change_in_front(&started_from_explorer(), Some(100), Some(10.0));
+        assert!(!r.live && r.name == "Nothing in front", "{} {}", r.name, r.live);
+        assert!(close(spotify.get(), 0.3) && close(game.get(), 0.9), "{} {}", spotify.get(), game.get());
+        let r = m.change_in_front(&started_from_explorer(), Some(200), Some(10.0));
+        assert!(r.live && r.name == "Spotify" && r.volume == 40);
+        assert!(close(spotify.get(), 0.4) && close(game.get(), 0.9), "only the app in front");
     }
 
     #[test]

@@ -31,6 +31,12 @@ impl Snapshot {
         Snapshot { procs }
     }
 
+    /// A made-up process list, (pid, exe, parent pid), for tests of the rules that read one.
+    #[cfg(test)]
+    pub fn of(list: &[(u32, &str, u32)]) -> Snapshot {
+        Snapshot { procs: list.iter().map(|&(pid, exe, parent)| (pid, (exe.to_string(), parent))).collect() }
+    }
+
     pub fn exe(&self, pid: u32) -> Option<&str> {
         self.procs.get(&pid).map(|(e, _)| e.as_str())
     }
@@ -48,6 +54,13 @@ impl Snapshot {
         }
         false
     }
+}
+
+/// The exe of the app in front (process `fg`), or None when that is no app: a process gone from
+/// the list, or explorer.exe (the desktop, the taskbar, a folder window). Every app started from
+/// the desktop descends from explorer.exe, so taking it as "in front" would claim them all.
+pub fn app_in_front(snap: &Snapshot, fg: u32) -> Option<&str> {
+    snap.exe(fg).filter(|exe| !exe.is_empty() && *exe != "explorer.exe")
 }
 
 pub fn foreground_pid() -> Option<u32> {
