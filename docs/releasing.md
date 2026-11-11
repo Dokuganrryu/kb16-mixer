@@ -11,7 +11,7 @@ A person tests the draft on a real pad. The person publishes the draft only when
 | Asset | Contents |
 |---|---|
 | `kb16-mixer-<version>-windows-x64.zip` | `kb16-mixer.exe`, `firmware/kb16-mixer-firmware.bin`, `flash.ps1`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `README.txt` |
-| `SHA256SUMS` | The SHA-256 hash of the zip, of the firmware image and of the exe |
+| `SHA256SUMS` | Three lines: the SHA-256 hash of the zip, of `kb16-mixer-firmware.bin` and of `kb16-mixer.exe`. The exe and the image are in the zip. They are not separate assets. |
 | Build attestation | A signed record from GitHub. It shows that the workflow made the zip from the tagged commit. |
 
 `scripts/package-release.py` makes the zip and `SHA256SUMS`.
@@ -59,17 +59,18 @@ The workflow makes the zip, `SHA256SUMS` and the attestation. It then makes a dr
 2. Download the zip and `SHA256SUMS` from the draft.
 3. Open PowerShell in your download folder.
 4. Get the hash of the zip: `Get-FileHash .\kb16-mixer-0.1.0-windows-x64.zip -Algorithm SHA256`.
-5. Compare the hash with the line for the zip in `SHA256SUMS`. The two values must be the same.
+5. Compare the hash with the line for the zip in `SHA256SUMS`. The two values must be the same. In Git Bash, `sha256sum -c --ignore-missing SHA256SUMS` does this check. It must show `OK` for the zip.
 6. Check the attestation: `gh attestation verify .\kb16-mixer-0.1.0-windows-x64.zip --repo Dokuganrryu/kb16-mixer`.
 7. Unzip the zip to a new folder.
-8. Put a test pad into the bootloader. See [install.md](install.md).
-9. Flash the firmware from the zip with `flash.ps1`. Use only the files from the draft.
-10. Unplug the pad. Plug it in again.
-11. Run `kb16-mixer.exe --check` from the unzipped folder.
-12. Make sure that the `pad` line shows `OK` and the new firmware version.
-13. Make sure that the last line is `Result: OK`.
-14. Do the tests in the table of [testing.md](testing.md#verified-on-the-real-pad) that apply to the change.
-15. Write the results, the date and the version into that table. Merge that change through a pull request.
+8. Get the hash of `kb16-mixer.exe` and of `firmware\kb16-mixer-firmware.bin` with `Get-FileHash`. Compare each hash with the line for the same file name in `SHA256SUMS`.
+9. Put a test pad into the bootloader. See [install.md](install.md).
+10. Flash the firmware from the zip with `flash.ps1`. Use only the files from the draft.
+11. Unplug the pad. Plug it in again.
+12. Run `kb16-mixer.exe --check` from the unzipped folder.
+13. Make sure that the `pad` line shows `OK` and the new firmware version.
+14. Make sure that the last line is `Result: OK`.
+15. Do the tests in the table of [testing.md](testing.md#verified-on-the-real-pad) that apply to the change.
+16. Write the results, the date and the version into that table. Merge that change through a pull request.
 
 Do not publish the draft if one of these steps fails.
 

@@ -8,7 +8,10 @@ The zip kb16-mixer-<version>-windows-x64.zip holds exactly:
     kb16-mixer.exe, firmware/kb16-mixer-firmware.bin, flash.ps1, LICENSE,
     THIRD_PARTY_NOTICES.md, README.txt
 SHA256SUMS lists the zip and the loose copies of the exe and the firmware image, which the
-script also writes to --out.
+script also writes to --out. The release uploads only the zip and SHA256SUMS, so a user checks
+with `sha256sum -c --ignore-missing SHA256SUMS`: in the download folder for the zip, in the
+unzipped folder for the exe, and in its firmware folder for the image. docs/install.md and
+README.txt give these steps and the Get-FileHash steps.
 
 The script refuses a firmware image that flash.ps1 would refuse, and an exe without the MZ
 header, so that a broken build never becomes a release. The zip is reproducible: the same

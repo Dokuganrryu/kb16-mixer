@@ -22,7 +22,13 @@ README.txt                         This file
 
 Quick steps
 -----------
-1. Compare the SHA-256 hash of the zip with the file SHA256SUMS.
+1. Compare the SHA-256 hash of the zip with the line for the zip in SHA256SUMS.
+   In PowerShell: Get-FileHash .\<name of the zip> -Algorithm SHA256
+   In Git Bash, in the download folder: sha256sum -c --ignore-missing SHA256SUMS
+   SHA256SUMS also has lines for kb16-mixer.exe and kb16-mixer-firmware.bin.
+   These two files are in this zip, not separate downloads. Check them in this
+   folder with Get-FileHash. flash.ps1 shows the SHA-256 hash of the image.
+   This hash must be the same as the line for kb16-mixer-firmware.bin.
 2. Put the pad into the bootloader. The full guide tells you how.
 3. Install the bootloader driver one time only.
 4. Run flash.ps1 with -Backup to keep the stock firmware and to write the new firmware.

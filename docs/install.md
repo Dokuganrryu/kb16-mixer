@@ -85,6 +85,17 @@ The zip holds these files (planned layout):
 3. Open `SHA256SUMS` in a text editor. Find the line that ends with the name of the zip.
 4. Compare the two values. They must be the same. Upper case and lower case letters do not matter.
 
+`SHA256SUMS` has three lines: the zip, `kb16-mixer-firmware.bin` and `kb16-mixer.exe`.
+The release has only the zip and `SHA256SUMS` as separate files. The exe and the firmware image are in the zip.
+Thus `sha256sum -c SHA256SUMS` in the download folder cannot find two of the files. This is correct.
+To check only the zip in Git Bash or on Linux, run this command in the download folder:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS
+```
+
+The command must show `kb16-mixer-0.1.0-windows-x64.zip: OK`.
+
 If you use the GitHub CLI, you can also check where GitHub built the file:
 
 ```powershell
@@ -99,6 +110,26 @@ The command must show that the verification succeeded. The attestation shows tha
 
 1. Make a folder that stays, for example `%LOCALAPPDATA%\Programs\kb16-mixer`.
 2. Unzip the release into this folder.
+3. Optional: check the exe and the firmware image. Open PowerShell in this folder.
+4. Run these two commands:
+
+   ```powershell
+   Get-FileHash .\kb16-mixer.exe -Algorithm SHA256
+   Get-FileHash .\firmware\kb16-mixer-firmware.bin -Algorithm SHA256
+   ```
+
+5. Compare each value with the line in `SHA256SUMS` that ends with the same file name. The values must be the same.
+
+In Git Bash, copy `SHA256SUMS` into this folder. Then run these two commands in this folder:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS
+(cd firmware && sha256sum -c --ignore-missing ../SHA256SUMS)
+```
+
+The first command checks the exe. The second command checks the firmware image. Each command must show `OK`.
+
+`flash.ps1` also shows the SHA-256 value of the image before it writes. Compare this value with the line that ends with `kb16-mixer-firmware.bin`.
 
 **Start with Windows** uses the path of `kb16-mixer.exe`. If you move the folder later, set **Start with Windows** again.
 

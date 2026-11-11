@@ -105,6 +105,15 @@ This project does not include the stock firmware. Make the backup before the fir
 
 No. Windows sets the volume for each process. All tabs of one browser share one slider.
 
+## Why can `sha256sum -c SHA256SUMS` not find two files?
+
+`SHA256SUMS` has a line for the zip, for `kb16-mixer.exe` and for `kb16-mixer-firmware.bin`.
+The release has only the zip and `SHA256SUMS` as separate files. The exe and the firmware image are in the zip.
+
+Use `sha256sum -c --ignore-missing SHA256SUMS` in the download folder. It checks the zip only.
+To check the exe and the image after you unzip, see [install.md](install.md#13-unzip-the-release).
+In PowerShell, use `Get-FileHash`. `flash.ps1` also shows the SHA-256 value of the image.
+
 ## How do I find the version?
 
 The first line of the tray menu shows the version of the app and of the firmware. The **Pad** tab of the settings window shows them too.
