@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: protocol
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: protocol
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy,llvm-tools --target thumbv7m-none-eabi
+          rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: firmware
+      - name: Format
+        working-directory: firmware
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: firmware
+        run: cargo clippy --release --locked
+      # Builds the image with llvm-objcopy and rejects it unless the vector table and size check out.
+      - name: Build and check the image
+        run: sh scripts/build-firmware.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kb16-mixer-firmware
+          path: firmware/target/kb16-mixer-firmware.bin
+          if-no-files-found: error
+
+  app:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+      - name: Format
+        working-directory: app
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: app
+        run: cargo clippy --all-targets --locked
+      - name: Test
+        working-directory: app
+        run: cargo test --locked
+      - name: Build
+        run: sh scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kb16-mixer-app
+          path: app/target/release/kb16-mixer.exe
+          if-no-files-found: error
