@@ -57,6 +57,9 @@ struct Entry {
 /// A window's background painter.
 pub type Scene = fn(&mut Canvas, HWND);
 
+/// The window whose controls take Ctrl+Tab, and what it does (true: with Shift).
+pub type CtrlTab = (HWND, fn(bool));
+
 const HOVER: u32 = 1;
 const PRESS: u32 = 2;
 const ON: u32 = 3;
@@ -76,7 +79,8 @@ thread_local! {
     static KEYBOARD: Cell<bool> = const { Cell::new(false) };
     /// A toggle being clicked with the mouse: its knob slides.
     static CLICKING: Cell<HWND> = const { Cell::new(HWND(std::ptr::null_mut())) };
-    static CTRL_TAB: Cell<Option<fn(bool)>> = const { Cell::new(None) };
+    /// The window whose controls take Ctrl+Tab, and what it does there.
+    static CTRL_TAB: Cell<Option<CtrlTab>> = const { Cell::new(None) };
     /// The hidden renderer draws the focus ring even though no key was pressed.
     static SHOW_FOCUS: Cell<bool> = const { Cell::new(false) };
     /// The hidden renderer is printing a window that is not shown.
@@ -134,11 +138,18 @@ pub fn set_scene(top: HWND, scene: Scene) {
 pub fn drop_scene(top: HWND) {
     SCENES.with_borrow_mut(|s| s.retain(|(h, _)| *h != top));
     anim::forget(top);
+    tip::forget(top);
 }
 
-/// What Ctrl+Tab (false) and Ctrl+Shift+Tab (true) do from any control.
-pub fn on_ctrl_tab(f: Option<fn(bool)>) {
+/// What Ctrl+Tab (false) and Ctrl+Shift+Tab (true) do from any control of `top` (not from
+/// a dialog over it).
+pub fn on_ctrl_tab(f: Option<CtrlTab>) {
     CTRL_TAB.set(f);
+}
+
+/// What Ctrl+Tab does from control `hwnd`, if anything.
+fn ctrl_tab_of(hwnd: HWND) -> Option<fn(bool)> {
+    CTRL_TAB.get().filter(|(top, _)| parent(hwnd) == *top).map(|(_, f)| f)
 }
 
 pub fn show_focus(on: bool) {

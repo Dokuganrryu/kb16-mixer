@@ -284,7 +284,7 @@ fn create(tab: Option<Tab>, note: Option<&str>) -> Option<HWND> {
         }
         WINDOW.set(hwnd);
         crate::ui::widget::set_scene(hwnd, scene::paint);
-        crate::ui::widget::on_ctrl_tab(Some(ctrl_tab));
+        crate::ui::widget::on_ctrl_tab(Some((hwnd, ctrl_tab)));
         crate::ui::theme::chrome(hwnd);
         build(hwnd);
         match fill(true) {

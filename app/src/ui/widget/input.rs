@@ -119,7 +119,7 @@ pub(super) unsafe extern "system" fn sub(
                 let vk = wparam.0 as u16;
                 if vk == VK_TAB
                     && win::key_down(VK_CONTROL as i32)
-                    && let Some(f) = CTRL_TAB.get()
+                    && let Some(f) = ctrl_tab_of(hwnd)
                 {
                     f(win::key_down(VK_SHIFT as i32));
                     return LRESULT(0);
@@ -144,7 +144,7 @@ pub(super) unsafe extern "system" fn sub(
                     _ => DefSubclassProc(hwnd, msg, wparam, lparam).0,
                 };
                 let ctrl_tab = key && (*m).wParam.0 == VK_TAB as usize && win::key_down(VK_CONTROL as i32);
-                if ctrl_tab && CTRL_TAB.get().is_some() {
+                if ctrl_tab && ctrl_tab_of(hwnd).is_some() {
                     code |= DLGC_WANTMESSAGE as isize;
                 }
                 return LRESULT(code);

@@ -60,6 +60,12 @@ pub fn tooltips(top: HWND, tools: &[HWND]) {
     }
 }
 
+/// The window `top` is gone, and its tooltip with it.
+pub fn forget(top: HWND) {
+    TIPS.with_borrow_mut(|t| t.retain(|(owner, _)| *owner != top));
+    SHOWN.with_borrow_mut(|s| *s = Vec::new());
+}
+
 /// The whole text of a control, if it is cut short where it shows; else nothing.
 fn clipped(tool: HWND) -> Option<String> {
     let r = rect_in_parent(tool);
