@@ -200,7 +200,9 @@ python scripts/check-privacy.py --history HEAD
 ```
 
 It examines each text file that git tracks. It finds e-mail addresses, paths with a user name, Windows account SIDs and tokens.
+
 With `--history`, it also examines the author and committer addresses of the commits. It accepts only GitHub noreply addresses.
+It also accepts the bot form `<digits>+<name>[bot]@users.noreply.github.com`, which Dependabot uses. It accepts no other form.
 To keep your address private, set `git config user.email` to the noreply address that GitHub shows in your e-mail settings.
 
 ## Commits and pull requests

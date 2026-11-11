@@ -9,6 +9,7 @@ Rules (see "Personal data" in CONTRIBUTING.md):
   windows-sid   a Windows account SID (S-1-5-21-...)
   token         a GitHub token, an AWS access key or a PEM block
   commit-email  (--history) an author or committer address that is not a GitHub noreply address
+                (the bot form <id>+<name>[bot]@users.noreply.github.com, as Dependabot uses, is accepted)
 
 The output is "file:line: rule". It never prints the value that it found, so that a CI log
 does not copy a secret. Binary files are skipped. Exit code 1 when it finds something.
@@ -27,6 +28,9 @@ EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})(?![A-Z
 # RFC 2606 and RFC 6761 names that can never belong to a person.
 EXAMPLE_DOMAINS = re.compile(r"(^|\.)(example\.(com|net|org)|example|test|invalid|localhost)$", re.I)
 NOREPLY = re.compile(r"^[A-Za-z0-9._%+-]+@users\.noreply\.github\.com$", re.I)
+# The address of a GitHub App, for example Dependabot: "<id>+<name>[bot]@users.noreply.github.com".
+# Only the commit history needs it: in a file, the EMAIL pattern does not match "[bot]@".
+BOT_NOREPLY = re.compile(r"^\d+\+[A-Za-z0-9-]+\[bot\]@users\.noreply\.github\.com$", re.I)
 # GitHub writes this committer address on commits made in its web interface.
 GITHUB_WEB_FLOW = "noreply" + "@github.com"
 
@@ -107,15 +111,19 @@ def check_tree(root: Path) -> list[str]:
     return problems
 
 
+def commit_address_allowed(address: str) -> bool:
+    return bool(NOREPLY.match(address) or BOT_NOREPLY.match(address))
+
+
 def check_history(root: Path, rev_range: str) -> list[str]:
     out = subprocess.run(["git", "log", "--format=%h%x00%ae%x00%ce", rev_range],
                          cwd=root, check=True, capture_output=True, text=True).stdout
     problems = []
     for line in out.splitlines():
         sha, author, committer = line.split("\0")
-        if not NOREPLY.match(author):
+        if not commit_address_allowed(author):
             problems.append(f"commit {sha}: commit-email (author)")
-        if not (NOREPLY.match(committer) or committer.lower() == GITHUB_WEB_FLOW):
+        if not (commit_address_allowed(committer) or committer.lower() == GITHUB_WEB_FLOW):
             problems.append(f"commit {sha}: commit-email (committer)")
     return problems
 

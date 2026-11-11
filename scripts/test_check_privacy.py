@@ -136,6 +136,26 @@ class Repository(unittest.TestCase):
         self.assertEqual(len(problems), 2)
         self.assertTrue(all("commit-email" in p and AT not in p for p in problems))
 
+    def test_history_allows_the_bot_noreply_form(self):
+        self.commit("49699333+dependabot[bot]" + AT + "users.noreply.github.com")
+        self.assertEqual(cp.check_history(self.root, "HEAD"), [])
+
+
+class CommitAddress(unittest.TestCase):
+    def test_bot_form_is_accepted(self):
+        self.assertTrue(cp.commit_address_allowed("49699333+dependabot[bot]" + AT + "users.noreply.github.com"))
+
+    def test_only_the_exact_bot_form_is_accepted(self):
+        for address in (
+            "dependabot[bot]" + AT + "users.noreply.github.com",  # no numeric id
+            "abc+dependabot[bot]" + AT + "users.noreply.github.com",  # id is not digits
+            "1+dependabot[bot]" + AT + "gmail.com",  # another domain
+            "1+dependabot[bot]" + AT + "users.noreply.github.com.evil.io",
+            "1+[bot]" + AT + "users.noreply.github.com",  # no name
+            "1+a b[bot]" + AT + "users.noreply.github.com",
+        ):
+            self.assertFalse(cp.commit_address_allowed(address), address)
+
 
 if __name__ == "__main__":
     unittest.main()
