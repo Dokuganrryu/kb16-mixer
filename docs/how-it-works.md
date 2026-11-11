@@ -243,6 +243,7 @@ The app skips the "System Sounds" session.
 | Names of running programs, and their parent process | Toolhelp process snapshot (`CreateToolhelp32Snapshot`) | Read |
 | The process of the foreground window (for `focused` and Move) | `GetForegroundWindow`, `GetWindowThreadProcessId` | Read |
 | The pad, through its raw HID interface, and its USB release number. The app uses only an interface with the product string `KB16 Mixer`, so it does not talk to a pad with the stock firmware. | hidapi | Read and write |
+| A message when a HID device is connected. Without the pad, the app searches the HID device list only after such a message, or after 10 seconds. | `RegisterDeviceNotificationW` (`WM_DEVICECHANGE` on the hidden window of the app) | Read |
 | The target of an `open:` key | `ShellExecuteExW` with the verb "open" | Starts it, as a double-click in Explorer does. An existing file, given by its full path, starts in its own folder. |
 | Files that you select with **Browse...** in a dialog | The standard Windows file dialog | Read the path only |
 | `config.toml`, `apps.toml`, `state.toml`, `log.txt`, `selftest.txt` in the settings folder | File system | Read and write |

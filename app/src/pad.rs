@@ -7,10 +7,16 @@
 use hidapi::{HidApi, HidDevice};
 use kb16_mixer_protocol::{self as protocol, HostMsg, Key, PadMsg, Report};
 use std::ffi::CString;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
+use windows::Win32::Foundation::{HANDLE, HWND};
+use windows::Win32::UI::WindowsAndMessaging::{
+    DBT_DEVTYP_DEVICEINTERFACE, DEV_BROADCAST_DEVICEINTERFACE_W, DEVICE_NOTIFY_WINDOW_HANDLE,
+    RegisterDeviceNotificationW,
+};
+use windows::core::GUID;
 
 const HEARTBEAT: Duration = Duration::from_millis(1000);
 
@@ -77,6 +83,44 @@ fn find(api: &mut HidApi) -> Option<CString> {
     pad_info(api).map(|d| d.path().to_owned())
 }
 
+/// Without a pad, the next search waits for Windows to report a new HID interface, or this long.
+/// A search reads every HID device of the PC (a few ms of CPU), so it must not run every second.
+const SEARCH_AGAIN: Duration = Duration::from_secs(10);
+
+/// Set when Windows reports a new HID interface (WM_DEVICECHANGE on the hidden window).
+static ARRIVED: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
+
+/// Called by the hidden window when a HID interface arrives: the search runs at once.
+pub fn device_arrived() {
+    *ARRIVED.0.lock().unwrap() = true;
+    ARRIVED.1.notify_all();
+}
+
+/// Waits until a HID interface arrives or `timeout` ends; true if one arrived.
+fn wait_for_arrival(timeout: Duration) -> bool {
+    let guard = ARRIVED.0.lock().unwrap();
+    let (mut arrived, _) = ARRIVED.1.wait_timeout_while(guard, timeout, |a| !*a).unwrap();
+    std::mem::take(&mut *arrived)
+}
+
+/// Asks Windows to send WM_DEVICECHANGE to `hwnd` when a HID interface arrives.
+pub fn watch_arrivals(hwnd: HWND) {
+    // GUID_DEVINTERFACE_HID
+    const HID: GUID = GUID::from_u128(0x4d1e55b2_f16f_11cf_88cb_001111000030);
+    let filter = DEV_BROADCAST_DEVICEINTERFACE_W {
+        dbcc_size: size_of::<DEV_BROADCAST_DEVICEINTERFACE_W>() as u32,
+        dbcc_devicetype: DBT_DEVTYP_DEVICEINTERFACE.0,
+        dbcc_classguid: HID,
+        ..Default::default()
+    };
+    let handle = unsafe {
+        RegisterDeviceNotificationW(HANDLE(hwnd.0), &filter as *const _ as *const _, DEVICE_NOTIFY_WINDOW_HANDLE)
+    };
+    if let Err(e) = handle {
+        crate::log(&format!("no device notifications, the pad search runs every {}s: {e}", SEARCH_AGAIN.as_secs()));
+    }
+}
+
 /// Blocks on the pad's input for the life of the app, reconnecting as needed.
 pub fn listen(events: Sender<PadEvent>, paused: Arc<AtomicBool>) {
     let mut api = match HidApi::new() {
@@ -88,7 +132,11 @@ pub fn listen(events: Sender<PadEvent>, paused: Arc<AtomicBool>) {
             std::thread::sleep(Duration::from_millis(300));
             continue;
         }
-        let Some(dev) = find(&mut api).and_then(|p| api.open_path(&p).ok()) else {
+        let Some(path) = find(&mut api) else {
+            wait_for_arrival(SEARCH_AGAIN);
+            continue;
+        };
+        let Ok(dev) = api.open_path(&path) else {
             std::thread::sleep(Duration::from_secs(1));
             continue;
         };
@@ -276,6 +324,15 @@ mod tests {
         assert!(!is_ours(vid, pid, 0x0001, Some("KB16 Mixer")), "the keyboard interface of the same pad");
         assert!(!is_ours(vid, pid, 0x000C, Some("KB16 Mixer")), "the media-key interface of the same pad");
         assert!(!is_ours(0x1EAF, 0x0003, page, Some("KB16 Mixer")), "other ids");
+    }
+
+    #[test]
+    fn a_device_arrival_wakes_the_search() {
+        device_arrived();
+        let start = Instant::now();
+        assert!(wait_for_arrival(Duration::from_secs(5)));
+        assert!(start.elapsed() < Duration::from_secs(1), "woken at once");
+        assert!(!wait_for_arrival(Duration::from_millis(50)), "one arrival wakes one search");
     }
 
     #[test]

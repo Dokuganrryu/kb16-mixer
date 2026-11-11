@@ -193,6 +193,7 @@ fn main() {
     let ui = ui_window().0 as usize;
 
     if !no_pad {
+        pad::watch_arrivals(HWND(ui as *mut _));
         let (ev_tx, paused) = (ev_tx.clone(), paused.clone());
         std::thread::spawn(move || pad::listen(ev_tx, paused));
     }
@@ -995,6 +996,12 @@ unsafe extern "system" fn ui_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_APPS_MOVED => {
             settings::apps_moved();
             LRESULT(0)
+        }
+        WM_DEVICECHANGE => {
+            if wparam.0 == DBT_DEVICEARRIVAL as usize {
+                pad::device_arrived();
+            }
+            LRESULT(1)
         }
         WM_QUERYENDSESSION => LRESULT(1),
         // The session really ends (wparam false: it was called off). The process may be
