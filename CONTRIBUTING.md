@@ -54,16 +54,19 @@ To test on hardware, you need a KB16-01 rev2. Read [docs/flashing.md](docs/flash
 ## Checks
 
 For a full list of the test suites, see [docs/testing.md](docs/testing.md).
-CI runs the same checks. Run them before you open a pull request.
+CI runs the same checks for each pull request and for each push to `main`. Run them before you open a pull request.
 
 | Part | Commands |
 |---|---|
 | Protocol | `cd protocol`, then `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` |
-| Firmware logic | `cd pad-core`, then `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` |
-| Firmware image | `cd firmware`, then `cargo fmt --check`, `cargo clippy --release --locked`. Then, in the root folder: `sh scripts/build-firmware.sh` |
+| Firmware logic | `cd pad-core`, then `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`, `cargo test --locked --release` |
+| Firmware image | `cd firmware`, then `cargo fmt --check`, `cargo clippy --release --locked -- -D warnings`, `cargo clippy --locked -- -D warnings`. Then, in the root folder: `sh scripts/build-firmware.sh` |
 | App | `cd app`, then `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`. Then, in the root folder: `sh scripts/build-app.sh` |
 | End-to-end audio test | `cd app`, then `cargo test --test audio_e2e -- --ignored`. CI does not run it. |
-| Documentation | `python scripts/ste-lint.py`, and `python -m unittest scripts/test_ste_lint.py` if you changed the checker |
+| Documentation | `python scripts/ste-lint.py` and `python scripts/check-links.py` |
+| Personal data | `python scripts/check-privacy.py --history HEAD`. See [Personal data](#personal-data). |
+| Dependencies | `cargo deny --manifest-path <crate>/Cargo.toml --config deny.toml check` for each crate that you changed. See [docs/testing.md](docs/testing.md#dependency-check). |
+| Scripts | `python -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py` |
 
 ## Documentation
 
@@ -116,12 +119,15 @@ The app must stay out of the way of other software. Thus these rules are strict:
 
 - Do not add keyboard hooks or mouse hooks.
 - Do not inject input (for example `SendInput`). Keys that type come only from the pad, as USB keyboard input.
-- Do not enable the `Win32_UI_Input_KeyboardAndMouse` feature of the `windows` crate. A test fails if somebody enables it.
+- Do not enable the `Win32_UI_Input_KeyboardAndMouse` feature of the `windows` crate.
 - Do not add or load a driver.
 - Do not open, read or write other processes. Get program names only from the Toolhelp snapshot.
 - Do not route, capture or record audio. Change only volume and mute through Core Audio.
 - Do not add network access.
 - Start an `open:` target only through the Windows shell, without elevation.
+
+The test `app/tests/forbidden_apis.rs` fails if the app source, `Cargo.toml` or `Cargo.lock` names a hook, an input injection, a process access or a network API. It also fails for the network crates and for the features `Win32_UI_Input_KeyboardAndMouse` and `Win32_Networking`.
+The test checks the names also in comments.
 
 The project does not merge a pull request that breaks one of these rules.
 
@@ -186,6 +192,16 @@ This rule is for files, screenshots, test data, logs and commit messages.
 Use neutral examples, for example the pad name `DESK PC`.
 Do not attach your own `config.toml`, `log.txt` or `selftest.txt` to a pull request.
 
+`scripts/check-privacy.py` finds many of these problems. CI runs it for each pull request:
+
+```sh
+python scripts/check-privacy.py --history HEAD
+```
+
+It examines each text file that git tracks. It finds e-mail addresses, paths with a user name, Windows account SIDs and tokens.
+With `--history`, it also examines the author and committer addresses of the commits. It accepts only GitHub noreply addresses.
+To keep your address private, set `git config user.email` to the noreply address that GitHub shows in your e-mail settings.
+
 ## Commits and pull requests
 
 - Make small commits. Each commit has one purpose.
@@ -200,14 +216,14 @@ Do not attach your own `config.toml`, `log.txt` or `selftest.txt` to a pull requ
 The app and the firmware each take their version from their `Cargo.toml`.
 The firmware sends its version as the USB release number. Thus the major version must be 0 to 99. The minor version and the patch version must be 0 to 9.
 
-The maintainer makes each release:
+The maintainer makes each release. The full checklist is in [docs/releasing.md](docs/releasing.md). In short:
 
-1. Set the same version in `app/Cargo.toml` and `firmware/Cargo.toml`.
-2. Move the entries of the "Unreleased" section of `CHANGELOG.md` to a new version section.
+1. Set the same version in the four `Cargo.toml` files.
+2. Move the entries of the "Unreleased" section of `CHANGELOG.md` to a new version section with a date.
 3. Push a tag that starts with `v`, for example `v0.1.0`.
 
-The tag starts `.github/workflows/release.yml`. The workflow runs the checks, builds the firmware image and the app, and makes a draft release.
-The maintainer examines the draft. If it is correct, the maintainer publishes it. For the full steps, see [docs/releasing.md](docs/releasing.md).
+The tag starts `.github/workflows/release.yml`. The workflow checks the versions, builds the firmware image and the app, and makes a draft pre-release.
+The workflow never publishes a release. The maintainer tests the draft on a pad. If it is correct, the maintainer publishes it.
 
 ## Report a bug
 
