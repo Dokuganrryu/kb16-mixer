@@ -1,70 +1,117 @@
 name: CI
 
+# Pull requests, pushes to main, and a manual run. A branch push alone does not run CI: open a
+# pull request (a draft is fine), so that each change runs once.
 on:
-  push:
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to a pull request cancels the older run of that pull request. Runs on main use the
+# commit as the group, so they never cancel each other.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
+# Every third-party action is pinned to a full commit SHA. The comment names the release.
+# The Rust toolchain comes from rust-toolchain.toml (`rustup toolchain install` reads it).
 jobs:
   protocol:
+    name: Protocol (fmt, clippy, test)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: protocol
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Rust toolchain
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy
-          rustup default stable
-      - uses: Swatinem/rust-cache@v2
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: protocol
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  # The firmware logic that needs no hardware, tested on the PC in both build profiles, because
+  # the firmware ships the release profile (overflow checks off).
+  pad-core:
+    name: Firmware logic (pad-core fmt, clippy, test debug and release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: pad-core
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: pad-core
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+      - run: cargo test --locked --release
 
   firmware:
+    name: Firmware (fmt, strict clippy, image build and check)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Rust toolchain
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy,llvm-tools --target thumbv7m-none-eabi
-          rustup default stable
-      - uses: Swatinem/rust-cache@v2
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: firmware
       - name: Format
         working-directory: firmware
         run: cargo fmt --check
-      # Advisory: the firmware still has Clippy warnings, so they do not fail the job.
-      - name: Clippy
+      - name: Clippy (release profile, warnings are errors)
         working-directory: firmware
-        run: cargo clippy --release --locked
-      # Builds the image with llvm-objcopy and rejects it unless the vector table and size check out.
+        run: cargo clippy --release --locked -- -D warnings
+      - name: Clippy (debug profile, warnings are errors)
+        working-directory: firmware
+        run: cargo clippy --locked -- -D warnings
+      # Builds the image with llvm-objcopy and rejects it unless the vector table, the
+      # interrupt handlers and the size check out.
       - name: Build and check the image
         run: sh scripts/build-firmware.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: kb16-mixer-firmware
           path: firmware/target/kb16-mixer-firmware.bin
           if-no-files-found: error
 
   app:
+    name: App (fmt, clippy, test, release build, smoke test)
     runs-on: windows-latest
+    timeout-minutes: 25
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Rust toolchain
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy
-          rustup default stable
-      - uses: Swatinem/rust-cache@v2
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: app
       - name: Format
@@ -73,12 +120,26 @@ jobs:
       - name: Clippy
         working-directory: app
         run: cargo clippy --all-targets --locked -- -D warnings
+      # Ignored tests (the end-to-end audio test) need an audio device and stay ignored here.
       - name: Test
         working-directory: app
         run: cargo test --locked
-      - name: Build
+      - name: Release build (paths remapped)
         run: sh scripts/build-app.sh
-      - uses: actions/upload-artifact@v4
+      # --help shows a message box, which would wait for a click on a runner. --check prints its
+      # report and quits. The runner has no pad, so the report has a FAIL line and exit code 1.
+      # The step fails on a crash, on another exit code, or on a report with the wrong form.
+      - name: Smoke test (--check)
+        run: |
+          set +e
+          KB16_MIXER_DIR="$RUNNER_TEMP/kb16-smoke" ./app/target/release/kb16-mixer.exe --check > "$RUNNER_TEMP/check.txt"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/check.txt"
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then echo "::error::--check exited with $code"; exit 1; fi
+          grep -Eq '^app +OK ' "$RUNNER_TEMP/check.txt"
+          tail -n 1 "$RUNNER_TEMP/check.txt" | grep -Eq '^Result: (OK|[0-9]+ problem\(s\))$'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: kb16-mixer-app
           path: app/target/release/kb16-mixer.exe
@@ -86,54 +147,119 @@ jobs:
 
   # THIRD_PARTY_NOTICES.md must match what scripts/third-party-notices.py makes from the lock files.
   notices:
+    name: Third-party notices are up to date
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Rust toolchain
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-      - name: cargo-about
-        run: cargo install cargo-about --version 0.9.3 --locked --features cli
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: cargo-about@0.9.3
       - name: Notices are up to date
         run: |
           python3 scripts/third-party-notices.py
           git diff --exit-code THIRD_PARTY_NOTICES.md
 
-  # --- Firmware hardening: host tests of the firmware logic, strict firmware lints ---------------
-  # The toolchain comes from rust-toolchain.toml at the repository root.
-
-  # The firmware logic that needs no hardware, tested on the PC (pad-core/tests/oracle.rs and
-  # pad-core/tests/rules.rs).
-  pad-core:
+  docs:
+    name: Docs and repository checks (STE, privacy, links, schemas)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: pad-core
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      # The full history, for the commit addresses. For a pull request, the head commit itself,
+      # not the merge commit that GitHub makes for the test.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Unit tests of the scripts
+        run: python3 -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py
+      - name: STE check of all Markdown files
+        run: python3 scripts/ste-lint.py
+      - name: Privacy check (files and commit addresses)
+        run: python3 scripts/check-privacy.py --history HEAD
+      - name: Link check
+        run: python3 scripts/check-links.py
+      - name: Schema check of the workflows, Dependabot and the issue forms
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet check-jsonschema==0.38.2
+          cj="$RUNNER_TEMP/venv/bin/check-jsonschema"
+          "$cj" --builtin-schema vendor.github-workflows .github/workflows/*.yml
+          "$cj" --builtin-schema vendor.dependabot .github/dependabot.yml
+          "$cj" --builtin-schema vendor.github-issue-config .github/ISSUE_TEMPLATE/config.yml
+          find .github/ISSUE_TEMPLATE -name '*.yml' ! -name config.yml -print0 |
+            xargs -0 "$cj" --builtin-schema vendor.github-issue-forms
+
+  supply-chain:
+    name: Supply chain (cargo deny for each crate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Rust toolchain
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
-          workspaces: pad-core
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
+          tool: cargo-deny@0.20.2
+      - name: cargo deny (advisories, bans, licences, sources)
+        run: |
+          status=0
+          for crate in protocol pad-core firmware app; do
+            echo "::group::$crate"
+            cargo deny --manifest-path "$crate/Cargo.toml" --config deny.toml check || status=1
+            echo "::endgroup::"
+          done
+          exit $status
 
-  # Clippy on the firmware with every warning an error, both build profiles.
-  firmware-strict:
-    runs-on: ubuntu-latest
+  # A dry run of the release packaging with the binaries of this run.
+  package:
+    name: Release zip (dry run)
+    needs: [firmware, app]
+    runs-on: windows-latest
+    timeout-minutes: 10
     defaults:
       run:
-        working-directory: firmware
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - name: Rust toolchain
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          workspaces: firmware
-      - run: cargo fmt --check
-      - run: cargo clippy --release --locked -- -D warnings
-      - run: cargo clippy --locked -- -D warnings
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: build
+          merge-multiple: true
+      - name: Package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -n 1)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          python scripts/package-release.py --version "$version" \
+            --exe build/kb16-mixer.exe --firmware build/kb16-mixer-firmware.bin --out dist
+          python scripts/package-release.py --version "$version" \
+            --exe build/kb16-mixer.exe --firmware build/kb16-mixer-firmware.bin --out dist-again > /dev/null
+      - name: Check the zip against the release layout
+        run: |
+          zip="dist/kb16-mixer-$VERSION-windows-x64.zip"
+          cmp "$zip" "dist-again/kb16-mixer-$VERSION-windows-x64.zip"
+          (cd dist && sha256sum -c SHA256SUMS)
+          python -c "
+          import sys, zipfile
+          names = sorted(zipfile.ZipFile(sys.argv[1]).namelist())
+          want = sorted(['kb16-mixer.exe', 'firmware/kb16-mixer-firmware.bin', 'flash.ps1', 'LICENSE',
+                         'THIRD_PARTY_NOTICES.md', 'README.txt'])
+          print('\n'.join(names))
+          sys.exit(0 if names == want else 'the zip does not match the release layout')
+          " "$zip"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kb16-mixer-release-dry-run
+          path: |
+            dist/kb16-mixer-*-windows-x64.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
