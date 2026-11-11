@@ -33,6 +33,9 @@
 /// USB vendor and product id of the pad (the stock DOIO KB16-01 ids).
 pub const VID: u16 = 0xD010;
 pub const PID: u16 = 0x1601;
+/// USB product string of this firmware. The stock firmware has the same VID, PID and usage page,
+/// so the app also checks this string before it talks to a pad.
+pub const PRODUCT: &str = "KB16 Mixer";
 /// Usage page of the raw-HID interface (the one QMK/VIA use).
 pub const USAGE_PAGE: u16 = 0xFF60;
 

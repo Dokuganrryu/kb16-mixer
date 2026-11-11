@@ -59,10 +59,17 @@ pub fn connected_release() -> Option<u16> {
     (v != 0).then_some(v as u16)
 }
 
+/// True for the raw-HID interface of a pad that runs this project's firmware. The stock firmware
+/// has the same VID, PID and usage page; only the product string tells the two apart.
+fn is_ours(vendor_id: u16, product_id: u16, usage_page: u16, product: Option<&str>) -> bool {
+    vendor_id == protocol::VID
+        && product_id == protocol::PID
+        && usage_page == protocol::USAGE_PAGE
+        && product == Some(protocol::PRODUCT)
+}
+
 fn pad_info(api: &HidApi) -> Option<&hidapi::DeviceInfo> {
-    api.device_list().find(|d| {
-        d.vendor_id() == protocol::VID && d.product_id() == protocol::PID && d.usage_page() == protocol::USAGE_PAGE
-    })
+    api.device_list().find(|d| is_ours(d.vendor_id(), d.product_id(), d.usage_page(), d.product_string()))
 }
 
 fn find(api: &mut HidApi) -> Option<CString> {
@@ -259,6 +266,17 @@ pub fn frame_message(f: &Frame) -> Report {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_this_firmware_is_ours() {
+        let (vid, pid, page) = (protocol::VID, protocol::PID, protocol::USAGE_PAGE);
+        assert!(is_ours(vid, pid, page, Some("KB16 Mixer")), "this firmware's raw-HID interface");
+        assert!(!is_ours(vid, pid, page, Some("KB16-01")), "stock firmware: same ids, other product string");
+        assert!(!is_ours(vid, pid, page, None), "no product string");
+        assert!(!is_ours(vid, pid, 0x0001, Some("KB16 Mixer")), "the keyboard interface of the same pad");
+        assert!(!is_ours(vid, pid, 0x000C, Some("KB16 Mixer")), "the media-key interface of the same pad");
+        assert!(!is_ours(0x1EAF, 0x0003, page, Some("KB16 Mixer")), "other ids");
+    }
 
     #[test]
     fn notices_reach_the_pad_as_text_only() {

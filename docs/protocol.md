@@ -10,6 +10,7 @@ If this document and the code disagree, the code is correct. Please report the d
 | Item | Value |
 |---|---|
 | USB vendor ID / product ID | `0xD010` / `0x1601` (the stock DOIO KB16-01 IDs) |
+| USB product string | `KB16 Mixer` (`PRODUCT`). The stock firmware has the same IDs and usage page. The app uses only an interface with this product string. |
 | USB device release (`bcdDevice`) | The firmware version. See [Version](#version). |
 | HID usage page | `0xFF60` (the raw HID usage page that QMK and VIA use) |
 | HID usage | `0x61` |

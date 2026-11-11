@@ -242,7 +242,7 @@ The app skips the "System Sounds" session.
 | Level and mute of the default output device (write only for a knob set to `master`) | Core Audio `IAudioEndpointVolume` | Read and write |
 | Names of running programs, and their parent process | Toolhelp process snapshot (`CreateToolhelp32Snapshot`) | Read |
 | The process of the foreground window (for `focused` and Move) | `GetForegroundWindow`, `GetWindowThreadProcessId` | Read |
-| The pad, through its raw HID interface, and its USB release number | hidapi | Read and write |
+| The pad, through its raw HID interface, and its USB release number. The app uses only an interface with the product string `KB16 Mixer`, so it does not talk to a pad with the stock firmware. | hidapi | Read and write |
 | The target of an `open:` key | `ShellExecuteExW` with the verb "open" | Starts it, as a double-click in Explorer does. An existing file, given by its full path, starts in its own folder. |
 | Files that you select with **Browse...** in a dialog | The standard Windows file dialog | Read the path only |
 | `config.toml`, `apps.toml`, `state.toml`, `log.txt`, `selftest.txt` in the settings folder | File system | Read and write |

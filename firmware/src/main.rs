@@ -481,7 +481,7 @@ async fn main(spawner: Spawner) {
 
     let mut ucfg = embassy_usb::Config::new(kb16_mixer_protocol::VID, kb16_mixer_protocol::PID);
     ucfg.manufacturer = Some("kb16-mixer");
-    ucfg.product = Some("KB16 Mixer");
+    ucfg.product = Some(kb16_mixer_protocol::PRODUCT);
     ucfg.serial_number = Some("KB16-MIXER");
     // The firmware version, so the PC app can show it from the device list.
     ucfg.device_release = const { kb16_mixer_protocol::device_release(env!("CARGO_PKG_VERSION")) };
