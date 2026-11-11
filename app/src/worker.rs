@@ -112,7 +112,8 @@ struct Worker {
     /// What each knob is aimed at: its channel, or for a few seconds one app in it.
     aims: [trim::Aim; 3],
     saved: Saved,
-    unsaved_since: Option<Instant>,
+    /// When `saved` is to be written next; None when the file holds it.
+    save_at: Option<Instant>,
     seen_generation: u64,
     /// Channel names of the config in force, to tell a rename from a new channel.
     names: Vec<String>,
@@ -141,7 +142,7 @@ impl Worker {
             keys: Keys::default(),
             aims: Default::default(),
             saved: config::load_state(),
-            unsaved_since: None,
+            save_at: None,
             seen_generation: u64::MAX,
             names: Vec::new(),
             pad_present: false,
@@ -333,18 +334,11 @@ impl Worker {
         }
     }
 
-    /// Remembers levels set on the pad (written a moment later). What Focus has turned down is
-    /// written at once: it is what puts those apps right after a crash or power cut.
+    /// Writes state.toml when `save_due` says so.
     fn save(&mut self, channels: &[ChannelCfg], closing: bool) {
         let now_state = saved_state(&self.mixer, channels);
-        if now_state != self.saved {
-            let urgent = now_state.restore != self.saved.restore;
-            self.saved = now_state;
-            self.unsaved_since = Some(if urgent { Instant::now() - SAVE_AFTER } else { Instant::now() });
-        }
-        if self.unsaved_since.is_some_and(|t| t.elapsed() >= SAVE_AFTER || closing) {
+        if save_due(&mut self.saved, &mut self.save_at, now_state, closing, Instant::now()) {
             config::save_state(&self.saved);
-            self.unsaved_since = None;
         }
     }
 
@@ -468,6 +462,23 @@ fn saved_state(mixer: &Mixer, channels: &[ChannelCfg]) -> Saved {
     }
 }
 
+/// Takes in the state as it is `now` and says whether to write it. A level or a trim set on the
+/// pad waits `SAVE_AFTER` after the last change, so a knob spin is written once. A change to
+/// what Focus has turned down is due at once: it is what puts those apps right after a crash
+/// or a power cut. Closing writes whatever is still waiting.
+fn save_due(saved: &mut Saved, save_at: &mut Option<Instant>, now_state: Saved, closing: bool, now: Instant) -> bool {
+    if now_state != *saved {
+        let urgent = now_state.restore != saved.restore;
+        *saved = now_state;
+        *save_at = Some(if urgent { now } else { now + SAVE_AFTER });
+    }
+    let due = save_at.is_some_and(|at| now >= at || closing);
+    if due {
+        *save_at = None;
+    }
+    due
+}
+
 /// A knob turn or press, or a key going down or up.
 fn is_touch(e: &PadEvent) -> bool {
     matches!(e, PadEvent::Turn { .. } | PadEvent::Press { .. } | PadEvent::Key { .. } | PadEvent::KeyUp { .. })
@@ -587,6 +598,32 @@ mod tests {
         assert!(!is_loud(&[0, 94, 0, 0]), "an open microphone in a quiet room");
         assert!(is_loud(&[0, 0, 0, 95]));
         assert!(!is_loud(&[]));
+    }
+
+    #[test]
+    fn what_focus_turned_down_is_written_at_once_and_levels_a_moment_later() {
+        let t0 = Instant::now();
+        let (mut saved, mut save_at) = (Saved::default(), None);
+        let focus_on = Saved { restore: [("spotify.exe".to_string(), 0.6)].into(), ..Saved::default() };
+        assert!(save_due(&mut saved, &mut save_at, focus_on.clone(), false, t0), "in the same pass");
+        assert!(saved == focus_on && save_at.is_none());
+        assert!(!save_due(&mut saved, &mut save_at, focus_on.clone(), false, t0 + SAVE_AFTER), "nothing new");
+
+        let mut turned = focus_on.clone();
+        turned.levels.insert("Game".into(), 0.4);
+        assert!(!save_due(&mut saved, &mut save_at, turned.clone(), false, t0), "a knob turn waits");
+        turned.levels.insert("Game".into(), 0.5);
+        let t1 = t0 + Duration::from_secs(2);
+        assert!(!save_due(&mut saved, &mut save_at, turned.clone(), false, t1), "still turning: the wait starts over");
+        assert!(!save_due(&mut saved, &mut save_at, turned.clone(), false, t1 + SAVE_AFTER - Duration::from_millis(1)));
+        assert!(save_due(&mut saved, &mut save_at, turned.clone(), false, t1 + SAVE_AFTER), "once, after the wait");
+
+        let mut moved = turned.clone();
+        moved.trims.insert("game.exe".into(), 0.5);
+        assert!(!save_due(&mut saved, &mut save_at, moved.clone(), false, t1));
+        assert!(save_due(&mut saved, &mut save_at, moved, true, t1), "closing writes what is waiting");
+        let same = saved.clone();
+        assert!(!save_due(&mut saved, &mut save_at, same, true, t1), "and nothing twice");
     }
 
     #[test]
