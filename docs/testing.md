@@ -12,9 +12,14 @@ For the definition of each term, see [glossary.md](glossary.md).
 | Firmware host tests | `pad-core/` | The firmware logic without hardware: key and knob decoding, the idle rule, the lights, the screens, the flash guard, the name page, the bootloader rule | Yes |
 | Firmware image check | `scripts/build-firmware.sh` | The vector table, the interrupts and the size of the firmware image | Yes |
 | App tests | `app/` | The config file, the trim rules, the key actions, the pad link, the settings rules | Yes |
+| Forbidden API test | `app/tests/forbidden_apis.rs` | The app source, `Cargo.toml` and `Cargo.lock` contain no hook, input injection, process access or network API | Yes |
 | End-to-end audio test | `app/tests/audio_e2e.rs` | The app with the real Windows audio system | No |
 | Notices check | `scripts/third-party-notices.py` | `THIRD_PARTY_NOTICES.md` agrees with the dependencies | Yes |
-| STE checker tests | `scripts/test_ste_lint.py` | The rules of the STE checker | No |
+| Dependency check | `deny.toml` | The licences, the advisories and the sources of the dependencies of each crate | Yes |
+| Script tests | `scripts/test_*.py` | The STE checker, the privacy check and the release packager | Yes |
+| Privacy check | `scripts/check-privacy.py` | No e-mail address, user path, account SID or token in the tracked files, and only noreply addresses in the commits | Yes |
+| Link check | `scripts/check-links.py` | Each relative link and each anchor in the Markdown files | Yes |
+| Release zip | `scripts/package-release.py` | The zip has the release layout, and two runs give the same bytes | Yes |
 | Real pad | The pad on your desk | All functions that the automated tests cannot see | No |
 
 The automated tests cannot see the hardware. They cannot press a key, turn a knob, look at the screen or measure the lights.
@@ -68,33 +73,58 @@ cd app
 cargo test --test audio_e2e -- --ignored
 ```
 
-## STE checker
+## Script checks
 
 The STE checker examines the Markdown documents. See [CONTRIBUTING.md](../CONTRIBUTING.md#documentation).
+The other scripts check the repository. They need only Python 3.
 
 ```sh
 python scripts/ste-lint.py
-python -m unittest scripts/test_ste_lint.py
+python scripts/check-privacy.py --history HEAD
+python scripts/check-links.py
+python -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py
 ```
+
+For each problem, `check-privacy.py` shows the file, the line and the rule. It never shows the value that it found.
+
+## Dependency check
+
+`cargo deny` checks the dependencies of each crate with the settings in `deny.toml`:
+
+```sh
+cargo install cargo-deny --locked   # one time only
+cargo deny --manifest-path app/Cargo.toml --config deny.toml check
+```
+
+Do the same for `protocol`, `pad-core` and `firmware`.
+The check accepts only the licences that `scripts/about.toml` accepts, and only crates from crates.io. It refuses the crates for network access.
+`deny.toml` ignores one advisory, RUSTSEC-2026-0110. It tells that the `bare-metal` crate has no maintainer. The firmware gets that crate through `cortex-m` 0.7.10, and no newer release exists.
 
 ## CI
 
-`.github/workflows/ci.yml` runs these jobs:
+`.github/workflows/ci.yml` runs for each pull request, for each push to `main`, and when somebody starts it by hand.
+A new push to a pull request stops the older run of that pull request.
+The workflow pins each third-party action to a full commit SHA.
 
 | Job | Runner | Steps |
 |---|---|---|
-| `protocol` | Linux | `cargo fmt --check`, `cargo clippy`, `cargo test` |
-| `firmware` | Linux | `cargo fmt --check`, `cargo clippy`, the `pad-core` tests, the image build and the image check |
-| `app` | Windows | `cargo fmt --check`, `cargo clippy`, `cargo test`, the release build |
+| `protocol` | Linux | `cargo fmt --check`, `cargo clippy` (warnings are errors), `cargo test` |
+| `pad-core` | Linux | `cargo fmt --check`, `cargo clippy` (warnings are errors), `cargo test` in the debug profile and in the release profile |
+| `firmware` | Linux | `cargo fmt --check`, `cargo clippy` in both profiles (warnings are errors), the image build and the image check. It keeps the image as an artifact. |
+| `app` | Windows | `cargo fmt --check`, `cargo clippy` (warnings are errors), `cargo test`, the release build, and a smoke test with `--check`. It keeps the exe as an artifact. |
 | `notices` | Linux | Makes `THIRD_PARTY_NOTICES.md` again and compares it with the file in the repository |
+| `docs` | Linux | The script tests, the STE checker, the privacy check, the link check, and a schema check of the workflows, the Dependabot file and the issue forms |
+| `supply-chain` | Linux | `cargo deny` for each crate |
+| `package` | Windows | Makes the release zip from the image and the exe of the run. It compares the zip with the release layout and with a second zip. |
 
+The smoke test runs `kb16-mixer.exe --check`. The runner has no pad, so the report has a `FAIL` line for the pad. The step accepts this, but it fails on a crash or on a report with the wrong form.
 For the exact steps, read the workflow file. The workflow file is correct if this table and the file disagree.
 
 ## Release build
 
 `.github/workflows/release.yml` runs when somebody pushes a version tag (for example `v0.1.0`).
-It runs the same checks as CI, and builds the firmware image and the app.
-It then makes a draft release with one zip file, `SHA256SUMS` and a build attestation.
+It checks the versions, `CHANGELOG.md` and the tag. It then builds the firmware image and the app.
+It makes a draft pre-release with one zip file, `SHA256SUMS` and a build attestation. It never publishes the release.
 See [releasing.md](releasing.md).
 
 ## Verified on the real pad
