@@ -12,7 +12,7 @@ It is not a driver, and it does not route audio. The app uses no keyboard hooks 
 
 | Keys tab | Channels tab | Pad tab |
 |---|---|---|
-| ![The Keys tab of the settings window: the 16 keys of page 1 and their actions](docs/images/settings-keys.png) | ![The Channels tab: the four channels and the programs in each channel](docs/images/settings-channels.png) | ![The Pad tab: the name on the screen, the light brightness, the knob step, the Focus level, the screen and light timers, and Start with Windows](docs/images/settings-pad.png) |
+| ![The Keys tab of the settings window in the dark theme: the 16 keys of page 1, their actions, and the three knobs](docs/images/settings-keys.png) | ![The Channels tab: the four channels, what each channel plays, and the programs in the two app lists](docs/images/settings-channels.png) | ![The Pad tab: the name on the screen, the screen shift, the knob step, the Focus level, the light brightness, the screen and light timers, and the Start with Windows switch](docs/images/settings-pad.png) |
 
 ## What it does
 
@@ -191,6 +191,7 @@ Safeguards: the firmware writes the flash only in two reserved pages, and never 
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Symptoms, causes and fixes |
 | [docs/faq.md](docs/faq.md) | Driver, anti-cheat, rights, stored data, network, uninstall |
 | [docs/configuration.md](docs/configuration.md) | The settings window and all settings of `config.toml` |
+| [docs/design/settings-ui.md](docs/design/settings-ui.md) | The design of the settings window: colours, controls, motion and drawing |
 | [docs/how-it-works.md](docs/how-it-works.md) | Architecture, the volume rules, and what the app touches in Windows |
 | [docs/protocol.md](docs/protocol.md) | The raw HID messages between the pad and the app |
 | [docs/flashing.md](docs/flashing.md) | Flashing for developers: `flash.sh`, `dfu-util`, recovery |
