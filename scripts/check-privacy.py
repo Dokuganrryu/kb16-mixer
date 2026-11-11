@@ -22,7 +22,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
+# The last label must be letters, so that "cargo-deny@0.20.2" (a tool version) is no address.
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})(?![A-Za-z0-9-])")
 # RFC 2606 and RFC 6761 names that can never belong to a person.
 EXAMPLE_DOMAINS = re.compile(r"(^|\.)(example\.(com|net|org)|example|test|invalid|localhost)$", re.I)
 NOREPLY = re.compile(r"^[A-Za-z0-9._%+-]+@users\.noreply\.github\.com$", re.I)

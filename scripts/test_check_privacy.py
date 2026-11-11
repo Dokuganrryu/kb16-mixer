@@ -36,6 +36,9 @@ class Email(unittest.TestCase):
         for domain in ("example.com", "example.org", "mail.example.net", "pad.test", "x.invalid", "example"):
             self.assertEqual(rules("user" + AT + domain), [], domain)
 
+    def test_tool_version_is_no_address(self):
+        self.assertEqual(rules("tool: cargo-deny" + AT + "0.20.2 and uses: x/y" + AT + "3d3c42e5"), [])
+
     def test_lookalike_domain_fails(self):
         self.assertEqual(rules("user" + AT + "example.com.evil.io"), ["email"])
 
