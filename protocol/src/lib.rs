@@ -370,9 +370,69 @@ impl PadMsg {
     }
 }
 
+/// The firmware's version as the USB device release number (bcdDevice): `0xJJMN` in binary-coded
+/// decimal for version JJ.M.N, so the PC can read it from the device list without opening the
+/// pad. Takes the crate version string ("0.1.0"); used in a `const`, a version that does not
+/// fit (major over 99, minor or patch over 9) stops the build.
+pub const fn device_release(version: &str) -> u16 {
+    let v = version.as_bytes();
+    let mut parts = [0u16; 3];
+    let (mut part, mut i) = (0, 0);
+    while i < v.len() && v[i] != b'-' && v[i] != b'+' {
+        match v[i] {
+            b'.' => part += 1,
+            d @ b'0'..=b'9' if part < 3 => parts[part] = parts[part] * 10 + (d - b'0') as u16,
+            _ => panic!("version is not major.minor.patch"),
+        }
+        i += 1;
+    }
+    let [major, minor, patch] = parts;
+    assert!(part == 2 && major <= 99 && minor <= 9 && patch <= 9, "version does not fit bcdDevice");
+    (major / 10) << 12 | (major % 10) << 8 | minor << 4 | patch
+}
+
+/// The release number firmware sent before it carried its version.
+pub const UNVERSIONED_RELEASE: u16 = 0x0300;
+
+/// (major, minor, patch) from a release number made by [`device_release`].
+pub const fn release_version(bcd: u16) -> (u8, u8, u8) {
+    let major = (bcd >> 12) * 10 + ((bcd >> 8) & 0xF);
+    (major as u8, ((bcd >> 4) & 0xF) as u8, (bcd & 0xF) as u8)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_firmware_version_travels_as_bcd() {
+        assert_eq!(device_release("0.1.0"), 0x0010);
+        assert_eq!(device_release("12.3.4"), 0x1234);
+        assert_eq!(device_release("1.0.9-beta"), 0x0109);
+        for v in ["0.1.0", "12.3.4", "99.9.9", "1.0.0"] {
+            let (a, b, c) = release_version(device_release(v));
+            let mut text = [0u8; 8];
+            let n = fmt3(&mut text, a, b, c);
+            assert_eq!(&text[..n], v.as_bytes());
+        }
+    }
+
+    fn fmt3(out: &mut [u8], a: u8, b: u8, c: u8) -> usize {
+        let mut n = 0;
+        for (i, x) in [a, b, c].into_iter().enumerate() {
+            if i > 0 {
+                out[n] = b'.';
+                n += 1;
+            }
+            if x >= 10 {
+                out[n] = b'0' + x / 10;
+                n += 1;
+            }
+            out[n] = b'0' + x % 10;
+            n += 1;
+        }
+        n
+    }
 
     fn host_roundtrip(m: HostMsg) -> Report {
         let r = m.encode();

@@ -1,11 +1,12 @@
 //! KB16 mixer firmware for the DOIO KB16-01 rev2 (APM32F103CB).
 //!
-//! Tasks: USB device, 1 kHz key/knob scan, input routing, host reports, 100 Hz LEDs, 30 Hz OLED.
+//! Tasks: USB device, 1 kHz key/knob scan, input routing, host reports, 200 Hz LEDs, 30 Hz OLED.
 //! With the PC app running, keys and knobs drive the mixer over raw HID (usage page 0xFF60);
 //! without it, the pad is a plain keyboard with media knobs.
 //!
 //! Recovery: hold the top-left key while plugging in (or all four corner keys for 2 s, or
-//! `kb16-mixer.exe --bootloader`) to restart into the bootloader. A panic does the same.
+//! `kb16-mixer.exe --bootloader`) to restart into the bootloader. A panic or fault restarts the
+//! firmware; after three crashed starts in a row it stays in the bootloader instead.
 
 #![no_std]
 #![no_main]
@@ -431,7 +432,8 @@ async fn main(spawner: Spawner) {
     ucfg.manufacturer = Some("kb16-mixer");
     ucfg.product = Some("KB16 Mixer");
     ucfg.serial_number = Some("KB16-MIXER");
-    ucfg.device_release = 0x0300;
+    // The firmware version, so the PC app can show it from the device list.
+    ucfg.device_release = const { kb16_mixer_protocol::device_release(env!("CARGO_PKG_VERSION")) };
     ucfg.max_power = 250;
     ucfg.max_packet_size_0 = 64;
     ucfg.composite_with_iads = false;
