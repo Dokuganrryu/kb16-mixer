@@ -1,7 +1,8 @@
 # How it works
 
-This document describes the architecture of kb16-mixer.
+This document describes the architecture of KB16 Mixer.
 It also gives the volume rules, and lists what the app touches in Windows and what it never touches.
+For the definition of each term, see [glossary.md](glossary.md).
 
 ## Overview
 
@@ -40,12 +41,13 @@ If you close the app or select **Pause** in the tray menu, the pad goes back to 
 
 In mixer mode, `mixer_keys = false` in the config file gives the keys their keyboard-mode layout. The knobs and lights stay in mixer mode.
 
-## The three crates
+## The crates
 
 | Crate | Folder | Target | Purpose |
 |---|---|---|---|
-| `kb16-mixer-protocol` | `protocol/` | any (`no_std`) | The wire format of the raw HID messages, and the version format. Both other crates use it. |
-| `kb16-mixer-firmware` | `firmware/` | `thumbv7m-none-eabi` | The firmware of the pad, written with Embassy |
+| `kb16-mixer-protocol` | `protocol/` | any (`no_std`) | The wire format of the raw HID messages, and the version format. All other crates use it. |
+| `kb16-mixer-pad-core` | `pad-core/` | any (`no_std`) | The firmware logic that needs no hardware: key and knob decoding, the idle rule, lights, screens, the flash guard. The PC runs its tests. |
+| `kb16-mixer-firmware` | `firmware/` | `thumbv7m-none-eabi` | The firmware of the pad, written with Embassy. It holds the tasks, the drivers and the register code, and uses `pad-core` for each decision. |
 | `kb16-mixer` | `app/` | Windows | The tray app |
 
 ## Firmware tasks
@@ -70,12 +72,12 @@ The firmware never drops a key release:
 
 - If its event queue is full, the key scan tries the change again at the next scan.
 - If the PC does not take a release report, the firmware sends it again every 100 ms until the PC takes it.
-- When the USB bus is suspended, reset or switched off, the firmware releases all typed keys. It sends that state when the bus is back.
+- When the PC suspends, resets or switches off the USB bus, the firmware releases all typed keys. It sends that state when the bus is back.
 
 Thus a lost release cannot leave a key (for example Ctrl or Shift) held on the PC.
-Knob detents that wait for the queue are limited to 8 for each knob.
+The queue holds at most 8 knob detents for each knob.
 
-When the USB bus is suspended (the PC sleeps or is off), the lights and the screen go off.
+When the PC suspends the USB bus (the PC sleeps or is off), the lights and the screen go off.
 
 ### Screens
 
@@ -125,9 +127,16 @@ The worker stops Focus and Talk, gives all levels back, and saves the state. The
 
 ### App modules
 
+The app is a library (`app/src/lib.rs`) and a small program (`app/src/main.rs`) that calls it. Thus the tests in `app/tests/` can use the library.
+
 | Module | Contents |
 |---|---|
-| `main.rs` | Start, command-line options, tray menu, worker loop, `open:` |
+| `lib.rs` | Start, command-line options, the single-instance guard |
+| `tray.rs` | The main thread: the tray icon, the tray menu, and a hidden window for messages from Windows and from the other threads |
+| `worker.rs` | The worker loop |
+| `check.rs` | The report of `--check` |
+| `open.rs` | The `open:` key |
+| `autostart.rs` | **Start with Windows**: one value in the `Run` key of the current user |
 | `keys.rs` | The mixer keys (Mute, Focus, Talk, Move, Switch page, `open:`), one event at a time in the order of arrival |
 | `audio.rs` | The volume engine: audio sessions, channels, Focus, meters, the audible rule |
 | `trim.rs` | The trim rules, and the knob target (whole channel or one program) |
@@ -140,7 +149,7 @@ The worker stops Focus and Talk, gives all levels back, and saves the state. The
 The worker sends a frame (levels, volumes, mutes, flags) only when the frame changed.
 It checks for a change approximately 30 times per second when one of these is true:
 
-- A key or a knob of the pad was touched in the last 3 seconds.
+- You touched a key or a knob of the pad in the last 3 seconds.
 - A program plays audible sound.
 - A meter is at approximately −30 dBFS or higher.
 
@@ -158,7 +167,7 @@ It sends the settings, names, logo name and key table on connect, after a config
 | App to pad | Live frame: level of each channel, volume of each channel, mute bits, the channel that has Focus, and flags (mixer keys, microphone muted, audible sound, page 2) |
 | App to pad | Settings: number of channels, channel colors, light brightness, screen offset, idle minutes |
 | App to pad | Channel names (6 bytes each), the logo name (10 bytes), popups for the screen, the key table, heartbeat |
-| App to pad | The bootloader command |
+| App to pad | The bootloader command. It holds the fixed marker `BOOT`. The marker is not a secret. It only prevents a restart from a random message. |
 | Pad to app | Knob turn (one detent), knob press, mixer key press, mixer key release |
 
 Typed keys do not travel over raw HID. The app never sends key presses.
@@ -209,11 +218,11 @@ In a channel that you never set on the pad, the app follows the level of the pro
 - A turn up on a muted channel unmutes it. A turn up never unmutes the microphone.
 - Focus turns the sessions of the other channels down from their real level. When Focus stops, each session gets exactly that level back.
 - The app tracks each audio session separately. A program can have more than one session (for example, one for each output device), and each session keeps its own real level.
-- A session that starts while Focus is on is also turned down.
+- Focus also turns down a session that starts while Focus is on.
 - If a program closes while Focus is on, the app keeps its real level. When the program starts again, it gets that level back.
 - A session that leaves a turned-down channel gets its real level back.
 - While Focus turns a channel down, the app learns nothing from Windows for that channel.
-- The microphone channel is never turned down.
+- Focus never turns down the microphone channel.
 - The app writes the real levels to `state.toml` at once. If the app stops while Focus is on, it restores those levels at the next start.
 
 ## Channels and programs
@@ -223,8 +232,8 @@ The app gives each audio session to one channel:
 1. A program that you moved with the Move key goes to the channel that you moved it to.
 2. Otherwise, the first channel that names the program in `apps` gets it.
 3. A channel with `target = "focused"` gets the sessions of the foreground program and of its child processes.
-4. A channel with `target = "other"` gets all remaining sessions.
-5. A session that matches no channel is not controlled by a channel.
+4. A channel with `target = "other"` gets all other sessions.
+5. No channel controls a session that matches none of these rules.
 
 The settings window shows the programs of each channel with the same rule.
 
@@ -247,11 +256,14 @@ The app skips the "System Sounds" session.
 | The target of an `open:` key | `ShellExecuteExW` with the verb "open" | Starts it, as a double-click in Explorer does. An existing file, given by its full path, starts in its own folder. |
 | Files that you select with **Browse...** in a dialog | The standard Windows file dialog | Read the path only |
 | `config.toml`, `apps.toml`, `state.toml`, `log.txt`, `selftest.txt` in the settings folder | File system | Read and write |
-| The value `kb16-mixer` in `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` (Start with Windows) | Registry | Read and write. Never written when `KB16_MIXER_DIR` is set. |
+| The value `kb16-mixer` in `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` (Start with Windows) | Registry | Read and write. The app never writes it when `KB16_MIXER_DIR` is set. |
 | Notepad and Explorer, when you click **Open config file** or **Open settings folder** | Process start | Starts them |
 
-An `open:` key does not ask for administrator rights (no elevation), and passes no arguments. The app does not keep a handle to the started process.
-If the target is an existing file given by its full path, the program starts in the folder of that file. Otherwise Windows selects the folder.
+An `open:` key does not ask for administrator rights (no elevation), and passes no arguments. The app does not keep a handle to the process that it starts.
+
+If the target program needs administrator rights, Windows shows its User Account Control (UAC) prompt. The app does not bypass that prompt. Nobody tested this on a pad yet.
+
+If the target is a file that exists, and you give its full path, the program starts in the folder of that file. Otherwise Windows selects the folder.
 If the start fails, the pad shows `Open failed`, and the app writes a line to `log.txt`.
 
 ## What the app never touches
@@ -268,4 +280,4 @@ The app uses no API from the keyboard and mouse module of Windows (`Win32_UI_Inp
 That feature of the `windows` crate is not enabled, and a test in `app/src/main.rs` makes sure that it stays off.
 
 The shortcut dialog of the settings window reads keys only from its own box, while that box has the keyboard focus.
-It reads the normal window messages of that box. It uses no hook, no raw input and no key-state polling.
+It reads the normal window messages of that box. It uses no hook and no raw input, and it does not poll the key state.

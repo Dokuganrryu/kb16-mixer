@@ -2,6 +2,7 @@
 
 This document describes the settings window and the config file of the app, `config.toml`.
 The source of the default file is `DEFAULT` in `app/src/config.rs`.
+For the definition of each term, see [glossary.md](glossary.md).
 
 ## Contents
 
@@ -31,7 +32,10 @@ The environment variable `KB16_MIXER_DIR` can replace this folder. See [Environm
 | `log.txt` | Problems and errors | The app |
 | `selftest.txt` | Output of `kb16-mixer.exe --selftest` | The app |
 
-To open the folder, right-click the tray icon, then click **Open settings folder**.
+To open the folder:
+
+1. Right-click the tray icon.
+2. Click **Open settings folder**.
 
 ## The first start
 
@@ -45,7 +49,7 @@ The app does **not** start with Windows until you select **Start with Windows** 
 
 ## The settings window
 
-To open the window, click the tray icon. You can also right-click the tray icon, then click **Settings...**.
+To open the window, click the tray icon. You can also use the **Settings...** item of the tray menu. To open the tray menu, right-click the tray icon.
 The window has three tabs: **Keys**, **Channels** and **Pad**.
 
 A change in a list, a slider, a tick box or a button applies immediately and goes into `config.toml`.
@@ -176,10 +180,12 @@ If no pad is connected, it shows `Pad not connected.`
 
 ## Edit the file by hand
 
-1. Right-click the tray icon, then click **Open config file**.
-2. Change the file.
-3. Save the file.
-4. Right-click the tray icon, then click **Reload config file**.
+1. Right-click the tray icon.
+2. Click **Open config file**.
+3. Change the file.
+4. Save the file.
+5. Right-click the tray icon.
+6. Click **Reload config file**.
 
 If the file has a mistake, the app keeps the last correct settings.
 The tray menu then shows "Config problem" and the cause. The screen of the pad shows `Config error`.
@@ -201,7 +207,7 @@ A reload sets the pad back to page 1.
 | `lights_dim_min` | `10` | 0–240 | Minutes without activity before the key lights dim. 0 = never. |
 | `mixer_keys` | `true` | `true`, `false` | `false` = the keys type their keyboard-mode keys. The knobs and the lights stay in mixer mode. |
 
-A number outside its range is set to the nearest limit. For example, `step = 900` becomes `20`.
+The app changes a number outside its range to the nearest limit. For example, `step = 900` becomes `20`.
 A `name` outside its rule is a mistake: the app does not load the file.
 
 Activity is a key press, a knob turn, or audible sound from a program. A readout or a notice on the screen is not activity.
@@ -311,7 +317,7 @@ You cannot move a program into the microphone channel.
 ### Open a target
 
 An `open:` key opens its target as a double-click in Explorer does. Windows selects the program that opens it.
-If the target is an existing file, given by its full path, the program starts in the folder of that file.
+If the target is a file that exists, and you give its full path, the program starts in the folder of that file.
 
 ```toml
 row1 = ["page", "open:C:\\Tools\\obs64.exe", "open:%USERPROFILE%\\Downloads", "open:https://example.com"]
@@ -321,6 +327,7 @@ row1 = ["page", "open:C:\\Tools\\obs64.exe", "open:%USERPROFILE%\\Downloads", "o
 - The app replaces environment variables such as `%USERPROFILE%`.
 - The target keeps its upper and lower case.
 - The app does not ask for administrator rights.
+- If the target program needs administrator rights, Windows shows its User Account Control (UAC) prompt. The app does not bypass that prompt. Nobody tested this on a pad yet.
 - If the target does not open, the pad shows `Open failed`, and the app writes a line to `log.txt`.
 
 ### Keys that the pad types
@@ -361,7 +368,7 @@ Rules:
 ## Channels
 
 Each `[[channel]]` section is one channel. You can have 1 to 4 channels.
-The first channel belongs to the left key column, the second to the next column, and so on.
+The first channel belongs to the left key column. The second channel belongs to the next column, and the same for the third and the fourth channel.
 
 | Setting | Required | Meaning |
 |---|---|---|
@@ -445,7 +452,7 @@ target = "other"
 ```
 
 This file has no `"page"` key on page 1. Thus page 2 is not used, and `[keys2]` can stay at its defaults.
-The fourth column has no channel. Its `mute` and `focus` keys would do nothing, so they are set to `"none"`.
+The fourth column has no channel. Its `mute` and `focus` keys would do nothing. Thus the file sets them to `"none"`.
 
 ## Error messages
 
@@ -499,6 +506,7 @@ You cannot change this layout in the config file.
 | `--settings=keys`, `--settings=channels`, `--settings=pad` | Starts the app with the settings window open on that tab |
 | `--no-pad` | The app never looks for the pad. The volume control still runs. Use it to try the settings window while another copy of the app has the pad. |
 | `--bootloader` | Tells the pad to restart into its bootloader, then stops. Exit code 0 = the app sent the command. Exit code 1 = the app found no pad, or the write failed. |
+| `--check` | Prints a short report about the app, the pad, the settings, **Start with Windows** and audio, then stops. Exit code 0 = no line says `FAIL`. Exit code 1 = one or more lines say `FAIL`. The report contains no program names, user names or serial numbers, so you can paste it into a bug report. In a command prompt, type `kb16-mixer.exe --check \| more`. |
 | `--selftest` | Writes the audio sessions, their channels and their levels to `selftest.txt`, then stops |
 | `--help` (also `-h` or `/?`) | Shows a window with these options, then stops |
 

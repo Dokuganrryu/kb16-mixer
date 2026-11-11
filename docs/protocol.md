@@ -1,9 +1,10 @@
 # Raw HID protocol
 
 This document describes the messages between the firmware and the app.
+For the definition of each term, see [glossary.md](glossary.md).
 
 **The source of truth is `protocol/src/lib.rs`.** This document is a copy in table form.
-If this document and the code disagree, the code is correct. Please report the difference.
+If this document and the code disagree, the code is correct. Report the difference in an issue.
 
 ## Transport
 
@@ -108,7 +109,7 @@ The app sends `255` for a setting of `0` (never) in the config file.
 
 The live state. The app sends a frame only when it changed. It checks for a change approximately 30 times per second when one of these is true:
 
-- A key or a knob of the pad was touched in the last 3 seconds.
+- You touched a key or a knob of the pad in the last 3 seconds.
 - A program plays audible sound (bit 2).
 - A meter is at approximately −30 dBFS or higher.
 
@@ -209,7 +210,11 @@ The pad keeps the name in flash, so that it shows the name at power-up. See [har
 | 2–5 | `'B' 'O' 'O' 'T'` (`0x42 0x4F 0x4F 0x54`) |
 
 The pad restarts into its bootloader 20 ms after this message.
-A `0x7F` message without the 4 password bytes is not accepted.
+The pad ignores a `0x7F` message without the 4 marker bytes.
+
+The marker `BOOT` never changes, and anyone can read it in this document. It is not a password and not a secret.
+It only makes sure that a random or damaged message cannot restart the pad.
+Any program on the PC that can open the raw HID interface can send this message. See [SECURITY.md](../SECURITY.md).
 
 ## Pad to app
 
@@ -227,7 +232,7 @@ The pad sends `KEY_DOWN` and `KEY_UP` only for keys of kind `Host`.
 
 ## Version
 
-The firmware sends its version in the USB device release number (`bcdDevice`), so that the app can read it from the device list.
+The firmware sends its version as the release number of its USB device (`bcdDevice`). Thus the app can read the version from the device list.
 `device_release()` in the protocol crate makes the number from the crate version. `release_version()` reads it back.
 
 | Version | Device release |
@@ -237,7 +242,7 @@ The firmware sends its version in the USB device release number (`bcdDevice`), s
 | 12.3.4 | `0x1234` |
 
 The major version can be 0–99. The minor and patch versions can be 0–9. A version that does not fit stops the build.
-A pre-release part (for example `-beta`) is ignored.
+`device_release()` ignores a pre-release part (for example `-beta`).
 
 ## Decode rules
 
@@ -245,12 +250,13 @@ A pre-release part (for example `-beta`) is ignored.
 |---|---|
 | A report shorter than 2 bytes, or byte 0 is not `0xD1` | Not a message of this protocol. It is ignored. |
 | A message from the app that is shorter than 32 bytes | Read as if zero bytes fill the rest |
-| A `BOOTLOADER` message with a wrong password | Ignored |
+| A `BOOTLOADER` message with wrong marker bytes | Ignored |
 | An unknown message ID from the app | `Unknown`. It shows that the app is present. |
 | A message from the pad shorter than 4 bytes, or with an unknown ID | Ignored |
 
 ## Change the protocol
 
-Change the protocol only in `protocol/src/lib.rs`, and add a test there.
+Change the protocol only in `protocol/src/lib.rs`.
+Add a test there for each change.
 The test `wire_layout_is_fixed` holds the exact bytes. Change it only when you intend to change the wire format.
 Then update this document.
