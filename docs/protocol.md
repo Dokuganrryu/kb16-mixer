@@ -107,13 +107,12 @@ The app sends `255` for a setting of `0` (never) in the config file.
 
 ### `0x21` FRAME
 
-The live state. The app sends a frame only when it changed. It checks for a change approximately 30 times per second when one of these is true:
+The live state. The app sends a frame only when it changed. It checks for a change every 33 ms when one of these is true:
 
-- You touched a key or a knob of the pad in the last 3 seconds.
 - A program plays audible sound (bit 2).
-- A meter is at approximately −30 dBFS or higher.
+- The pad had activity in the last 3 seconds. Activity is a touch of a key or a knob, or a meter at approximately −30 dBFS or higher.
 
-Otherwise it checks every 200 ms.
+Otherwise it checks every 200 ms. See [how-it-works.md](how-it-works.md#frame-rate).
 
 | Byte | Field | Contents |
 |---|---|---|

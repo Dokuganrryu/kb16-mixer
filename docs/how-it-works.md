@@ -50,6 +50,29 @@ In mixer mode, `mixer_keys = false` in the config file gives the keys their keyb
 | `kb16-mixer-firmware` | `firmware/` | `thumbv7m-none-eabi` | The firmware of the pad, written with Embassy. It holds the tasks, the drivers and the register code, and uses `pad-core` for each decision. |
 | `kb16-mixer` | `app/` | Windows | The tray app |
 
+## Firmware modules
+
+| Module | Contents |
+|---|---|
+| `main.rs` | Start, the USB device, the tasks `input`, `host_rx`, `usb_task` and `watchdog` |
+| `keys.rs` | The 1 kHz scan of the keys and the knobs. The decoding is in `pad_core::input`. |
+| `leds.rs` | The output to the WS2812 LEDs. The colors are in `pad_core::leds`. |
+| `oled.rs` | The I2C output to the screen. The drawing is in `pad_core::oled`. |
+| `state.rs` | The shared state, the reset, and the entry into the bootloader. The crash counter rule is in `pad_core::boot`. |
+| `flash.rs` | The flash guard: the only code that erases or writes the flash. It writes only the two reserved pages. See [hardware.md](hardware.md#memory-map). |
+| `name.rs` | The logo name in its flash page. The record format is in `pad_core::name`. |
+| `diag.rs` | The crash log in its flash page |
+
+`pad-core/` holds the firmware logic that needs no hardware. The PC runs its tests (`pad-core/tests/`). Its modules:
+
+- `input`: the debounce, the knobs, the queue of knob detents, the four-corner combo
+- `state`: the reports from the app, and the idle rule
+- `leds`, `oled`: what the key lights and the screen show
+- `name`: the record of the logo name
+- `boot`: the crash counter rule
+- `flash`: the pages that the firmware can erase and write
+- `assets`, `font`: bitmaps that `firmware/gen_assets.py` makes
+
 ## Firmware tasks
 
 | Task | Rate | Work |
@@ -127,7 +150,7 @@ The worker stops Focus and Talk, gives all levels back, and saves the state. The
 
 ### App modules
 
-The app is a library (`app/src/lib.rs`) and a small program (`app/src/main.rs`) that calls it. Thus the tests in `app/tests/` can use the library.
+The app is a library (`app/src/lib.rs`) and a program of 8 lines (`app/src/main.rs`) that calls it. Thus the tests in `app/tests/` can use the library.
 
 | Module | Contents |
 |---|---|
@@ -142,18 +165,22 @@ The app is a library (`app/src/lib.rs`) and a small program (`app/src/main.rs`) 
 | `trim.rs` | The trim rules, and the knob target (whole channel or one program) |
 | `pad.rs` | The raw HID link to the pad |
 | `config.rs` | `config.toml`, `apps.toml`, `state.toml` |
-| `settings.rs` | The settings window |
-| `dialog.rs` | The Shortcut, Open and Add a program dialogs |
 | `procs.rs` | Program names from the Toolhelp snapshot, and the foreground window |
+| `win.rs` | Small safe wrappers for the Win32 calls of the settings window and the dialogs |
+| `settings/` (folder) | The settings window. `layout.rs` makes the controls, and `fill.rs` fills them from the file. `changes.rs` applies a change, `apps.rs` the **Add** and **Remove** buttons, and `file.rs` the edits of `config.toml`. `choices.rs` and `checks.rs` hold the logic. `controls.rs` and `ids.rs` hold the shared Win32 parts. |
+| `dialog/` (folder) | The small dialogs: `shortcut.rs` (with the key logic in `keys.rs`) and `text.rs` (a line of text with a **Browse...** button) |
+
+### Frame rate
 
 The worker sends a frame (levels, volumes, mutes, flags) only when the frame changed.
-It checks for a change approximately 30 times per second when one of these is true:
+It checks for a change every 33 ms (approximately 30 times per second) when one of these is true:
 
-- You touched a key or a knob of the pad in the last 3 seconds.
 - A program plays audible sound.
-- A meter is at approximately −30 dBFS or higher.
+- The pad had activity in the last 3 seconds.
 
-Otherwise it checks every 200 ms. An open microphone in a quiet room stays below −30 dBFS, so it does not keep the fast rate.
+Activity is a touch of a key or a knob, or a meter at approximately −30 dBFS or higher.
+Thus the fast rate continues for 3 seconds after the last meter falls below −30 dBFS.
+Otherwise the worker checks every 200 ms. An open microphone in a quiet room stays below −30 dBFS, so it does not keep the fast rate.
 
 The worker handles key presses and releases one at a time, in the order in which they arrived (`app/src/keys.rs`).
 Thus a quick release and press of Talk cannot leave the microphone in the wrong state.
@@ -277,7 +304,8 @@ If the start fails, the pad shows `Open failed`, and the app writes a line to `l
 - It does not connect to the network.
 
 The app uses no API from the keyboard and mouse module of Windows (`Win32_UI_Input_KeyboardAndMouse`).
-That feature of the `windows` crate is not enabled, and a test in `app/src/main.rs` makes sure that it stays off.
+That feature of the `windows` crate is not enabled. A test in `app/src/lib.rs` makes sure that it stays off.
+The test `app/tests/forbidden_apis.rs` reads the source and fails on the name of a hook, an input injection, a process access or a network API.
 
 The shortcut dialog of the settings window reads keys only from its own box, while that box has the keyboard focus.
 It reads the normal window messages of that box. It uses no hook and no raw input, and it does not poll the key state.
