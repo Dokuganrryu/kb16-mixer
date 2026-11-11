@@ -5,7 +5,7 @@
 //! that does not check out (a blank page, a torn write, a foreign layout) reads as `DEFAULT`.
 
 use crate::diag;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use embassy_time::Instant;
 use kb16_mixer_protocol::LOGO_NAME_LEN as LEN;
 
@@ -16,9 +16,13 @@ pub const DEFAULT: [u8; LEN] = *b"KB16\0\0\0\0\0\0";
 /// Flash wears out: should a host ever send a different name every few seconds, only one
 /// write per this long goes through (the app resends every 30 s, so the latest still lands).
 const MIN_GAP_S: u32 = 60;
+/// And at most this many per power-up, so even a host that keeps changing the name for days
+/// costs a handful of erases. Past it the new name still shows, from RAM, until the next start.
+const MAX_WRITES: u8 = 8;
 
 /// Seconds since boot of the last write, plus one (0 = none yet).
 static LAST_WRITE: AtomicU32 = AtomicU32::new(0);
+static WRITES: AtomicU8 = AtomicU8::new(0);
 
 /// Capitals, digits and spaces, zero-padded, with at least one letter or digit: what the logo
 /// font can draw.
@@ -78,10 +82,12 @@ pub fn save(name: &[u8; LEN]) {
     }
     let now = Instant::now().as_secs() as u32 + 1;
     let last = LAST_WRITE.load(Ordering::Relaxed);
-    if last != 0 && now - last < MIN_GAP_S {
+    let writes = WRITES.load(Ordering::Relaxed);
+    if (last != 0 && now - last < MIN_GAP_S) || writes >= MAX_WRITES {
         return;
     }
     LAST_WRITE.store(now, Ordering::Relaxed);
+    WRITES.store(writes + 1, Ordering::Relaxed);
     diag::erase_page(PAGE);
     diag::program(PAGE, &rec);
 }
