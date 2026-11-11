@@ -3,7 +3,7 @@
 //! name.
 
 use kb16_mixer_protocol::{Frame, HostMsg, NEVER, Popup, Settings};
-use pad_core::boot::{Boot, after_reset};
+use pad_core::boot::{self, Boot, after_reset};
 use pad_core::flash::{Error, LOG_PAGE, NAME_PAGE, PAGE_SIZE, check_erase, check_program};
 use pad_core::input::{BOOT_COMBO_MS, Combo, DEBOUNCE_MS, Debounce, Knob, Turns};
 use pad_core::name;
@@ -247,6 +247,106 @@ fn three_crashed_starts_in_a_row_park_the_pad() {
     assert_eq!(after_reset(false, 2), Boot::Run { crashes: 0 });
     assert_eq!(after_reset(false, u16::MAX), Boot::Run { crashes: 0 });
     assert_eq!(after_reset(true, u16::MAX), Boot::Bootloader);
+}
+
+// --- Bootloader marks -------------------------------------------------------------------------
+
+/// The ten backup data registers, and every write in order as (DR number, value).
+#[derive(Default)]
+struct Regs {
+    dr: [u16; 10],
+    writes: Vec<(usize, u16)>,
+}
+
+impl boot::Backup for Regs {
+    fn read(&mut self, reg: usize) -> u16 {
+        self.dr[reg]
+    }
+
+    fn write(&mut self, reg: usize, value: u16) {
+        self.dr[reg] = value;
+        // The reference manual's names: index n is DRn+1.
+        self.writes.push((reg + 1, value));
+    }
+}
+
+/// Registers as a start finds them: DR8 and DR9 as given, DR10 as the bootloader left it.
+fn regs(dr8: u16, dr9: u16) -> Regs {
+    let mut r = Regs::default();
+    r.dr[7] = dr8;
+    r.dr[8] = dr9;
+    r.dr[9] = 0x424D;
+    r
+}
+
+#[test]
+fn the_marks_are_the_values_the_bootloader_reads() {
+    // The stm32duino bootloader reads DR10 after every reset. These numbers are its contract.
+    assert_eq!(boot::STAY_IN_DFU, 0x424C);
+    assert_eq!(boot::START_APP, 0x424D);
+    assert_eq!(boot::PANIC_MARK, 0x5041);
+    assert_eq!((boot::PANIC_REG, boot::CRASHES_REG, boot::MODE_REG), (7, 8, 9));
+}
+
+#[test]
+fn every_way_into_the_bootloader_writes_stay_in_dfu_to_dr10() {
+    let mut r = regs(0, 0);
+    boot::enter_bootloader(&mut r);
+    assert_eq!(r.writes, [(10, 0x424C)]);
+}
+
+#[test]
+fn a_crash_restart_marks_dr8_and_starts_the_app_again() {
+    let mut r = regs(0, 1);
+    boot::crash(&mut r);
+    assert_eq!(r.writes, [(8, 0x5041), (10, 0x424D)]);
+}
+
+#[test]
+fn a_clean_start_clears_the_marks_and_arms_the_restart() {
+    let mut r = regs(0, 2);
+    assert_eq!(boot::start(&mut r, false), Boot::Run { crashes: 0 });
+    assert_eq!(r.writes, [(8, 0), (9, 0), (10, 0x424D)]);
+}
+
+#[test]
+fn a_panic_mark_or_a_watchdog_reset_counts_a_crash() {
+    let mut r = regs(0x5041, 0);
+    assert_eq!(boot::start(&mut r, false), Boot::Run { crashes: 1 });
+    assert_eq!(r.writes, [(8, 0), (9, 1), (10, 0x424D)]);
+    let mut r = regs(0, 1);
+    assert_eq!(boot::start(&mut r, true), Boot::Run { crashes: 2 });
+    assert_eq!(r.writes, [(8, 0), (9, 2), (10, 0x424D)]);
+    // Another value in DR8 is not a panic mark.
+    let mut r = regs(0x5040, 1);
+    assert_eq!(boot::start(&mut r, false), Boot::Run { crashes: 0 });
+}
+
+#[test]
+fn the_third_crashed_start_parks_the_pad_in_dfu() {
+    let mut r = regs(0x5041, 2);
+    assert_eq!(boot::start(&mut r, false), Boot::Bootloader);
+    assert_eq!(r.writes, [(8, 0), (9, 0), (10, 0x424C)]);
+}
+
+#[test]
+fn healthy_running_clears_the_crash_count() {
+    let mut r = regs(0, 2);
+    boot::healthy(&mut r);
+    assert_eq!(r.writes, [(9, 0)]);
+}
+
+#[test]
+fn three_crashes_in_a_row_park_the_pad_and_the_next_start_runs() {
+    let mut r = regs(0, 0);
+    for want in [Boot::Run { crashes: 1 }, Boot::Run { crashes: 2 }, Boot::Bootloader] {
+        boot::crash(&mut r);
+        assert_eq!(boot::start(&mut r, false), want);
+    }
+    assert_eq!(r.dr[9], 0x424C);
+    // The PC flashes a fixed image; the bootloader then starts it with a clean count.
+    r.dr[9] = 0x424D;
+    assert_eq!(boot::start(&mut r, false), Boot::Run { crashes: 0 });
 }
 
 // --- Knobs and keys ---------------------------------------------------------------------------

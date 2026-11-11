@@ -8,7 +8,7 @@ use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::Instant;
 use kb16_mixer_protocol::HostMsg;
-use pad_core::boot::{Boot, after_reset};
+use pad_core::boot::{self, Boot};
 pub use pad_core::state::{After, NCH};
 
 /// The firmware clock, as `pad_core` reads it.
@@ -64,75 +64,65 @@ pub fn handle_report(r: &[u8]) -> After {
 }
 
 // ---------------------------------------------------------------------------
-// Resets and the bootloader.
-//
-// The stm32duino bootloader reads backup register DR10 after every reset:
-//   0x424C  stay in DFU          0x424D  start the app at once
-// Backup registers survive resets but not a power cycle. We keep DR10 at "start the app" so a
-// watchdog reset or panic restarts the firmware by itself, and count those restarts in DR9
-// (the rule is `pad_core::boot`). DR8 marks a panic restart.
+// Resets and the bootloader. The marks and their order are in `pad_core::boot`; this part gives
+// it the backup registers and does the resets.
 
-/// BKP data registers by index: `dr(n)` is DRn+1 in the reference manual.
-const DR8: usize = 7;
-const DR9: usize = 8;
-const DR10: usize = 9;
-const STAY_IN_DFU: u16 = 0x424C;
-const START_APP: u16 = 0x424D;
-const PANIC_MARK: u16 = 0x5041;
+/// The BKP data registers, through the PAC.
+struct Bkp;
 
-fn backup_access() {
-    pac::RCC.apb1enr().modify(|w| {
-        w.set_pwren(true);
-        w.set_bkpen(true);
-    });
-    pac::PWR.cr().modify(|w| w.set_dbp(true));
+impl Bkp {
+    /// Turns on the backup domain clock and write access. Every write path calls this first.
+    fn open() -> Bkp {
+        pac::RCC.apb1enr().modify(|w| {
+            w.set_pwren(true);
+            w.set_bkpen(true);
+        });
+        pac::PWR.cr().modify(|w| w.set_dbp(true));
+        Bkp
+    }
 }
 
-fn backup_write(n: usize, v: u16) {
-    pac::BKP.dr(n).write(|w| w.set_d(v));
-}
+impl boot::Backup for Bkp {
+    fn read(&mut self, reg: boot::Reg) -> u16 {
+        pac::BKP.dr(reg).read().d()
+    }
 
-fn backup_read(n: usize) -> u16 {
-    pac::BKP.dr(n).read().d()
+    fn write(&mut self, reg: boot::Reg, value: u16) {
+        pac::BKP.dr(reg).write(|w| w.set_d(value));
+    }
 }
 
 /// Call first thing at boot. Parks in DFU after repeated crashes; otherwise arms self-restart.
 pub fn boot_guard() {
-    backup_access();
-    let csr = pac::RCC.csr().read();
-    let crashed = csr.iwdgrstf() || backup_read(DR8) == PANIC_MARK;
+    let mut regs = Bkp::open();
+    let watchdog_reset = pac::RCC.csr().read().iwdgrstf();
     pac::RCC.csr().modify(|w| w.set_rmvf(true));
-    backup_write(DR8, 0);
-    match after_reset(crashed, backup_read(DR9)) {
-        Boot::Bootloader => {
-            backup_write(DR9, 0);
-            enter_bootloader();
-        }
-        // Below MAX_CRASHES (3), so it fits the 16-bit register.
-        Boot::Run { crashes } => backup_write(DR9, crashes as u16),
+    if boot::start(&mut regs, watchdog_reset) == Boot::Bootloader {
+        reset();
     }
-    backup_write(DR10, START_APP);
 }
 
 /// The firmware has run long enough to count as healthy.
 pub fn mark_healthy() {
-    backup_write(DR9, 0);
+    boot::healthy(&mut Bkp::open());
 }
 
 /// Restart the firmware after a panic or fault (counted by `boot_guard`).
 pub fn restart_after_crash() -> ! {
     cortex_m::interrupt::disable();
-    backup_access();
-    backup_write(DR8, PANIC_MARK);
-    backup_write(DR10, START_APP);
-    cortex_m::peripheral::SCB::sys_reset()
+    boot::crash(&mut Bkp::open());
+    reset()
 }
 
-/// Restart into the bootloader's DFU mode: write the stay-in-bootloader mark that the
-/// stm32duino bootloader reads from BKP_DR10, then reset.
+/// Restart into the bootloader's DFU mode.
 pub fn enter_bootloader() -> ! {
     cortex_m::interrupt::disable();
-    backup_access();
-    backup_write(DR10, STAY_IN_DFU);
+    boot::enter_bootloader(&mut Bkp::open());
+    reset()
+}
+
+/// Interrupts off first, so no handler runs between the marks and the reset.
+fn reset() -> ! {
+    cortex_m::interrupt::disable();
     cortex_m::peripheral::SCB::sys_reset()
 }
