@@ -66,7 +66,7 @@ CI runs the same checks for each pull request and for each push to `main`. Run t
 | Documentation | `python scripts/ste-lint.py` and `python scripts/check-links.py` |
 | Personal data | `python scripts/check-privacy.py --history HEAD`. See [Personal data](#personal-data). |
 | Dependencies | `cargo deny --manifest-path <crate>/Cargo.toml --config deny.toml check` for each crate that you changed. See [docs/testing.md](docs/testing.md#dependency-check). |
-| Scripts | `python -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py` |
+| Scripts | `python -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py scripts/test_flash_scripts.py` |
 
 ## Documentation
 

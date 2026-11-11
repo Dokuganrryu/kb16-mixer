@@ -82,8 +82,10 @@ The other scripts check the repository. They need only Python 3.
 python scripts/ste-lint.py
 python scripts/check-privacy.py --history HEAD
 python scripts/check-links.py
-python -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py
+python -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py scripts/test_flash_scripts.py
 ```
+
+`test_flash_scripts.py` runs copies of `flash.sh` and `flash.ps1` with a fake `dfu-util` and a stub app. It never uses the pad or the real app. The `flash.ps1` tests run only on Windows.
 
 For each problem, `check-privacy.py` shows the file, the line and the rule. It never shows the value that it found.
 
