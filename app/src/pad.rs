@@ -150,9 +150,22 @@ fn printable<const N: usize>(text: &str, upper: bool) -> [u8; N] {
     out
 }
 
-/// Big readout on the pad's screen: `name`, a value and a bar.
-pub fn popup_message(volume: u8, muted: bool, name: &str) -> Report {
-    HostMsg::Popup(protocol::Popup { knob: 0, volume: volume.min(100), muted, name: printable(name, false) }).encode()
+/// What the pad's big readout shows for a moment.
+pub enum Show {
+    /// A name, a value (0..=100) and a bar.
+    Level { name: String, volume: u8, muted: bool },
+    /// Text on its own.
+    Notice(String),
+}
+
+pub fn popup_message(show: &Show) -> Report {
+    let popup = match show {
+        Show::Level { name, volume, muted } => {
+            protocol::Popup { knob: 0, volume: (*volume).min(100), muted: *muted, name: printable(name, false) }
+        }
+        Show::Notice(text) => protocol::Popup::notice(printable(text, false)),
+    };
+    HostMsg::Popup(popup).encode()
 }
 
 /// Look and idle settings: channel colors, LED brightness, how many pixel rows the screen
@@ -205,4 +218,17 @@ pub use protocol::Frame;
 /// Live levels, faders and mute state.
 pub fn frame_message(f: &Frame) -> Report {
     HostMsg::Frame(*f).encode()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notices_reach_the_pad_as_text_only() {
+        let notice = HostMsg::decode(&popup_message(&Show::Notice("Config error".into())));
+        assert!(matches!(notice, Some(HostMsg::Popup(p)) if p.is_notice() && p.name.starts_with(b"Config error")));
+        let level = HostMsg::decode(&popup_message(&Show::Level { name: "Chat".into(), volume: 250, muted: false }));
+        assert!(matches!(level, Some(HostMsg::Popup(p)) if p.volume == 100), "a level is clamped, never a notice");
+    }
 }

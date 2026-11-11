@@ -43,6 +43,8 @@ pub struct Mixer {
     pub selected: u8,
     pub mixer_keys: bool,
     pub mic_muted: bool,
+    /// The host hears an app playing; counts as activity while the host is there.
+    pub playing: bool,
     pub names: [[u8; 6]; NCH],
 }
 
@@ -82,6 +84,7 @@ impl State {
                 selected: 0,
                 mixer_keys: true,
                 mic_muted: false,
+                playing: false,
                 names: [[b' '; 6]; NCH],
             },
             brightness: DEFAULT_BRIGHTNESS,
@@ -132,6 +135,10 @@ pub fn handle_report(r: &[u8]) -> bool {
     }
     let now = Instant::now();
     with(|s| {
+        // A host that comes back starts from silence, not from what it said last time.
+        if !s.host_alive(now) {
+            s.mixer.playing = false;
+        }
         s.host_seen = Some(now);
         let m = &mut s.mixer;
         match msg {
@@ -157,9 +164,9 @@ pub fn handle_report(r: &[u8]) -> bool {
                 m.selected = f.selected;
                 m.mixer_keys = f.mixer_keys;
                 m.mic_muted = f.mic_muted;
-                if m.level.iter().any(|&l| l > 40) {
-                    s.activity = now;
-                }
+                // Raw levels are not activity: they come before the app's own volume and mute,
+                // and include the microphone. Whether something is heard is the host's call.
+                m.playing = f.playing;
             }
             HostMsg::Names(names) => m.names = names,
             HostMsg::Keys(k) => {
@@ -171,6 +178,11 @@ pub fn handle_report(r: &[u8]) -> bool {
                 }
             }
             HostMsg::Heartbeat | HostMsg::Bootloader | HostMsg::Unknown(_) => {}
+        }
+        // The host only sends a frame when it changes, but some report (a heartbeat at least)
+        // comes every second, so the flag keeps the pad awake exactly as long as it holds.
+        if s.mixer.playing {
+            s.activity = now;
         }
     });
     false

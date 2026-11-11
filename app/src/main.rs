@@ -13,9 +13,9 @@ mod pad;
 mod procs;
 mod settings;
 
-use audio::{Device, Mixer, Moved, Readout};
+use audio::{Audible, Device, Mixer, Moved, Readout};
 use config::{Config, KeyAction, KnobBinding, Saved};
-use pad::{Link, PadEvent};
+use pad::{Link, PadEvent, Show};
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -166,6 +166,7 @@ fn worker(
     let mut last_active = Instant::now();
     let mut mic_muted = false;
     let mut mic_checked: Option<Instant> = None;
+    let mut audible = Audible::default();
     // Focus key that is down: channel, since when, and whether it was already latched.
     let mut focus_key: Option<(usize, Instant, bool)> = None;
     // Talk key that is down: the mic mute state to go back to on release.
@@ -208,7 +209,7 @@ fn worker(
         let mut released = Vec::new();
         let mut let_go = false; // undo everything temporary (pad gone, app closing)
         let mut closing = false;
-        let mut popup: Option<(String, u8, bool)> = None;
+        let mut popup: Option<Show> = None;
         if !batch.is_empty() {
             last_active = Instant::now();
         }
@@ -236,16 +237,16 @@ fn worker(
                         let _ = PostThreadMessageW(main_thread, WM_PAD_STATUS, WPARAM(c as usize), LPARAM(0));
                     }
                 }
-                PadEvent::Notice(text) => popup = Some((text, 255, false)),
+                PadEvent::Notice(text) => popup = Some(Show::Notice(text)),
                 _ => {}
             }
         }
 
         let show = |r: Readout| {
-            let label = if r.live { r.name } else { format!("{} (idle)", r.name) };
-            Some((label, r.volume, r.muted))
+            let name = if r.live { r.name } else { format!("{} (idle)", r.name) };
+            Some(Show::Level { name, volume: r.volume, muted: r.muted })
         };
-        let notice = |text: String| Some((text, 255u8, false));
+        let notice = |text: String| Some(Show::Notice(text));
         for (row, col) in keys {
             if row as usize >= 4 || col >= 4 {
                 continue;
@@ -403,8 +404,8 @@ fn worker(
         if !link.is_open() {
             continue;
         }
-        if let Some((label, volume, muted)) = popup {
-            link.send(&pad::popup_message(volume, muted, &label));
+        if let Some(show) = popup {
+            link.send(&pad::popup_message(&show));
         }
         if meta_sent.is_none_or(|t| t.elapsed() >= META_RESYNC) {
             let colors: Vec<[u8; 3]> = channels.iter().map(|c| c.color).collect();
@@ -423,10 +424,13 @@ fn worker(
                 mic_muted = mixer.device_muted(Device::Mic);
                 mic_checked = Some(Instant::now());
             }
-            let levels = mixer.levels(channels);
+            let (levels, heard) = mixer.levels(channels);
             if levels.iter().any(|&l| l > 0) {
                 last_active = Instant::now();
             }
+            // Computed every tick and part of the frame, so a change is always sent; while it
+            // stays the same, the heartbeat tells the pad it still holds.
+            let playing = audible.update(heard, Instant::now());
             let mut volumes = [0u8; 4];
             let mut mutes = 0u8;
             for (i, f) in mixer.faders.iter().take(4).enumerate() {
@@ -440,6 +444,7 @@ fn worker(
                 selected: mixer.focus().map_or(255, |f| f as u8),
                 mixer_keys: cfg.mixer_keys,
                 mic_muted,
+                playing,
             });
             if frame != last_frame {
                 link.send(&frame);
@@ -474,7 +479,7 @@ fn selftest() {
             out.extend(mixer.describe());
             let mut peak = [0u8; 4];
             for _ in 0..30 {
-                for (max, l) in peak.iter_mut().zip(mixer.levels(&cfg.channels)) {
+                for (max, l) in peak.iter_mut().zip(mixer.levels(&cfg.channels).0) {
                     *max = (*max).max(l);
                 }
                 std::thread::sleep(Duration::from_millis(50));

@@ -20,7 +20,7 @@
 //! pad -> host
 //!   [D1 01 knob delta]   knob turned          [D1 02 knob 0]    knob pressed
 //!   [D1 03 row col]      key pressed          [D1 04 row col]   key released
-//! flags: bit0 = keys belong to the mixer, bit1 = mic muted.
+//! flags: bit0 = keys belong to the mixer, bit1 = mic muted, bit2 = programme audio is playing.
 //! ```
 //!
 //! This crate only lays out bytes. What a value means (defaults, clamping, which characters
@@ -118,6 +118,17 @@ pub struct Popup {
     pub name: [u8; POPUP_LEN],
 }
 
+impl Popup {
+    /// Text on its own: no value, no bar.
+    pub fn notice(name: [u8; POPUP_LEN]) -> Popup {
+        Popup { knob: 0, volume: NOTICE, muted: false, name }
+    }
+
+    pub fn is_notice(&self) -> bool {
+        self.volume == NOTICE
+    }
+}
+
 /// Look and idle settings, as raw wire values.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Settings {
@@ -146,6 +157,10 @@ pub struct Frame {
     /// Keys belong to the mixer (false = they type their fallback keys).
     pub mixer_keys: bool,
     pub mic_muted: bool,
+    /// Some app (not the microphone) is audibly playing, as the host judges it: after its own
+    /// volume and mute, sustained, and not with the output device muted. The pad counts this
+    /// as activity for its idle timers; raw `levels` are only for the meters.
+    pub playing: bool,
 }
 
 /// What [`KEYS_PER_REPORT`] keys do, starting at key `first` (key = row * 4 + col).
@@ -196,7 +211,7 @@ impl HostMsg {
                 r[6..10].copy_from_slice(&f.volumes);
                 r[10] = f.mutes;
                 r[11] = f.selected;
-                r[12] = f.mixer_keys as u8 | (f.mic_muted as u8) << 1;
+                r[12] = f.mixer_keys as u8 | (f.mic_muted as u8) << 1 | (f.playing as u8) << 2;
             }
             HostMsg::Names(names) => {
                 r[1] = id::NAMES;
@@ -262,6 +277,7 @@ impl HostMsg {
                     selected: r[11],
                     mixer_keys: r[12] & 1 != 0,
                     mic_muted: r[12] & 2 != 0,
+                    playing: r[12] & 4 != 0,
                 })
             }
             id::NAMES => {
@@ -359,14 +375,15 @@ mod tests {
             screen_off_min: NEVER,
             lights_dim_min: 30,
         }));
-        for (mixer_keys, mic_muted) in [(false, false), (true, false), (false, true), (true, true)] {
+        for flags in 0..8u8 {
             host_roundtrip(HostMsg::Frame(Frame {
                 levels: [0, 40, 200, 255],
                 volumes: [100, 0, 55, 7],
                 mutes: 0b1010,
                 selected: 255,
-                mixer_keys,
-                mic_muted,
+                mixer_keys: flags & 1 != 0,
+                mic_muted: flags & 2 != 0,
+                playing: flags & 4 != 0,
             }));
         }
         host_roundtrip(HostMsg::Keys(Keys {
@@ -427,9 +444,10 @@ mod tests {
             selected: 10,
             mixer_keys: false,
             mic_muted: true,
+            playing: true,
         })
         .encode();
-        assert_eq!(&f[..13], &[0xD1, 0x21, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 2]);
+        assert_eq!(&f[..13], &[0xD1, 0x21, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 6]);
 
         let mut names = [[b' '; NAME_LEN]; CHANNELS];
         names[3] = *b"MEDIA\0";
@@ -451,6 +469,17 @@ mod tests {
         assert_eq!(&PadMsg::KeyUp { row: 3, col: 1 }.encode()[..4], &[0xD1, 0x04, 3, 1]);
     }
 
+    /// A notice must reach the pad as the text-only value, never as a clamped percentage.
+    #[test]
+    fn notices_are_text_only() {
+        let n = Popup::notice(*b"Config error\0\0\0\0");
+        let r = HostMsg::Popup(n).encode();
+        assert_eq!(r[3], NOTICE);
+        let Some(HostMsg::Popup(back)) = HostMsg::decode(&r) else { panic!() };
+        assert!(back.is_notice());
+        assert!(!Popup { knob: 0, volume: 100, muted: false, name: [0; POPUP_LEN] }.is_notice());
+    }
+
     #[test]
     fn foreign_and_short_reports() {
         assert_eq!(HostMsg::decode(&[]), None);
@@ -467,7 +496,8 @@ mod tests {
                 mutes: 0,
                 selected: 0,
                 mixer_keys: false,
-                mic_muted: false
+                mic_muted: false,
+                playing: false,
             }))
         );
         // Unknown key kinds are host keys.

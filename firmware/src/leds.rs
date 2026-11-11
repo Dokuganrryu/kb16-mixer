@@ -24,8 +24,9 @@ const BIT: u32 = 90;
 const POWER_CAP: u32 = (N as u32) * 255 * 3 * 9 / 20;
 const FADE_MS: u64 = 700;
 const RIPPLE_MS: u64 = 520;
-/// How low the lights settle once nothing has played or been touched for a while.
-const IDLE_DIM: u32 = 70; // of 255
+/// How low the lights settle once nothing has played or been touched for a while. It scales
+/// light output (after gamma), so it has to be this low to read as dimmed at full brightness.
+const IDLE_DIM: u32 = 35; // of 255
 
 const AMBER: [u8; 3] = [255, 70, 12];
 const ICE: [u8; 3] = [185, 212, 255];

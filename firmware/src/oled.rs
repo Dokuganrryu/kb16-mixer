@@ -308,6 +308,11 @@ pub async fn run(mut i2c: Bus) {
         if !ready {
             Timer::after_millis(500).await;
             ready = init(&mut i2c).await;
+            // Init switches the panel on; the sleep check below switches it off again if it
+            // should be asleep, instead of freezing the last picture on screen.
+            if ready {
+                asleep = false;
+            }
             sent.fill(0xFF);
             contrast = 0;
             continue;
@@ -320,7 +325,7 @@ pub async fn run(mut i2c: Bus) {
         let idle = now.saturating_duration_since(activity).as_millis();
         fb.top = top as i32;
 
-        // Sleep after long inactivity; any key, knob or audio wakes it.
+        // Sleep after long inactivity; any key, knob or app audio the host hears wakes it.
         let want_sleep = state::suspended() || (since_boot > SPLASH_MS && state::past(idle, off_after));
         if want_sleep != asleep {
             asleep = want_sleep;

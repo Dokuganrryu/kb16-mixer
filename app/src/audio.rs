@@ -21,6 +21,12 @@ const REFRESH_EVERY: Duration = Duration::from_millis(1500);
 /// After the pad changes a channel, Windows is not read back for this long (sessions report
 /// a new volume slightly late, which would make the knob stutter).
 const SETTLE: Duration = Duration::from_millis(1200);
+/// About -40 dBFS: quieter than this, an app does not count as playing.
+const AUDIBLE: f32 = 0.01;
+/// Sound must last this long to count (a notification ping does not)...
+const AUDIBLE_RISE: Duration = Duration::from_millis(1000);
+/// ...and silence this long to end it (the gap between two songs does not).
+const AUDIBLE_FALL: Duration = Duration::from_millis(2500);
 
 struct Session {
     pid: u32,
@@ -75,6 +81,8 @@ pub struct Mixer {
     sessions: Vec<Session>,
     exe_of: HashMap<u32, String>,
     mic: Option<Mic>,
+    /// The default output device is muted: nothing an app plays is heard.
+    output_muted: bool,
     refreshed: Option<Instant>,
     pub faders: Vec<Fader>,
     /// Apps moved by hand: exe (lowercase) -> channel name. Beats the config's app lists.
@@ -98,6 +106,7 @@ impl Mixer {
                 sessions: Vec::new(),
                 exe_of: HashMap::new(),
                 mic: None,
+                output_muted: false,
                 refreshed: None,
                 faders: Vec::new(),
                 moved: HashMap::new(),
@@ -246,6 +255,7 @@ impl Mixer {
         self.sessions = sessions;
 
         self.mic = self.open_mic();
+        self.output_muted = self.device_muted(Device::Master);
         if let (Some(c), Some(mic)) = (mic_channel(channels), &self.mic) {
             let f = &mut self.faders[c];
             if f.touched.is_none_or(|t| t.elapsed() >= SETTLE) {
@@ -320,13 +330,26 @@ impl Mixer {
         }
     }
 
-    /// Live level per channel, 0..255 on a -48..0 dB scale.
-    pub fn levels(&self, channels: &[ChannelCfg]) -> [u8; 4] {
+    /// Live level per channel for the meters, 0..255 on a -48..0 dB scale, and the loudest
+    /// app as it is really heard. Windows reports a session's peak before its volume and mute,
+    /// so the meters show what an app sends (and the Mic column the voice), while the second
+    /// value applies both, and is 0 with the output device muted.
+    pub fn levels(&self, channels: &[ChannelCfg]) -> ([u8; 4], f32) {
         let mut peak = [0f32; 4];
+        let mut heard = 0f32;
         for s in &self.sessions {
-            let (Some(c), Some(m)) = (s.channel, &s.meter) else { continue };
-            if c < 4 {
-                peak[c] = peak[c].max(unsafe { m.GetPeakValue().unwrap_or(0.0) });
+            let Some(m) = &s.meter else { continue };
+            let p = unsafe { m.GetPeakValue().unwrap_or(0.0) };
+            if let Some(c) = s.channel.filter(|&c| c < 4) {
+                peak[c] = peak[c].max(p);
+            }
+            if p > AUDIBLE && !self.output_muted {
+                let (volume, muted) = unsafe {
+                    (s.volume.GetMasterVolume().unwrap_or(1.0), s.volume.GetMute().is_ok_and(|b| b.as_bool()))
+                };
+                if !muted {
+                    heard = heard.max(p * volume);
+                }
             }
         }
         if let (Some(c), Some(Mic { meter: Some(m), .. })) = (mic_channel(channels), &self.mic) {
@@ -334,7 +357,7 @@ impl Mixer {
                 peak[c] = unsafe { m.GetPeakValue().unwrap_or(0.0) };
             }
         }
-        peak.map(to_level)
+        (peak.map(to_level), heard)
     }
 
     fn is_live(&self, channel: usize, channels: &[ChannelCfg]) -> bool {
@@ -587,6 +610,31 @@ fn assign(
     named.or_else(|| channels.iter().position(|c| matches!(c.target, ChannelTarget::Other)))
 }
 
+/// Whether programme audio is playing, for the pad's idle timers.
+#[derive(Default)]
+pub struct Audible {
+    on: bool,
+    /// When the input started to disagree with `on`.
+    since: Option<Instant>,
+}
+
+impl Audible {
+    /// Feeds the loudest heard app (from `Mixer::levels`); returns the debounced answer.
+    pub fn update(&mut self, heard: f32, now: Instant) -> bool {
+        let loud = heard >= AUDIBLE;
+        if loud == self.on {
+            self.since = None;
+        } else {
+            let since = *self.since.get_or_insert(now);
+            if now.duration_since(since) >= if loud { AUDIBLE_RISE } else { AUDIBLE_FALL } {
+                self.on = loud;
+                self.since = None;
+            }
+        }
+        self.on
+    }
+}
+
 fn to_level(peak: f32) -> u8 {
     if peak <= 0.0 {
         return 0;
@@ -606,5 +654,27 @@ pub fn pretty(exe: &str) -> String {
     match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),
         None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_sustained_sound_counts_as_playing() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut a = Audible::default();
+        assert!(!a.update(0.5, at(0)));
+        assert!(!a.update(0.5, at(600)), "a ping");
+        assert!(!a.update(0.0, at(700)));
+        assert!(!a.update(0.5, at(800)), "starts over after the gap");
+        assert!(!a.update(0.5, at(1700)));
+        assert!(a.update(0.5, at(1800)), "a second of sound");
+        assert!(a.update(0.0, at(2000)), "a pause between songs");
+        assert!(a.update(0.5, at(3000)));
+        assert!(a.update(0.005, at(3100)), "below -40 dBFS is quiet");
+        assert!(!a.update(0.0, at(5600)), "quiet long enough");
     }
 }
