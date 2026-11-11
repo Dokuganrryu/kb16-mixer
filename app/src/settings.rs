@@ -260,7 +260,7 @@ fn build(hwnd: HWND, cfg: &Config) {
         }
     }
 
-    heading(hwnd, "Knobs.  Turn for volume, press to mute. Each knob always controls the same thing.", 196);
+    heading(hwnd, "Knobs.  Turn for volume; press to turn one app in the channel on its own.", 196);
     for (i, name) in ["Small, left", "Small, right", "Big"].iter().enumerate() {
         let x = 16 + i as i32 * 190;
         label(hwnd, name, x, 218, 180);
@@ -504,7 +504,7 @@ mod tests {
         assert_eq!((cfg.screen_off_min, cfg.lights_dim_min), (0, 30));
         assert_eq!(config::raw_keys()[0][1], "ctrl+shift+d");
         // Comments and everything not edited survive.
-        assert!(text.contains("# KNOBS always do the same thing"));
+        assert!(text.contains("# KNOBS. Turn = volume."));
         assert!(text.contains("knob1 = \"Chat\"        # small knob, top left"));
         assert!(text.contains("\"Discord.exe\""));
         assert_eq!(text.lines().count(), config::DEFAULT.lines().count(), "no lines added or lost");

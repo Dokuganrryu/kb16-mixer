@@ -2,12 +2,20 @@
 //! moves the same sliders the Windows volume mixer shows. Nothing is routed or captured, and
 //! no other process is ever opened.
 //!
-//! The pad follows Windows, not the other way round: a slider moved in the Windows mixer or
-//! inside an app is picked up on the next refresh. The one rule the engine adds is that an app
-//! which starts making sound takes the level of the channel it lands in.
+//! An app is heard at `channel level x its trim` (see `trim.rs`). The rules, one each:
+//! - Windows wins. A slider moved in the Windows mixer or inside an app is picked up on the
+//!   next refresh and becomes that app's level through `trim::place`, exactly as if it had
+//!   been turned on the pad: no other app changes what it sounds like.
+//! - An app that starts making sound in a channel whose level was set on the pad takes
+//!   `level x its remembered trim` (1 for an app never turned on its own), and the channel's
+//!   mute. In a channel never set on the pad, its own level is followed instead.
+//! - Mute keys mute the whole channel and never touch a level or a trim.
+//! - Focus sits on top: it turns sessions down from their real level and puts back exactly
+//!   that level; nothing is learned from Windows while a channel is turned down.
 
 use crate::config::{ChannelCfg, ChannelTarget};
 use crate::procs::{self, Snapshot};
+use crate::trim::{self, place};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::S_OK;
@@ -21,6 +29,8 @@ const REFRESH_EVERY: Duration = Duration::from_millis(1500);
 /// After the pad changes a channel, Windows is not read back for this long (sessions report
 /// a new volume slightly late, which would make the knob stutter).
 const SETTLE: Duration = Duration::from_millis(1200);
+/// A Windows level this far from what the engine expects was moved by someone else.
+const MOVED: f32 = 0.005;
 /// About -40 dBFS: quieter than this, an app does not count as playing.
 const AUDIBLE: f32 = 0.01;
 /// Sound must last this long to count (a notification ping does not)...
@@ -95,6 +105,8 @@ pub struct Mixer {
     /// The same by exe name. Saved to disk while Focus is on; anything still in here when no
     /// Focus is active is left over from a run that ended mid-focus and gets its level back.
     pub restore: HashMap<String, f32>,
+    /// Each app's share of its channel level, by exe; missing = `trim::FULL`. Saved to disk.
+    pub trims: HashMap<String, f32>,
 }
 
 impl Mixer {
@@ -114,6 +126,7 @@ impl Mixer {
                 duck: 0.25,
                 ducked: HashMap::new(),
                 restore: HashMap::new(),
+                trims: HashMap::new(),
             })
         }
     }
@@ -204,15 +217,22 @@ impl Mixer {
                     unsafe {
                         let _ = s.volume.SetMasterVolume(level, NO_CONTEXT);
                     }
+                    // Windows reports it late; reading it back now would look like a user change.
+                    if let Some(f) = s.channel.and_then(|c| self.faders.get_mut(c)) {
+                        f.touched = Some(Instant::now());
+                    }
                 }
             }
         }
 
         // Sessions already playing tell us where Windows stands; new ones take the channel level.
         let mut adopted = vec![false; channels.len()];
+        let mut followed: HashSet<&str> = HashSet::new();
+        let mut push = vec![false; channels.len()];
         for s in &sessions {
             let Some(c) = s.channel else { continue };
             let ducked = self.is_ducked(c, channels);
+            let t = self.trim(&s.exe);
             let f = &mut self.faders[c];
             let settled = f.touched.is_none_or(|t| t.elapsed() >= SETTLE);
             let is_new = !first && !before.contains(&s.pid);
@@ -221,7 +241,7 @@ impl Mixer {
                 // mid-focus is turned down too, remembering what it should be.
                 if !self.ducked.contains_key(&s.pid) {
                     let level = if is_new && f.pinned {
-                        f.volume
+                        trim::heard(f.volume, t)
                     } else {
                         unsafe { s.volume.GetMasterVolume().unwrap_or(1.0) }
                     };
@@ -234,19 +254,54 @@ impl Mixer {
                 continue;
             }
             unsafe {
-                if is_new && (f.pinned || f.muted) {
-                    // An app joining a channel takes its dialled-in level, and its mute.
-                    if f.pinned {
-                        let _ = s.volume.SetMasterVolume(f.volume, NO_CONTEXT);
-                    }
-                    if f.muted {
-                        let _ = s.volume.SetMute(true, NO_CONTEXT);
-                    }
-                } else if settled && !adopted[c] {
-                    f.volume = s.volume.GetMasterVolume().unwrap_or(f.volume);
+                if is_new && f.muted {
+                    let _ = s.volume.SetMute(true, NO_CONTEXT);
+                }
+                if is_new && f.pinned {
+                    // An app joining a channel takes its dialled-in level times its trim.
+                    let _ = s.volume.SetMasterVolume(trim::heard(f.volume, t), NO_CONTEXT);
+                    continue;
+                }
+                if !settled {
+                    continue;
+                }
+                if !adopted[c] && !is_new {
                     f.muted = s.volume.GetMute().map(|b| b.as_bool()).unwrap_or(f.muted);
-                    f.known = true;
                     adopted[c] = true;
+                }
+                let Ok(v) = s.volume.GetMasterVolume() else { continue };
+                if !f.known {
+                    // First sight of a channel nobody has set: its level follows this app.
+                    f.volume = if t >= MOVED { (v / t).min(1.0) } else { v };
+                    f.known = true;
+                }
+                // Several sessions of one app follow the first that moved.
+                if (v - trim::heard(f.volume, t)).abs() < MOVED || !followed.insert(&s.exe) {
+                    continue;
+                }
+                let placed = place(f.volume, v);
+                let was_off = f.volume < MOVED;
+                f.volume = placed.level;
+                push[c] |= was_off && placed.level >= MOVED;
+                self.trims.insert(s.exe.clone(), placed.trim);
+                if placed.others != 1.0 {
+                    let others = sessions.iter().filter(|o| o.channel == Some(c) && o.exe != s.exe);
+                    scale_trims(&mut self.trims, others.map(|o| o.exe.as_str()), placed.others);
+                }
+                for twin in sessions.iter().filter(|o| o.exe == s.exe && o.pid != s.pid) {
+                    let _ = twin.volume.SetMasterVolume(v, NO_CONTEXT);
+                }
+            }
+        }
+        // A channel that was off came back on through one app: the rest return at their balance.
+        for (c, _) in push.iter().enumerate().filter(|(_, p)| **p) {
+            if self.is_ducked(c, channels) {
+                continue;
+            }
+            let level = self.faders[c].volume;
+            for s in sessions.iter().filter(|s| s.channel == Some(c) && !followed.contains(s.exe.as_str())) {
+                unsafe {
+                    let _ = s.volume.SetMasterVolume(trim::heard(level, self.trim(&s.exe)), NO_CONTEXT);
                 }
             }
         }
@@ -407,16 +462,82 @@ impl Mixer {
                     if !set_level {
                         continue;
                     }
-                    let heard = if ducked { f.volume * self.duck } else { f.volume };
-                    let _ = s.volume.SetMasterVolume(heard, NO_CONTEXT);
+                    let level = trim::heard(f.volume, self.trims.get(&s.exe).copied().unwrap_or(trim::FULL));
+                    let _ = s.volume.SetMasterVolume(if ducked { level * self.duck } else { level }, NO_CONTEXT);
                     if ducked {
-                        self.ducked.insert(s.pid, f.volume);
-                        self.restore.insert(s.exe.clone(), f.volume);
+                        self.ducked.insert(s.pid, level);
+                        self.restore.insert(s.exe.clone(), level);
                     }
                 }
             }
         }
         self.channel_readout(channel, channels)
+    }
+
+    fn trim(&self, exe: &str) -> f32 {
+        self.trims.get(exe).copied().unwrap_or(trim::FULL)
+    }
+
+    /// The apps making sound in a channel right now, by exe, in a stable order.
+    pub fn apps_in(&self, channel: usize) -> Vec<String> {
+        let mut apps: Vec<String> = self
+            .sessions
+            .iter()
+            .filter(|s| s.channel == Some(channel) && !s.exe.is_empty())
+            .map(|s| s.exe.clone())
+            .collect();
+        apps.sort();
+        apps.dedup();
+        apps
+    }
+
+    /// One app inside a channel, without changing it.
+    pub fn app_readout(&self, channel: usize, exe: &str) -> Readout {
+        let f = self.faders.get(channel).copied().unwrap_or_default();
+        let level = if f.known { f.volume } else { 1.0 };
+        Readout { name: pretty(exe), volume: pct(trim::heard(level, self.trim(exe))), muted: f.muted, live: true }
+    }
+
+    /// Turns one app in a channel by `delta_pct`; the rest of the channel sounds as before
+    /// (see `trim::place`). Mute is left as it is: it belongs to the whole channel.
+    pub fn change_app(&mut self, channel: usize, exe: &str, delta_pct: f32, channels: &[ChannelCfg]) -> Readout {
+        let t = self.trim(exe);
+        let ducked = self.is_ducked(channel, channels);
+        let Some(f) = self.faders.get_mut(channel) else { return self.app_readout(channel, exe) };
+        if !f.known {
+            f.volume = 1.0;
+        }
+        let was_off = f.volume < MOVED;
+        let v = (trim::heard(f.volume, t) + delta_pct / 100.0).clamp(0.0, 1.0);
+        let placed = place(f.volume, v);
+        f.volume = placed.level;
+        f.known = true;
+        f.pinned = true;
+        f.touched = Some(Instant::now());
+        let level = f.volume;
+        self.trims.insert(exe.to_string(), placed.trim);
+        if placed.others != 1.0 {
+            let others = self.sessions.iter().filter(|s| s.channel == Some(channel) && s.exe != exe);
+            scale_trims(&mut self.trims, others.map(|s| s.exe.as_str()), placed.others);
+        }
+        for s in self.sessions.iter().filter(|s| s.channel == Some(channel)) {
+            // Only a channel coming back from off moves the others (to their old balance).
+            let target = if s.exe == exe {
+                v
+            } else if was_off {
+                trim::heard(level, self.trim(&s.exe))
+            } else {
+                continue;
+            };
+            unsafe {
+                let _ = s.volume.SetMasterVolume(if ducked { target * self.duck } else { target }, NO_CONTEXT);
+            }
+            if ducked {
+                self.ducked.insert(s.pid, target);
+                self.restore.insert(s.exe.clone(), target);
+            }
+        }
+        self.app_readout(channel, exe)
     }
 
     pub fn mic_muted(&self) -> bool {
@@ -560,11 +681,12 @@ impl Mixer {
             Moved::To
         };
         self.refresh(channels, true);
-        // The app takes on the level of the channel it landed in.
+        // The app takes on the level of the channel it landed in, times its own trim.
+        let t = self.trim(&exe);
         for s in self.sessions.iter().filter(|s| s.exe == exe) {
             let Some(f) = s.channel.and_then(|c| self.faders.get(c)).filter(|f| f.pinned) else { continue };
             unsafe {
-                let _ = s.volume.SetMasterVolume(f.volume, NO_CONTEXT);
+                let _ = s.volume.SetMasterVolume(trim::heard(f.volume, t), NO_CONTEXT);
                 let _ = s.volume.SetMute(f.muted, NO_CONTEXT);
             }
         }
@@ -632,6 +754,14 @@ impl Audible {
             }
         }
         self.on
+    }
+}
+
+/// Multiplies each app's trim once, however many sessions it has.
+fn scale_trims<'a>(trims: &mut HashMap<String, f32>, apps: impl Iterator<Item = &'a str>, factor: f32) {
+    let apps: HashSet<&str> = apps.collect();
+    for app in apps {
+        *trims.entry(app.to_string()).or_insert(trim::FULL) *= factor;
     }
 }
 

@@ -3,7 +3,7 @@
 //! Files in %APPDATA%\kb16-mixer:
 //!   config.toml  what the user edits (written with defaults on first run)
 //!   apps.toml    apps moved to a channel by holding its key
-//!   state.toml   remembered channel levels and the selected channel
+//!   state.toml   remembered channel levels, per-app trims, and what Focus has turned down
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,7 +24,10 @@ screen_off_min = 10   # minutes of quiet before the pad's screen turns off (0 = 
 lights_dim_min = 10   # minutes of quiet before the key lights dim (0 = never)
 mixer_keys = true     # false = keys type 1-0/arrows as usual; lights and knobs stay the mixer
 
-# KNOBS always do the same thing, no modes. Turn = volume, press = mute.
+# KNOBS. Turn = volume. Press to step through the apps playing in the knob's channel and
+# turn just that one (Spotify but not the browser); press on to get back to the whole
+# channel, or leave the knob alone for 8 seconds. An app keeps its place in the mix when the
+# whole channel is turned. Mute is on the bottom row of keys.
 # Each is a channel name, or "master", "mic", "focused" (whatever app is in front).
 [knobs]
 knob1 = "Chat"        # small knob, top left
@@ -549,6 +552,9 @@ pub struct Saved {
     /// Focus starts, so even if the PC is switched off mid-focus they get their level back.
     #[serde(default)]
     pub restore: HashMap<String, f32>,
+    /// Apps turned on their own inside a channel: exe -> share of the channel level (0..1).
+    #[serde(default)]
+    pub trims: HashMap<String, f32>,
 }
 
 pub fn load_state() -> Saved {

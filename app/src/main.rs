@@ -12,6 +12,7 @@ mod config;
 mod pad;
 mod procs;
 mod settings;
+mod trim;
 
 use audio::{Audible, Device, Mixer, Moved, Readout};
 use config::{Config, KeyAction, KnobBinding, Saved};
@@ -179,6 +180,8 @@ fn worker(
     // What each key meant when it went down, so its release does the matching thing even
     // after the page changed underneath it.
     let mut held: [[Option<KeyAction>; 4]; 4] = [[None; 4]; 4];
+    // What each knob is aimed at: its channel, or for a few seconds one app in it.
+    let mut aims: [trim::Aim; 3] = Default::default();
 
     loop {
         let every = if last_active.elapsed() < STAY_ACTIVE { FRAME } else { IDLE_FRAME };
@@ -204,6 +207,8 @@ fn worker(
             mixer.moved = config::load_apps();
             mixer.duck = cfg.duck;
             mixer.restore = saved.restore.clone();
+            mixer.trims = saved.trims.clone();
+            aims = Default::default();
             focus_key = None;
             page = 0;
             page_key = None;
@@ -214,7 +219,7 @@ fn worker(
 
         // Coalesce: a fast spin becomes one change per knob.
         let mut turns = [0i32; 3];
-        let mut presses = [false; 3];
+        let mut presses = [0usize; 3];
         let mut keys = Vec::new();
         let mut released = Vec::new();
         let mut let_go = false; // undo everything temporary (pad gone, app closing)
@@ -226,7 +231,7 @@ fn worker(
         for e in batch {
             match e {
                 PadEvent::Turn { knob, delta } if knob < 3 => turns[knob as usize] += delta,
-                PadEvent::Press { knob } if knob < 3 => presses[knob as usize] ^= true,
+                PadEvent::Press { knob } if knob < 3 => presses[knob as usize] += 1,
                 PadEvent::Key { row, col } => keys.push((row, col as usize)),
                 PadEvent::KeyUp { row, col } => released.push((row as usize, col as usize)),
                 PadEvent::Shutdown => {
@@ -365,27 +370,46 @@ fn worker(
             }
         }
         for knob in 0..3 {
-            if turns[knob] == 0 && !presses[knob] {
+            if turns[knob] == 0 && presses[knob] == 0 {
                 continue;
             }
             let binding = cfg.knobs[knob];
-            let mut act = |delta: Option<f32>| match binding {
-                KnobBinding::Selected => {
-                    mixer.change_channel(mixer.focus().unwrap_or_else(|| cfg.default_selected()), delta, channels)
-                }
-                KnobBinding::Channel(c) if c < n => mixer.change_channel(c, delta, channels),
-                KnobBinding::Master => mixer.change_device(Device::Master, delta),
-                KnobBinding::Mic => mixer.change_device(Device::Mic, delta),
-                _ => mixer.change_focused(delta),
+            let delta = turns[knob] as f32 * cfg.step;
+            let channel = match binding {
+                KnobBinding::Selected => Some(mixer.focus().unwrap_or_else(|| cfg.default_selected())),
+                KnobBinding::Channel(c) if c < n => Some(c),
+                _ => None,
             };
-            if presses[knob] {
-                popup = show(act(None));
+            let Some(c) = channel else {
+                // Master, mic or the app in front: a press only shows the level (a zero step
+                // changes nothing); mute lives on the keys.
+                let mut act = |delta: f32| match binding {
+                    KnobBinding::Master => mixer.change_device(Device::Master, Some(delta)),
+                    KnobBinding::Mic => mixer.change_device(Device::Mic, Some(delta)),
+                    _ => mixer.change_focused(Some(delta)),
+                };
+                popup = show(act(if turns[knob] != 0 { delta } else { 0.0 }));
+                if binding == KnobBinding::Mic {
+                    mic_checked = None;
+                }
+                continue;
+            };
+            // A press steps the knob from the whole channel through each app playing in it.
+            let live = mixer.apps_in(c);
+            let now = Instant::now();
+            for _ in 0..presses[knob] {
+                popup = match aims[knob].step(c, &live, now) {
+                    trim::Step::Channel => show(mixer.channel_readout(c, channels)),
+                    trim::Step::App(exe) => show(mixer.app_readout(c, &exe)),
+                    trim::Step::NoApps => notice(format!("No app in {}", clip(&channels[c].name, 6))),
+                };
             }
             if turns[knob] != 0 {
-                popup = show(act(Some(turns[knob] as f32 * cfg.step)));
-            }
-            if binding == KnobBinding::Mic {
-                mic_checked = None;
+                popup = match aims[knob].app(c, &live, now).map(str::to_string) {
+                    Some(exe) => show(mixer.change_app(c, &exe, delta, channels)),
+                    None => show(mixer.change_channel(c, Some(delta), channels)),
+                };
+                aims[knob].touch(now);
             }
         }
 
@@ -398,6 +422,12 @@ fn worker(
                 .zip(&mixer.faders)
                 .filter(|(_, f)| f.pinned)
                 .map(|(c, f)| (c.name.clone(), (f.volume * 100.0).round() / 100.0))
+                .collect(),
+            trims: mixer
+                .trims
+                .iter()
+                .filter(|(_, t)| **t < 0.999)
+                .map(|(exe, t)| (exe.clone(), (t * 1000.0).round() / 1000.0))
                 .collect(),
         };
         if now_state != saved {
