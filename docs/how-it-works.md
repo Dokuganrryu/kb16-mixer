@@ -1,0 +1,228 @@
+# How it works
+
+This document describes the architecture of kb16-mixer.
+It also gives the volume rules, and lists what the app touches in Windows and what it never touches.
+
+## Overview
+
+```text
+ +-------------------- pad --------------------+          +----------------------- PC -----------------------+
+ |                                             |   USB    |                                                  |
+ |  keys, knobs --> firmware --+-- keyboard ---+--------->+--> Windows (built-in HID driver) --> any program |
+ |                             +-- media keys -+--------->+--> Windows (built-in HID driver)                 |
+ |                             |               |          |                                                  |
+ |  lights, screen <-----------+-- raw HID ----+<-------->+--> kb16-mixer.exe --> Windows Core Audio         |
+ |                                             |          |                      (sliders and mute switches  |
+ +---------------------------------------------+          |                       of the volume mixer)       |
+                                                          +--------------------------------------------------+
+```
+
+The pad is one USB device with three HID interfaces:
+
+| Interface | Direction | Purpose |
+|---|---|---|
+| Keyboard (boot protocol, 6 keys) | pad to PC | Typed keys: F13–F24, letters, digits, shortcuts, and all keys in keyboard mode |
+| Consumer control (media keys) | pad to PC | Play/Pause, Next, Previous, Stop, and the volume and mute keys of keyboard mode |
+| Raw HID (usage page `0xFF60`) | both | Messages between the firmware and the app. See [protocol.md](protocol.md). |
+
+Windows uses its built-in HID driver for all three interfaces. The project has no driver.
+
+## Two modes of the pad
+
+| Mode | When | Keys | Knobs | Lights |
+|---|---|---|---|---|
+| Mixer mode | The app sent a message in the last 3 seconds | As set on the current page | Send turns and presses to the app | Level meters of the channels |
+| Keyboard mode | No message from the app for 3 seconds | Fixed keyboard layout (see [configuration.md](configuration.md#keyboard-mode)) | Fixed media keys | Slow white light |
+
+The app sends a heartbeat message each second when it has nothing else to send. Thus the pad stays in mixer mode while the app runs.
+If you close the app or select **Pause** in the tray menu, the pad goes back to keyboard mode after 3 seconds.
+
+In mixer mode, `mixer_keys = false` in the config file gives the keys their keyboard-mode layout. The knobs and lights stay in mixer mode.
+
+## The three crates
+
+| Crate | Folder | Target | Purpose |
+|---|---|---|---|
+| `kb16-mixer-protocol` | `protocol/` | any (`no_std`) | The wire format of the raw HID messages, and the version format. Both other crates use it. |
+| `kb16-mixer-firmware` | `firmware/` | `thumbv7m-none-eabi` | The firmware of the pad, written with Embassy |
+| `kb16-mixer` | `app/` | Windows | The tray app |
+
+## Firmware tasks
+
+| Task | Rate | Work |
+|---|---|---|
+| `keys::scan` | 1 kHz | Scans the 4 x 5 key matrix (5 ms debounce) and the 3 knobs. Watches the four corner keys. |
+| `input` | on each event | Sends a key or knob event as a keyboard report, a media key report, or a raw HID message |
+| `host_rx` | on each message | Reads raw HID messages from the app, updates the shared state, and saves a new logo name |
+| `usb_task` | continuous | Runs the USB device |
+| `leds::run` | 200 Hz | Calculates the key lights and sends the data to the 16 WS2812 LEDs |
+| `oled::run` | approximately 30 Hz | Draws the screen and sends a frame over I2C with DMA, only when the frame changed |
+| `watchdog` | 4 Hz | Feeds the watchdog. Marks the firmware as healthy after 10 seconds. |
+
+A key that types (a `Keyboard` or `Media` key) goes from the pad directly to Windows. The app does not see it.
+A mixer key (`mute`, `focus`, `talk`, `move`, `page`, `open:`) goes to the app as a raw HID message.
+
+The firmware keeps only the key table of the current page. When the page changes, the app sends the key table of the new page.
+The firmware remembers the action of each key at the time of the press. The release then always matches the press, also if the page changed in between.
+
+When the USB bus is suspended (the PC sleeps or is off), the lights and the screen go off.
+
+### Screens
+
+| Screen | When |
+|---|---|
+| Logo with the name (default `KB16`) | For 1.8 seconds after start, in keyboard mode, and in mixer mode after 45 seconds without activity |
+| Mixer screen: one column for each channel (name, live meter, volume bar, value or `MUTE`) | In mixer mode |
+| Readout: a name, a value and a bar | For 1.3 seconds after a knob turn, a knob press or a mute |
+| Notice: text only (for example `MIXER`, `KEYS`, `Focus Chat`, `Open failed`) | For 1.3 seconds |
+
+On the mixer screen, a line under the names means that the microphone is muted.
+A short vertical mark at the right edge means that page 2 is active.
+
+## Idle rule
+
+The screen goes off and the key lights dim after a number of minutes without activity (`screen_off_min`, `lights_dim_min`).
+Activity is one of these:
+
+- A key press or a knob turn.
+- A readout or a notice on the screen.
+- Audible sound, as the app decides it (frame flag bit 2).
+
+The app decides that sound is audible when all of these are true:
+
+- A program plays above approximately −40 dBFS, after its own volume and mute. The microphone does not count.
+- The sound continues for at least 1 second. A short notification sound does not count.
+- The default output device is not muted.
+
+The audible state ends after 2.5 seconds of quiet. Thus a short pause between two songs does not end it.
+The meters always show the raw levels, before the volume and mute of each program.
+
+## App threads
+
+| Thread | Work |
+|---|---|
+| Main thread | Tray icon, tray menu, settings window and its dialogs (Win32 message loop) |
+| Pad listener | Waits for raw HID messages from the pad and passes them to the worker. It reconnects when the pad is connected again. It also reads the firmware version from the device list. |
+| Worker | Changes the volume and mute in Windows. Sends frames, settings, names, the logo name and the key table to the pad. Saves the state. It is the only writer of `apps.toml`. |
+| Open thread | One short thread for each `open:` key press. It starts the target, so that a slow target does not stop the worker. |
+
+The listener and the worker each open a handle to the raw HID interface. The listener reads. The worker writes.
+The settings window asks the worker for the list of programs, and asks it to undo a move.
+
+The worker sends a frame (levels, volumes, mutes, flags) approximately 30 times per second while sound plays or a control moves.
+After 3 seconds without sound or input, it sends a frame 5 times per second. It sends a frame only when the frame changed.
+It reads the volume state of Windows again every 1.5 seconds.
+It sends the settings, names, logo name and key table on connect, after a config change, and every 30 seconds.
+
+## What travels over raw HID
+
+| Direction | Contents |
+|---|---|
+| App to pad | Live frame: level of each channel, volume of each channel, mute bits, the channel that has Focus, and flags (mixer keys, microphone muted, audible sound, page 2) |
+| App to pad | Settings: number of channels, channel colors, light brightness, screen offset, idle minutes |
+| App to pad | Channel names (6 bytes each), the logo name (10 bytes), popups for the screen, the key table, heartbeat |
+| App to pad | The bootloader command |
+| Pad to app | Knob turn (one detent), knob press, mixer key press, mixer key release |
+
+Typed keys do not travel over raw HID. The app never sends key presses.
+See [protocol.md](protocol.md) for the byte layout.
+
+## Volume rules
+
+A program plays at **channel level x trim**.
+The trim is a number from 0 to 1 for each program. The default is 1. The app saves the trims in `state.toml`, by program name.
+The source of these rules is the comments at the top of `app/src/audio.rs` and in `app/src/trim.rs`.
+
+### The channel knob
+
+A turn of a knob on the whole channel changes only the channel level. The trims do not change.
+Thus the balance between the programs stays, also at 0 % and at 100 %.
+
+### One program
+
+A knob press can select one program in the channel. A turn then changes only that program. The other programs keep their sound:
+
+| New level of the program | Result |
+|---|---|
+| At or below the channel level | Only the trim of that program changes. |
+| Above the channel level | The channel level goes up to the new level. The trim of that program becomes 1. The trims of the other programs go down by the same factor, so that they keep their sound. |
+| Any level, on a channel that was off (0 %) | The channel level becomes the new level. The other trims do not change, so the other programs come back at their old balance. |
+
+The list of programs contains each program that has an audio session in the channel, in the order of the program name.
+After 8 seconds without a touch on the knob, or when the selected program stops, the knob goes back to the whole channel.
+If the channel has no program, the screen shows `No app in <channel>`.
+
+A knob on `master`, `mic` or `focused` has no program list. A press shows only the level.
+
+### Changes in Windows
+
+Windows wins. If you move a slider in the Windows volume mixer or in a program, the app finds the change at the next refresh.
+The app then applies the same rule as for a change of one program on the pad. No other program changes its sound.
+If a program has more than one session, the other sessions follow the first session that moved.
+
+### Programs that start later
+
+When a program starts to play in a channel, and you set the level of that channel on the pad, the program gets **channel level x its saved trim**.
+It also gets the mute of the channel.
+In a channel that you never set on the pad, the app follows the level of the program instead.
+
+### Mute and Focus
+
+- A Mute key mutes the whole channel. It never changes a level or a trim.
+- A turn up on a muted channel unmutes it. A turn up never unmutes the microphone.
+- Focus turns the sessions of the other channels down from their real level. When Focus stops, each session gets exactly that level back.
+- While Focus turns a channel down, the app learns nothing from Windows for that channel.
+- The microphone channel is never turned down.
+- The app writes the original levels to `state.toml` at once. If the app stops while Focus is on, it restores those levels at the next start.
+
+## Channels and programs
+
+The app gives each audio session to one channel:
+
+1. A program that you moved with the Move key goes to the channel that you moved it to.
+2. Otherwise, the first channel that names the program in `apps` gets it.
+3. A channel with `target = "focused"` gets the sessions of the foreground program and of its child processes.
+4. A channel with `target = "other"` gets all remaining sessions.
+5. A session that matches no channel is not controlled by a channel.
+
+The settings window shows the programs of each channel with the same rule.
+
+An audio session is what Windows shows as one slider in the volume mixer. Windows makes one session for each process that plays sound.
+Thus all tabs of one browser share one slider, and the app cannot change two tabs separately.
+The app skips the "System Sounds" session.
+
+## What the app touches in Windows
+
+| Item | API | Read or write |
+|---|---|---|
+| Volume and mute of each audio session (one slider in the volume mixer) | Core Audio `ISimpleAudioVolume` | Read and write |
+| Peak level of each audio session (for the meters and the idle rule) | Core Audio `IAudioMeterInformation` | Read |
+| Level and mute of the default communications microphone | Core Audio `IAudioEndpointVolume` | Read and write |
+| Level and mute of the default output device (write only for a knob set to `master`) | Core Audio `IAudioEndpointVolume` | Read and write |
+| Names of running programs, and their parent process | Toolhelp process snapshot (`CreateToolhelp32Snapshot`) | Read |
+| The process of the foreground window (for `focused` and Move) | `GetForegroundWindow`, `GetWindowThreadProcessId` | Read |
+| The pad, through its raw HID interface, and its USB release number | hidapi | Read and write |
+| The target of an `open:` key | `ShellExecuteExW` with the verb "open" | Starts it, as a double-click in Explorer does |
+| Files that you select with **Browse...** in a dialog | The standard Windows file dialog | Read the path only |
+| `config.toml`, `apps.toml`, `state.toml`, `log.txt`, `selftest.txt` in the settings folder | File system | Read and write |
+| The value `kb16-mixer` in `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` (Start with Windows) | Registry | Read and write. Never written when `KB16_MIXER_DIR` is set. |
+| Notepad and Explorer, when you click **Open config file** or **Open settings folder** | Process start | Starts them |
+
+An `open:` key does not ask for administrator rights (no elevation). The app does not keep a handle to the started process.
+If the start fails, the pad shows `Open failed`, and the app writes a line to `log.txt`.
+
+## What the app never touches
+
+- It does not route, capture or record audio.
+- It does not create virtual audio devices.
+- It does not install or load a driver.
+- It does not use keyboard hooks or mouse hooks.
+- It does not inject input. It never sends key presses or mouse movements.
+- It does not open, read or write other processes. It gets program names from the Toolhelp snapshot only, and opens no process handle.
+- It does not connect to the network.
+
+The app uses no API from the keyboard and mouse module of Windows (`Win32_UI_Input_KeyboardAndMouse`).
+That feature of the `windows` crate is not enabled, and a test in `app/src/main.rs` makes sure that it stays off.
+
+The shortcut dialog of the settings window reads keys only from its own box, while that box has the keyboard focus.
+It reads the normal window messages of that box. It uses no hook, no raw input and no key-state polling.
