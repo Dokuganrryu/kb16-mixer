@@ -1,5 +1,5 @@
 //! Crash log in a spare flash page (0x0801F800), readable over DFU upload after the firmware
-//! dies. Entries are 16-bit words.
+//! dies. Entries are 16-bit words. The flash routines here also keep the logo name (name.rs).
 //!
 //! Always on: `crash()` appends panic / hard-fault details.
 //! With the `diag` cargo feature: the page is erased at every boot and `log()` records how far
@@ -39,28 +39,38 @@ unsafe fn unlock() {
     }
 }
 
-fn erase() {
+/// Erases the 1 KB flash page at `page`. The CPU stalls for ~20 ms while it runs.
+pub fn erase_page(page: usize) {
     cortex_m::interrupt::free(|_| unsafe {
         unlock();
         settle();
         FLASH_CR.write_volatile(CR_PER);
-        FLASH_AR.write_volatile(LOG as u32);
+        FLASH_AR.write_volatile(page as u32);
         FLASH_CR.write_volatile(CR_PER | CR_STRT);
         settle();
         FLASH_CR.write_volatile(0);
     });
 }
 
-/// Appends one word after the last used entry.
-fn append(v: u16) {
+/// Writes `words` from `addr` on, which must be erased.
+pub fn program(addr: usize, words: &[u16]) {
     cortex_m::interrupt::free(|_| unsafe {
-        let Some(i) = (0..ENTRIES).find(|&i| slot(i).read_volatile() == BLANK) else { return };
         unlock();
         settle();
         FLASH_CR.write_volatile(CR_PG);
-        slot(i).write_volatile(v);
-        settle();
+        for (i, &w) in words.iter().enumerate() {
+            ((addr + i * 2) as *mut u16).write_volatile(w);
+            settle();
+        }
         FLASH_CR.write_volatile(0);
+    });
+}
+
+/// Appends one word after the last used entry.
+fn append(v: u16) {
+    cortex_m::interrupt::free(|_| {
+        let Some(i) = (0..ENTRIES).find(|&i| unsafe { slot(i).read_volatile() } == BLANK) else { return };
+        program(LOG + i * 2, &[v]);
     });
 }
 
@@ -69,7 +79,7 @@ pub fn init() {
     // (those begin with a 0x01xx stage marker), so crash entries accumulate.
     let first = unsafe { slot(0).read_volatile() };
     if cfg!(feature = "diag") && first != BLANK || first & 0xFF00 == 0x0100 {
-        erase();
+        erase_page(LOG);
     }
 }
 

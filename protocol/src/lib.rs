@@ -16,6 +16,7 @@
 //!   [D1 22 name0[6] .. name3[6]]                   channel names
 //!   [D1 23 first (kind a b) x8]                    what 8 keys do, starting at key `first`
 //!                                                  (key = row * 4 + col); see `Key`
+//!   [D1 24 name[10]]                               name on the logo screen, zero-padded
 //!   [D1 7F 'B' 'O' 'O' 'T']                        restart into the bootloader
 //! pad -> host
 //!   [D1 01 knob delta]   knob turned          [D1 02 knob 0]    knob pressed
@@ -49,6 +50,8 @@ pub const KEYS_PER_REPORT: usize = 8;
 pub const NAME_LEN: usize = 6;
 /// Bytes of popup text.
 pub const POPUP_LEN: usize = 16;
+/// Bytes of the name on the logo screen.
+pub const LOGO_NAME_LEN: usize = 10;
 /// Popup volume value that means "just show the text".
 pub const NOTICE: u8 = 255;
 /// Idle-minutes value that means "never".
@@ -66,6 +69,7 @@ pub mod id {
     pub const FRAME: u8 = 0x21;
     pub const NAMES: u8 = 0x22;
     pub const KEYS: u8 = 0x23;
+    pub const LOGO_NAME: u8 = 0x24;
     pub const BOOTLOADER: u8 = 0x7F;
 }
 
@@ -182,6 +186,8 @@ pub enum HostMsg {
     Frame(Frame),
     Names([[u8; NAME_LEN]; CHANNELS]),
     Keys(Keys),
+    /// The name the logo screen shows (the pad keeps it across power cycles).
+    LogoName([u8; LOGO_NAME_LEN]),
     Bootloader,
     /// An id this side does not know; it still shows the host is there.
     Unknown(u8),
@@ -229,6 +235,10 @@ impl HostMsg {
                 for (i, key) in k.keys.iter().enumerate() {
                     r[3 + i * 3..6 + i * 3].copy_from_slice(&key.encode());
                 }
+            }
+            HostMsg::LogoName(name) => {
+                r[1] = id::LOGO_NAME;
+                r[2..2 + LOGO_NAME_LEN].copy_from_slice(name);
             }
             HostMsg::Bootloader => {
                 r[1] = id::BOOTLOADER;
@@ -298,6 +308,11 @@ impl HostMsg {
                     *k = Key::decode(&r[3 + i * 3..6 + i * 3]);
                 }
                 HostMsg::Keys(Keys { first: r[2], keys })
+            }
+            id::LOGO_NAME => {
+                let mut name = [0u8; LOGO_NAME_LEN];
+                name.copy_from_slice(&r[2..2 + LOGO_NAME_LEN]);
+                HostMsg::LogoName(name)
             }
             id::BOOTLOADER if &r[2..6] == BOOT => HostMsg::Bootloader,
             id::BOOTLOADER => return None,
@@ -371,6 +386,7 @@ mod tests {
         host_roundtrip(HostMsg::Bootloader);
         host_roundtrip(HostMsg::Unknown(0x55));
         host_roundtrip(HostMsg::Names([*b"MIC   ", *b"CHAT\0\0", *b"GAME  ", *b"MEDIA "]));
+        host_roundtrip(HostMsg::LogoName(*b"DESK PC\0\0\0"));
         host_roundtrip(HostMsg::Popup(Popup { knob: 2, volume: NOTICE, muted: true, name: *b"Config error\0\0\0\0" }));
         host_roundtrip(HostMsg::Settings(Settings {
             channels: 4,
@@ -469,6 +485,10 @@ mod tests {
         let k = HostMsg::Keys(Keys { first: 8, keys }).encode();
         assert_eq!(&k[..9], &[0xD1, 0x23, 8, 1, 0x68, 2, 2, 0xB5, 0xB6]);
         assert_eq!(&k[24..27], &[3, 0, 0]);
+
+        let l = HostMsg::LogoName(*b"KB16\0\0\0\0\0\0").encode();
+        assert_eq!(&l[..7], &[0xD1, 0x24, b'K', b'B', b'1', b'6', 0]);
+        assert!(l[7..].iter().all(|&b| b == 0));
 
         assert_eq!(&PadMsg::Turn { knob: 1, delta: -1 }.encode()[..4], &[0xD1, 0x01, 1, 0xFF]);
         assert_eq!(&PadMsg::Press { knob: 2 }.encode()[..4], &[0xD1, 0x02, 2, 0]);

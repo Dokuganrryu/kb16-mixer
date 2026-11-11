@@ -17,6 +17,7 @@ mod diag;
 mod font;
 mod keys;
 mod leds;
+mod name;
 mod oled;
 mod state;
 
@@ -192,9 +193,13 @@ async fn host_rx(mut rx: hid::HidReader<'static, UsbDriver, 32>) {
                     first_report = true;
                     diag::log(0x5100);
                 }
-                if state::handle_report(&buf[..n]) {
-                    Timer::after_millis(20).await;
-                    state::enter_bootloader();
+                match state::handle_report(&buf[..n]) {
+                    state::After::Nothing => {}
+                    state::After::Bootloader => {
+                        Timer::after_millis(20).await;
+                        state::enter_bootloader();
+                    }
+                    state::After::SaveName(n) => name::save(&n),
                 }
             }
             Err(_) => Timer::after_millis(50).await,
@@ -345,6 +350,7 @@ async fn main(spawner: Spawner) {
     diag::init();
     diag::log(0x0100);
     state::boot_guard();
+    state::with(|s| s.logo_name = name::load());
     diag::log(0x0200);
     bootmagic();
     diag::log(0x0300);

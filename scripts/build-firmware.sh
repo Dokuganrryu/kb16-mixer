@@ -58,7 +58,7 @@ assert 0x08002000 < reset < 0x08020000, 'reset vector %#x is outside the app reg
 # and the first interrupt would hang the chip.
 for name, irq in (('TIM2', 28), ('USB_LP_CAN1_RX0', 20), ('I2C2_EV', 33), ('DMA1_CHANNEL4', 14)):
     assert v[16 + irq] != default, name + ' interrupt has no handler (DefaultHandler)'
-assert len(b) < 0x1D800, 'image overlaps the crash-log page'
+assert len(b) <= 0x1D400, 'image overlaps the logo-name page (and the crash log after it)'
 print('%d bytes, vectors OK' % len(b))
 " "$OUT.tmp" "$DEFAULT" || { rm -f "$OUT.tmp"; echo "IMAGE REJECTED" >&2; exit 1; }
 mv "$OUT.tmp" "$OUT" && echo "wrote $OUT"

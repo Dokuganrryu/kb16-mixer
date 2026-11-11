@@ -4,7 +4,7 @@
 //! The case hides the panel's top rows, so every screen is laid out for `ROWS` visible rows
 //! and drawn `top` pixels lower (set from the PC app's config, default 3).
 
-use crate::assets::{BIG_COLS, BIG_OFF, LOGO, LOGO_W, SIN};
+use crate::assets::{BIG_COLS, BIG_OFF, LOGO_CHARS, LOGO_COLS, LOGO_GAP, LOGO_OFF, SIN};
 use crate::font::FONT5X7;
 use crate::state::{self, Mixer, NCH, Popup};
 use embassy_stm32::i2c::{I2c, Master};
@@ -32,6 +32,11 @@ struct Fb {
 impl Fb {
     fn clear(&mut self) {
         self.buf[1..].fill(0);
+    }
+
+    fn get(&self, x: i32, y: i32) -> bool {
+        let y = y + self.top;
+        (0..W).contains(&x) && (0..H).contains(&y) && self.buf[1 + (y / 8 * W + x) as usize] & 1 << (y % 8) != 0
     }
 
     fn px(&mut self, x: i32, y: i32, on: bool) {
@@ -105,6 +110,18 @@ impl Fb {
     }
 }
 
+/// A logo-font letter; characters it lacks are skipped.
+fn logo_glyph(c: u8) -> &'static [[u8; 4]] {
+    match LOGO_CHARS.iter().position(|&l| l == c) {
+        Some(i) => &LOGO_COLS[LOGO_OFF[i] as usize..LOGO_OFF[i + 1] as usize],
+        None => &[],
+    }
+}
+
+fn logo_width(s: &[u8]) -> i32 {
+    s.iter().map(|&c| logo_glyph(c).len() as i32 + LOGO_GAP).sum::<i32>() - LOGO_GAP
+}
+
 fn glyph(c: u8) -> &'static [[u8; 2]] {
     let i = (c.clamp(32, 126) - 32) as usize;
     &BIG_COLS[BIG_OFF[i] as usize..BIG_OFF[i + 1] as usize]
@@ -131,31 +148,54 @@ fn percent(v: u8, out: &mut [u8; 4]) -> &[u8] {
     &out[..n + 2]
 }
 
-/// The name, with a light streak crossing it every few seconds and a slow wave beneath.
-/// `reveal` (0..=128) wipes it in during the boot splash.
-fn draw_logo(fb: &mut Fb, ms: u64, reveal: i32) {
-    let x0 = (W - LOGO_W as i32) / 2;
-    let streak = (ms % 5200) as i32 / 5 - 30; // crosses during the first ~900 ms of each cycle
-    for (cx, col) in LOGO.iter().enumerate() {
-        let x = x0 + cx as i32;
-        if x > reveal {
-            break;
-        }
-        for (page, &byte) in col.iter().enumerate() {
-            for bit in 0..8 {
-                if byte & (1 << bit) == 0 {
-                    continue;
+/// The name in the logo letters, centred, with a light streak crossing it every few seconds
+/// and a slow wave beneath. A name too wide for the logo letters uses the big font, and one
+/// too wide even for that loses letters from the end. `reveal` (0..=128) wipes it in during
+/// the boot splash.
+fn draw_logo(fb: &mut Fb, ms: u64, reveal: i32, name: &[u8]) {
+    let name = trimmed(name);
+    if logo_width(name) <= W {
+        let mut x = (W - logo_width(name)) / 2;
+        for &ch in name {
+            for col in logo_glyph(ch) {
+                let bits = u32::from_le_bytes(*col);
+                for y in 0..32 {
+                    if bits & 1 << y != 0 {
+                        fb.px(x, y, true);
+                    }
                 }
-                let y = (page * 8 + bit) as i32;
-                let d = x - streak - y / 2;
-                fb.px(x, y, !((0..4).contains(&d) || d == 6));
+                x += 1;
+            }
+            x += LOGO_GAP;
+        }
+    } else {
+        let mut n = name.len();
+        while n > 0 && Fb::big_width(&name[..n]) > W {
+            n -= 1;
+        }
+        fb.big((W - Fb::big_width(&name[..n])) / 2, 4, &name[..n]);
+    }
+    let streak = (ms % 5200) as i32 / 5 - 30; // crosses during the first ~900 ms of each cycle
+    for y in 0..H {
+        for x in 0..W {
+            let d = x - streak - y / 2;
+            if ((0..4).contains(&d) || d == 6) && fb.get(x, y) {
+                fb.px(x, y, false);
             }
         }
     }
+    // The wave breaks where a letter reaches down into it (J, Q).
+    let low: [bool; W as usize] = core::array::from_fn(|x| (24..30).any(|y| fb.get(x as i32, y)));
     let t = (ms / 18) as u32;
-    for x in 0..W.min(reveal + 1) {
+    for x in 0..W {
+        if (x - 1..=x + 1).any(|cx| low.get(cx as usize).copied().unwrap_or(false)) {
+            continue;
+        }
         let a = SIN[((x as u32 * 4 + t) & 0xFF) as usize] as i32;
         fb.px(x, 25 + a * 3 / 255, true);
+    }
+    if reveal < W - 1 {
+        fb.rect(reveal.max(-1) + 1, 0, W - 1, H - 1, false);
     }
 }
 
@@ -324,8 +364,9 @@ pub async fn run(mut i2c: Bus) {
         let now = Instant::now();
         let ms = now.as_millis();
         let since_boot = now.saturating_duration_since(boot).as_millis();
-        let (alive, mixer, popup, activity, top, off_after) =
-            state::with(|s| (s.host_alive(now), s.mixer, s.popup, s.activity, s.oled_top, s.screen_off_min));
+        let (alive, mixer, popup, activity, top, off_after, name) = state::with(|s| {
+            (s.host_alive(now), s.mixer, s.popup, s.activity, s.oled_top, s.screen_off_min, s.logo_name)
+        });
         let idle = now.saturating_duration_since(activity).as_millis();
         fb.top = top as i32;
 
@@ -352,7 +393,7 @@ pub async fn run(mut i2c: Bus) {
         fb.clear();
         let popup = popup.filter(|p| alive && now.saturating_duration_since(p.at).as_millis() < POPUP_MS);
         let calm = if since_boot < SPLASH_MS {
-            draw_logo(&mut fb, ms, (since_boot * 160 / 900) as i32);
+            draw_logo(&mut fb, ms, (since_boot * 160 / 900) as i32, &name);
             false
         } else if let Some(p) = popup {
             let target = p.volume.min(100) as u32 * 10;
@@ -370,7 +411,7 @@ pub async fn run(mut i2c: Bus) {
             draw_mixer(&mut fb, &mixer, &peaks);
             false
         } else {
-            draw_logo(&mut fb, ms, W);
+            draw_logo(&mut fb, ms, W, &name);
             true
         };
         popup_open = popup.is_some();

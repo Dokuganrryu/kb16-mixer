@@ -473,6 +473,7 @@ fn worker(
             let colors: Vec<[u8; 3]> = channels.iter().map(|c| c.color).collect();
             link.send(&pad::settings_message(&colors, &cfg));
             link.send(&pad::names_message(channels.iter().map(|c| c.name.as_str())));
+            link.send(&pad::logo_name_message(&cfg.name));
             for m in pad::key_messages(&cfg.pages[page]) {
                 link.send(&m);
             }

@@ -7,7 +7,7 @@ use embassy_stm32::pac;
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Duration, Instant};
-use kb16_mixer_protocol::{HostMsg, Key, NEVER, NOTICE};
+use kb16_mixer_protocol::{HostMsg, Key, LOGO_NAME_LEN, NEVER, NOTICE};
 
 pub const NCH: usize = kb16_mixer_protocol::CHANNELS;
 const HOST_TIMEOUT: Duration = Duration::from_millis(3000);
@@ -70,6 +70,8 @@ pub struct State {
     pub keys: [Key; 16],
     pub ripples: [Option<Ripple>; RIPPLES],
     ripple_next: usize,
+    /// What the logo screen shows (loaded from flash at boot).
+    pub logo_name: [u8; LOGO_NAME_LEN],
 }
 
 impl State {
@@ -98,6 +100,7 @@ impl State {
             keys: [Key::Host; 16],
             ripples: [None; RIPPLES],
             ripple_next: 0,
+            logo_name: crate::name::DEFAULT,
         }
     }
 
@@ -129,13 +132,22 @@ pub fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     STATE.lock(|s| f(&mut s.borrow_mut()))
 }
 
-/// Applies one report from the host. Returns true if the host asked for the bootloader.
-pub fn handle_report(r: &[u8]) -> bool {
-    let Some(msg) = HostMsg::decode(r) else { return false };
+/// What the report task has to do after a report, outside the state lock.
+pub enum After {
+    Nothing,
+    Bootloader,
+    /// Keep this logo name in flash (it may already be there).
+    SaveName([u8; LOGO_NAME_LEN]),
+}
+
+/// Applies one report from the host.
+pub fn handle_report(r: &[u8]) -> After {
+    let Some(msg) = HostMsg::decode(r) else { return After::Nothing };
     if msg == HostMsg::Bootloader {
-        return true;
+        return After::Bootloader;
     }
     let now = Instant::now();
+    let mut after = After::Nothing;
     with(|s| {
         // A host that comes back starts from silence, not from what it said last time.
         if !s.host_alive(now) {
@@ -181,7 +193,11 @@ pub fn handle_report(r: &[u8]) -> bool {
                     }
                 }
             }
-            HostMsg::Heartbeat | HostMsg::Bootloader | HostMsg::Unknown(_) => {}
+            HostMsg::LogoName(name) if crate::name::valid(&name) => {
+                s.logo_name = name;
+                after = After::SaveName(name);
+            }
+            HostMsg::LogoName(_) | HostMsg::Heartbeat | HostMsg::Bootloader | HostMsg::Unknown(_) => {}
         }
         // The host only sends a frame when it changes, but some report (a heartbeat at least)
         // comes every second, so the flag keeps the pad awake exactly as long as it holds.
@@ -189,7 +205,7 @@ pub fn handle_report(r: &[u8]) -> bool {
             s.activity = now;
         }
     });
-    false
+    after
 }
 
 // ---------------------------------------------------------------------------

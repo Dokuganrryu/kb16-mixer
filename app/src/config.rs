@@ -16,6 +16,7 @@ pub const DEFAULT: &str = r##"# kb16-mixer. Most of this is easier in the settin
 # All of this only moves sliders in the Windows volume mixer. A level you set on the pad
 # sticks to the channel: an app that starts later in that channel takes it.
 
+name = "KB16"         # shown big on the pad's idle screen: up to 10 letters, digits or spaces
 step = 2              # percent per knob detent
 brightness = 0.65     # key lights, 0.1 .. 1.0
 oled_top = 3          # rows the screen is moved down; raise if the top looks cut off (0..6)
@@ -98,6 +99,8 @@ apps = ["Spotify.exe", "AppleMusic.exe", "TIDAL.exe", "foobar2000.exe", "MusicBe
 
 #[derive(Deserialize)]
 struct RawConfig {
+    #[serde(default = "default_name")]
+    name: String,
     #[serde(default = "default_step")]
     step: f32,
     #[serde(default = "yes")]
@@ -313,6 +316,8 @@ pub enum KnobBinding {
 
 #[derive(Clone)]
 pub struct Config {
+    /// For the logo screen: 1..=10 characters, capitals, digits and spaces.
+    pub name: String,
     pub step: f32,
     pub mixer_keys: bool,
     /// LED brightness byte for the pad, 1..=255.
@@ -337,6 +342,20 @@ impl Config {
         let any_app = self.channels.iter().position(|c| !matches!(c.target, ChannelTarget::Mic));
         other.or(any_app).unwrap_or(0)
     }
+}
+
+fn default_name() -> String {
+    "KB16".into()
+}
+
+/// The pad draws the logo name in capitals; it has letters for A-Z, 0-9 and space only.
+fn parse_name(text: &str) -> Result<String, String> {
+    let name = text.trim().to_uppercase();
+    let fits = name.chars().all(|c| c == ' ' || c.is_ascii_uppercase() || c.is_ascii_digit());
+    if name.is_empty() || name.len() > kb16_mixer_protocol::LOGO_NAME_LEN || !fits {
+        return Err(format!("name = {text:?}: 1 to 10 letters, digits or spaces"));
+    }
+    Ok(name)
 }
 
 fn default_step() -> f32 {
@@ -412,6 +431,7 @@ impl RawConfig {
             })
         };
         Ok(Config {
+            name: parse_name(&self.name)?,
             step: self.step.clamp(0.5, 20.0),
             mixer_keys: self.mixer_keys,
             brightness: (self.brightness.clamp(0.1, 1.0) * 255.0) as u8,
@@ -651,6 +671,19 @@ mod tests {
         assert!(parse_key("mute|focus").unwrap_err().contains("media"));
         let short = "[keys]\nrow1 = [\"mute\"]\n[[channel]]\nname = \"A\"\ntarget = \"other\"";
         assert!(problem(short).contains("a row has 4 keys"));
+    }
+
+    #[test]
+    fn the_logo_name_is_checked() {
+        let with = |name: &str| parse(&format!("name = {name:?}\n[[channel]]\nname = \"A\"\ntarget = \"other\""));
+        assert_eq!(defaults().name, "KB16");
+        assert_eq!(with(" Desk pc ").unwrap().name, "DESK PC");
+        assert_eq!(with("ABCDEFGHIJ").unwrap().name.len(), 10);
+        for bad in ["", "   ", "ABCDEFGHIJK", "Ünï", "KB-16"] {
+            assert!(
+                problem(&format!("name = {bad:?}\n[[channel]]\nname = \"A\"\ntarget = \"other\"")).contains("1 to 10")
+            );
+        }
     }
 
     #[test]

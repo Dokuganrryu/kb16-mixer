@@ -198,6 +198,11 @@ pub fn names_message<'a>(names: impl Iterator<Item = &'a str>) -> Report {
     HostMsg::Names(out).encode()
 }
 
+/// The name for the logo screen (already checked by the config: capitals, digits, spaces).
+pub fn logo_name_message(name: &str) -> Report {
+    HostMsg::LogoName(printable(name, true)).encode()
+}
+
 /// Tells the pad what its 16 keys do: two reports of 8 keys each.
 pub fn key_messages(grid: &crate::config::KeyGrid) -> [Report; 2] {
     use crate::config::KeyAction::*;
