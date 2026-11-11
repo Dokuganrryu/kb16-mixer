@@ -528,56 +528,20 @@ fn in_range(key: &str, value: f32, low: f32, high: f32) -> Result<f32, String> {
 }
 
 const DIR_NAME: &str = "kb16-mixer";
-/// The settings folder's name before the app was renamed.
-const OLD_DIR_NAME: &str = "kb16-knobs";
-
-fn base_dir() -> PathBuf {
-    std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir)
-}
 
 /// The environment variable that replaces the settings folder.
 pub const DIR_VAR: &str = "KB16_MIXER_DIR";
 
 /// The folder named by `KB16_MIXER_DIR`, if set: a portable copy, or a build tried against a
-/// throwaway folder. With it, nothing is carried over from an old install and "Start with
-/// Windows" is never written (see `main.rs`).
+/// throwaway folder. With it, "Start with Windows" is never written (see `autostart.rs`).
 pub fn custom_dir() -> Option<PathBuf> {
     std::env::var_os(DIR_VAR).filter(|d| !d.is_empty()).map(PathBuf::from)
 }
 
 pub fn dir() -> PathBuf {
-    custom_dir().unwrap_or_else(|| base_dir().join(DIR_NAME))
-}
-
-/// Carries the settings of an install from before the rename across, once: only while the new
-/// folder does not exist yet. The old folder is left as it is. Returns true if it copied.
-pub fn migrate_old_settings() -> bool {
-    custom_dir().is_none() && migrate_from(&base_dir())
-}
-
-fn migrate_from(base: &std::path::Path) -> bool {
-    let (old, new) = (base.join(OLD_DIR_NAME), base.join(DIR_NAME));
-    if new.exists() || !old.is_dir() {
-        return false;
-    }
-    // Copy into a side folder and rename it at the end, so a copy cut short is never taken
-    // for a finished one.
-    let staging = base.join(format!("{DIR_NAME}.migrating"));
-    let _ = std::fs::remove_dir_all(&staging);
-    let copied = (|| -> std::io::Result<()> {
-        std::fs::create_dir_all(&staging)?;
-        for entry in std::fs::read_dir(&old)? {
-            let entry = entry?;
-            if entry.file_type()?.is_file() {
-                std::fs::copy(entry.path(), staging.join(entry.file_name()))?;
-            }
-        }
-        std::fs::rename(&staging, &new)
-    })();
-    if copied.is_err() {
-        let _ = std::fs::remove_dir_all(&staging);
-    }
-    copied.is_ok()
+    custom_dir().unwrap_or_else(|| {
+        std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join(DIR_NAME)
+    })
 }
 
 pub fn path() -> PathBuf {
@@ -884,53 +848,6 @@ mod tests {
         assert_eq!(c.step, 20.0);
         assert_eq!(c.brightness, 255);
         assert_eq!(c.oled_top, 6);
-    }
-
-    #[test]
-    fn settings_from_before_the_rename_are_carried_across_once() {
-        let base = std::env::temp_dir().join(format!("kb16-migrate-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        assert!(!migrate_from(&base), "nothing to migrate");
-
-        std::fs::create_dir_all(base.join(OLD_DIR_NAME)).unwrap();
-        std::fs::write(base.join(OLD_DIR_NAME).join("config.toml"), "step = 5").unwrap();
-        std::fs::write(base.join(OLD_DIR_NAME).join("state.toml"), "[levels]").unwrap();
-        assert!(migrate_from(&base));
-        assert_eq!(std::fs::read_to_string(base.join(DIR_NAME).join("config.toml")).unwrap(), "step = 5");
-        assert_eq!(std::fs::read_to_string(base.join(DIR_NAME).join("state.toml")).unwrap(), "[levels]");
-        assert!(base.join(OLD_DIR_NAME).join("config.toml").exists(), "the old folder stays");
-        assert!(!base.join(format!("{DIR_NAME}.migrating")).exists());
-
-        std::fs::write(base.join(DIR_NAME).join("config.toml"), "step = 3").unwrap();
-        assert!(!migrate_from(&base), "only once");
-        assert_eq!(std::fs::read_to_string(base.join(DIR_NAME).join("config.toml")).unwrap(), "step = 3");
-        let _ = std::fs::remove_dir_all(&base);
-    }
-
-    #[test]
-    fn a_whole_write_leaves_the_complete_file_and_no_side_file() {
-        let dir = std::env::temp_dir().join(format!("kb16-write-whole-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("state.toml");
-        let long = "[levels]
-"
-        .to_string()
-            + &"\"Game\" = 0.5
-"
-            .repeat(2000);
-        for text in [
-            long.as_str(),
-            "[levels]
-\"Chat\" = 0.25
-",
-        ] {
-            write_whole(&file, text).unwrap();
-            assert_eq!(std::fs::read_to_string(&file).unwrap(), text, "the whole text, the old one replaced");
-            let names: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
-            assert_eq!(names, ["state.toml"], "no side file is left");
-        }
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -9,8 +9,6 @@ use windows::core::{PCWSTR, w};
 
 const RUN_KEY: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
 const RUN_VALUE: PCWSTR = w!("kb16-mixer");
-/// The autostart value written before the app was renamed.
-const OLD_RUN_VALUE: PCWSTR = w!("kb16-knobs");
 
 fn run_value_exists(name: PCWSTR) -> bool {
     // SAFETY: the key and value names are static wide strings; no output buffers are passed.
@@ -25,10 +23,6 @@ pub fn run_value_present() -> bool {
 /// Always off for a copy run against `KB16_MIXER_DIR`, which never touches the registry.
 pub fn autostart_enabled() -> bool {
     config::custom_dir().is_none() && run_value_present()
-}
-
-pub fn old_autostart_enabled() -> bool {
-    run_value_exists(OLD_RUN_VALUE)
 }
 
 pub fn set_autostart(on: bool) {
@@ -49,8 +43,6 @@ pub fn set_autostart(on: bool) {
                 Some(value.as_ptr().cast()),
                 (value.len() * 2) as u32,
             );
-            // The entry from before the rename would start the old exe as well.
-            let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, RUN_KEY, OLD_RUN_VALUE);
         } else {
             let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, RUN_KEY, RUN_VALUE);
         }

@@ -131,13 +131,8 @@ pub fn run() {
     // Should anything ever go badly wrong, leave a note in log.txt instead of vanishing silently.
     std::panic::set_hook(Box::new(|info| log(&format!("crash: {info}"))));
     let arg = |name: &str| std::env::args().any(|a| a == name);
-    // --check only reads, so it comes before the migration below writes anything.
     if arg("--check") {
         std::process::exit(check::run());
-    }
-    // An install from before the rename: carry its settings and its autostart across.
-    if config::migrate_old_settings() && autostart::old_autostart_enabled() {
-        set_autostart(true);
     }
     if arg("--help") || arg("-h") || arg("/?") {
         // SAFETY: both strings outlive the call, and no owner window is passed.
