@@ -74,14 +74,20 @@ An optional argument sets the name in the preview only. The pad draws the name t
 ### Third-party notices
 
 `THIRD_PARTY_NOTICES.md` is a generated file. Do not edit it.
+It holds the copyright notices and the full licence texts of all third-party code in the firmware image and in the app.
+The release workflow attaches it to each release.
+
 When you add, remove or update a dependency, run this command from the repository root:
 
 ```sh
+cargo install cargo-about --version 0.9.3 --locked --features cli   # one time only
 python scripts/third-party-notices.py
 ```
 
-The script fails if a dependency has a licence that is not in its permissive list.
+The script uses `cargo-about` with the settings in `scripts/about.toml`.
+It fails if a dependency has a licence that is not in the `accepted` list of that file.
 Use only dependencies with permissive licences.
+CI fails if `THIRD_PARTY_NOTICES.md` is not the same as the output of the script.
 
 ## The image check and why it exists
 

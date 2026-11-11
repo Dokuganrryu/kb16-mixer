@@ -83,3 +83,19 @@ jobs:
           name: kb16-mixer-app
           path: app/target/release/kb16-mixer.exe
           if-no-files-found: error
+
+  # THIRD_PARTY_NOTICES.md must match what scripts/third-party-notices.py makes from the lock files.
+  notices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: cargo-about
+        run: cargo install cargo-about --version 0.9.3 --locked --features cli
+      - name: Notices are up to date
+        run: |
+          python3 scripts/third-party-notices.py
+          git diff --exit-code THIRD_PARTY_NOTICES.md

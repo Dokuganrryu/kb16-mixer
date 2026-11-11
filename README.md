@@ -215,7 +215,7 @@ For the list of changes, see [CHANGELOG.md](CHANGELOG.md).
 
 - The code is licensed under the MIT licence. See [LICENSE](LICENSE).
 - The screen fonts are Open Sans (SIL Open Font License 1.1) and the public-domain X11 5x7 font. The build turns them into bitmaps.
-- All dependencies have permissive licences. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- All dependencies have permissive licences. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) gives their copyright notices and full licence texts.
 - The firmware code, including the knob decoder, is original to this project. The pin assignments come from the public QMK board definition, as facts.
 - This is an unofficial project. It is not affiliated with DOIO or endorsed by DOIO.
 - All product names and company names are trademarks of their owners. This project uses them only to describe compatibility.

@@ -1,7 +1,8 @@
 name: Release
 
 # A pushed tag v* builds the firmware image and the app with the same checks as CI, and attaches
-# them to a GitHub release with LICENSE, THIRD_PARTY_NOTICES.md and their SHA-256 sums.
+# them to a GitHub release with LICENSE, THIRD_PARTY_NOTICES.md (the copyright notices and full
+# licence texts of all third-party code in the two binaries) and their SHA-256 sums.
 on:
   push:
     tags:
@@ -98,8 +99,24 @@ jobs:
           path: kb16-mixer-${{ github.ref_name }}.exe
           if-no-files-found: error
 
+  # THIRD_PARTY_NOTICES.md must match what scripts/third-party-notices.py makes from the lock files.
+  notices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: cargo-about
+        run: cargo install cargo-about --version 0.9.3 --locked --features cli
+      - name: Notices are up to date
+        run: |
+          python3 scripts/third-party-notices.py
+          git diff --exit-code THIRD_PARTY_NOTICES.md
+
   release:
-    needs: [versions, protocol, firmware, app]
+    needs: [versions, protocol, firmware, app, notices]
     runs-on: ubuntu-latest
     permissions:
       contents: write
