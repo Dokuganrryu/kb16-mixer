@@ -113,6 +113,8 @@ pub fn watch_arrivals(hwnd: HWND) {
         dbcc_classguid: HID,
         ..Default::default()
     };
+    // SAFETY: `filter` is a filled-in DEV_BROADCAST_DEVICEINTERFACE_W that lives until the call
+    // returns; `hwnd` is the hidden window of this process.
     let handle = unsafe {
         RegisterDeviceNotificationW(HANDLE(hwnd.0), &filter as *const _ as *const _, DEVICE_NOTIFY_WINDOW_HANDLE)
     };

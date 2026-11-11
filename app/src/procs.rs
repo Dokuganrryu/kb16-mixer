@@ -13,6 +13,8 @@ pub struct Snapshot {
 impl Snapshot {
     pub fn take() -> Snapshot {
         let mut procs = HashMap::new();
+        // SAFETY: `e` is a live PROCESSENTRY32W with its size set, and the snapshot handle is
+        // closed once. Only process names are read; no process is opened.
         unsafe {
             if let Ok(h) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
                 let mut e = PROCESSENTRY32W { dwSize: size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
@@ -49,6 +51,7 @@ impl Snapshot {
 }
 
 pub fn foreground_pid() -> Option<u32> {
+    // SAFETY: both calls take plain values; `pid` is a live u32 for the call.
     unsafe {
         let hwnd = GetForegroundWindow();
         if hwnd.is_invalid() {

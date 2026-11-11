@@ -16,7 +16,7 @@
 use crate::config::{ChannelCfg, ChannelTarget};
 use crate::procs::{self, Snapshot};
 use crate::trim::{self, place};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::S_OK;
 use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
@@ -49,17 +49,25 @@ trait Slider {
 
 impl Slider for ISimpleAudioVolume {
     fn level(&self) -> Option<f32> {
+        // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the pointer
+        // and the HRESULT.
         unsafe { self.GetMasterVolume().ok() }
     }
     fn set_level(&self, v: f32) {
+        // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the pointer
+        // and the HRESULT. No event context is passed.
         unsafe {
             let _ = self.SetMasterVolume(v, NO_CONTEXT);
         }
     }
     fn muted(&self) -> Option<bool> {
+        // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the pointer
+        // and the HRESULT.
         unsafe { self.GetMute().ok().map(|b| b.as_bool()) }
     }
     fn set_muted(&self, muted: bool) {
+        // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the pointer
+        // and the HRESULT. No event context is passed.
         unsafe {
             let _ = self.SetMute(muted, NO_CONTEXT);
         }
@@ -143,6 +151,8 @@ pub struct Mixer {
 
 impl Mixer {
     pub fn new() -> Result<Mixer> {
+        // SAFETY: COM is initialized for this thread before the enumerator is created; both are
+        // plain calls.
         unsafe {
             CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
             Ok(Mixer {
@@ -240,6 +250,8 @@ impl Mixer {
         if let (Some(c), Some(mic)) = (mic_channel(channels), &self.mic) {
             let f = &mut self.faders[c];
             if f.touched.is_none_or(|t| t.elapsed() >= SETTLE) {
+                // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the
+                // pointer and the HRESULT.
                 unsafe {
                     f.volume = mic.volume.GetMasterVolumeLevelScalar().unwrap_or(f.volume);
                     f.muted = mic.volume.GetMute().map(|b| b.as_bool()).unwrap_or(f.muted);
@@ -253,17 +265,9 @@ impl Mixer {
     fn follow(&mut self, sessions: Vec<Session>, channels: &[ChannelCfg], first: bool) {
         let now = Instant::now();
         let before: HashSet<String> = self.sessions.iter().map(|s| s.id.clone()).collect();
-        // Real levels no live turned-down session stands for: an app that closed while it was
-        // turned down, or one from a run that ended mid-focus (a crash, a power cut).
-        let held: HashSet<&str> =
-            self.sessions.iter().filter(|s| self.ducked.contains_key(&s.id)).map(|s| s.exe.as_str()).collect();
-        let left_over: HashMap<String, f32> =
-            self.restore.iter().filter(|(exe, _)| !held.contains(exe.as_str())).map(|(e, l)| (e.clone(), *l)).collect();
-
+        let left_over = self.left_over();
         // Sessions already playing tell us where Windows stands; new ones take the channel level.
-        let mut adopted = vec![false; channels.len()];
-        let mut followed: HashSet<&str> = HashSet::new();
-        let mut push = vec![false; channels.len()];
+        let mut seen = Seen { adopted: vec![false; channels.len()], ..Seen::default() };
         for s in &sessions {
             let ducked = s.channel.is_some_and(|c| self.is_ducked(c, channels));
             let left = if self.ducked.contains_key(&s.id) { None } else { left_over.get(&s.exe).copied() };
@@ -278,69 +282,17 @@ impl Mixer {
                 continue;
             }
             let Some(c) = s.channel else { continue };
-            let t = self.trim(&s.exe);
-            let f = &mut self.faders[c];
-            let settled = f.touched.is_none_or(|t| t.elapsed() >= SETTLE);
             let is_new = !first && !before.contains(&s.id);
             if ducked {
-                // A turned-down level is ours, never Windows' truth. An app that appears
-                // mid-focus is turned down too, remembering what it should be.
-                if !self.ducked.contains_key(&s.id) {
-                    let level = match left {
-                        Some(level) => level,
-                        None if is_new && f.pinned => trim::heard(f.volume, t),
-                        None => s.volume.level().unwrap_or(1.0),
-                    };
-                    s.volume.set_level(level * self.duck);
-                    self.ducked.insert(s.id.clone(), level);
-                }
-                continue;
-            }
-            if is_new && f.muted {
-                s.volume.set_muted(true);
-            }
-            if is_new && f.pinned {
-                // An app joining a channel takes its dialled-in level times its trim.
-                s.volume.set_level(trim::heard(f.volume, t));
-                continue;
-            }
-            if !settled {
-                continue;
-            }
-            if !adopted[c] && !is_new {
-                f.muted = s.volume.muted().unwrap_or(f.muted);
-                adopted[c] = true;
-            }
-            let Some(v) = s.volume.level() else { continue };
-            if !f.known {
-                // First sight of a channel nobody has set: its level follows this app.
-                f.volume = if t >= MOVED { (v / t).min(1.0) } else { v };
-                f.known = true;
-            }
-            // Several sessions of one app follow the first that moved.
-            if (v - trim::heard(f.volume, t)).abs() < MOVED || !followed.insert(&s.exe) {
-                continue;
-            }
-            let placed = place(f.volume, v);
-            let was_off = f.volume < MOVED;
-            f.volume = placed.level;
-            push[c] |= was_off && placed.level >= MOVED;
-            self.trims.insert(s.exe.clone(), placed.trim);
-            if placed.others != 1.0 {
-                let others = sessions.iter().filter(|o| o.channel == Some(c) && o.exe != s.exe);
-                scale_trims(&mut self.trims, others.map(|o| o.exe.as_str()), placed.others);
-            }
-            for twin in sessions.iter().filter(|o| o.exe == s.exe && o.id != s.id) {
-                twin.volume.set_level(v);
+                self.hold_down(s, c, left, is_new);
+            } else {
+                self.follow_session(s, c, is_new, &sessions, &mut seen);
             }
         }
         // A channel that was off came back on through one app: the rest return at their balance.
-        for (c, _) in push.iter().enumerate().filter(|(_, p)| **p) {
-            if self.is_ducked(c, channels) {
-                continue;
-            }
+        for c in seen.came_back.iter().copied().filter(|&c| !self.is_ducked(c, channels)) {
             let level = self.faders[c].volume;
-            for s in sessions.iter().filter(|s| s.channel == Some(c) && !followed.contains(s.exe.as_str())) {
+            for s in sessions.iter().filter(|s| s.channel == Some(c) && !seen.followed.contains(s.exe.as_str())) {
                 s.volume.set_level(trim::heard(level, self.trim(&s.exe)));
             }
         }
@@ -348,6 +300,82 @@ impl Mixer {
         self.ducked.retain(|id, _| live.contains(id.as_str()));
         self.sessions = sessions;
         self.sync_restore();
+    }
+
+    /// Real levels no live turned-down session stands for: an app that closed while it was
+    /// turned down, or one from a run that ended mid-focus (a crash, a power cut).
+    fn left_over(&self) -> HashMap<String, f32> {
+        let held: HashSet<&str> =
+            self.sessions.iter().filter(|s| self.ducked.contains_key(&s.id)).map(|s| s.exe.as_str()).collect();
+        self.restore.iter().filter(|(exe, _)| !held.contains(exe.as_str())).map(|(e, l)| (e.clone(), *l)).collect()
+    }
+
+    /// A session in a channel Focus turns down. A turned-down level is ours, never Windows'
+    /// truth. An app that appears mid-focus is turned down too, remembering what it should be.
+    fn hold_down(&mut self, s: &Session, c: usize, left: Option<f32>, is_new: bool) {
+        if self.ducked.contains_key(&s.id) {
+            return;
+        }
+        let f = &self.faders[c];
+        let level = match left {
+            Some(level) => level,
+            None if is_new && f.pinned => trim::heard(f.volume, self.trim(&s.exe)),
+            None => s.volume.level().unwrap_or(1.0),
+        };
+        s.volume.set_level(level * self.duck);
+        self.ducked.insert(s.id.clone(), level);
+    }
+
+    /// A session in a channel at its own level: a new one takes the channel's level, and a
+    /// slider moved in Windows becomes the app's level (`trim::place`).
+    fn follow_session<'a>(
+        &mut self,
+        s: &'a Session,
+        c: usize,
+        is_new: bool,
+        sessions: &[Session],
+        seen: &mut Seen<'a>,
+    ) {
+        let t = self.trim(&s.exe);
+        let f = &mut self.faders[c];
+        if is_new && f.muted {
+            s.volume.set_muted(true);
+        }
+        if is_new && f.pinned {
+            // An app joining a channel takes its dialled-in level times its trim.
+            s.volume.set_level(trim::heard(f.volume, t));
+            return;
+        }
+        if f.touched.is_some_and(|t| t.elapsed() < SETTLE) {
+            return;
+        }
+        if !seen.adopted[c] && !is_new {
+            f.muted = s.volume.muted().unwrap_or(f.muted);
+            seen.adopted[c] = true;
+        }
+        let Some(v) = s.volume.level() else { return };
+        if !f.known {
+            // First sight of a channel nobody has set: its level follows this app.
+            f.volume = if t >= MOVED { (v / t).min(1.0) } else { v };
+            f.known = true;
+        }
+        // Several sessions of one app follow the first that moved.
+        if (v - trim::heard(f.volume, t)).abs() < MOVED || !seen.followed.insert(&s.exe) {
+            return;
+        }
+        let placed = place(f.volume, v);
+        if f.volume < MOVED && placed.level >= MOVED {
+            seen.came_back.insert(c);
+        }
+        f.volume = placed.level;
+        self.trims.insert(s.exe.clone(), placed.trim);
+        if placed.others != 1.0 {
+            let others = sessions.iter().filter(|o| o.channel == Some(c) && o.exe != s.exe);
+            scale_trims(&mut self.trims, others.map(|o| o.exe.as_str()), placed.others);
+        }
+        for twin in sessions.iter().filter(|o| o.exe == s.exe && o.id != s.id) {
+            twin.volume.set_level(v);
+        }
     }
 
     /// Rebuilds `restore` from `ducked`. An app that is not running keeps its entry, so it gets
@@ -365,6 +393,8 @@ impl Mixer {
     /// Every live app session on every active output device.
     fn enumerate(&self) -> Vec<Session> {
         let mut out = Vec::new();
+        // SAFETY: COM calls on the enumerator and the objects it returns. The instance id string is
+        // freed once, after it was copied.
         unsafe {
             let Ok(coll) = self.devices.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) else { return out };
             for i in 0..coll.GetCount().unwrap_or(0) {
@@ -421,6 +451,8 @@ impl Mixer {
 
     /// The microphone chat apps use (the default communications capture device).
     fn open_mic(&self) -> Option<Mic> {
+        // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the pointer
+        // and the HRESULT.
         unsafe {
             let dev = self
                 .devices
@@ -443,17 +475,23 @@ impl Mixer {
         let mut heard = 0f32;
         for s in &self.sessions {
             let Some(m) = &s.meter else { continue };
+            // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the
+            // pointer and the HRESULT.
             let p = unsafe { m.GetPeakValue().unwrap_or(0.0) };
             if let Some(c) = s.channel.filter(|&c| c < 4) {
                 peak[c] = peak[c].max(p);
             }
-            if p > AUDIBLE && !self.output_muted && !s.volume.muted().unwrap_or(false) {
-                heard = heard.max(p * s.volume.level().unwrap_or(1.0));
+            // Only a session that sends sound is asked for its slider.
+            if p > AUDIBLE {
+                let level = s.volume.level().unwrap_or(1.0);
+                heard = heard.max(heard_peak(p, level, s.volume.muted().unwrap_or(false), self.output_muted));
             }
         }
         if let (Some(c), Some(Mic { meter: Some(m), .. })) = (mic_channel(channels), &self.mic)
             && c < 4
         {
+            // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the
+            // pointer and the HRESULT.
             peak[c] = unsafe { m.GetPeakValue().unwrap_or(0.0) };
         }
         (peak.map(to_level), heard)
@@ -492,6 +530,8 @@ impl Mixer {
         let set_level = delta_pct.is_some();
         let f = *f;
         let ducked = self.is_ducked(channel, channels);
+        // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the pointer
+        // and the HRESULT. No event context is passed.
         unsafe {
             if matches!(cfg.target, ChannelTarget::Mic) {
                 if let Some(mic) = &self.mic {
@@ -583,12 +623,16 @@ impl Mixer {
     }
 
     pub fn mic_muted(&self) -> bool {
+        // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the pointer
+        // and the HRESULT.
         self.mic.as_ref().is_some_and(|m| unsafe { m.volume.GetMute().map(|b| b.as_bool()).unwrap_or(false) })
     }
 
     /// Mutes or unmutes the microphone, keeping a Mic channel's fader in step.
     pub fn set_mic_muted(&mut self, muted: bool, channels: &[ChannelCfg]) {
         if let Some(mic) = &self.mic {
+            // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the
+            // pointer and the HRESULT. No event context is passed.
             unsafe {
                 let _ = mic.volume.SetMute(muted, NO_CONTEXT);
             }
@@ -677,6 +721,8 @@ impl Mixer {
     }
 
     fn endpoint(&self, device: Device) -> Option<IAudioEndpointVolume> {
+        // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the pointer
+        // and the HRESULT.
         unsafe {
             match device {
                 Device::Mic => self.open_mic().map(|m| m.volume),
@@ -689,6 +735,8 @@ impl Mixer {
     }
 
     pub fn device_muted(&self, device: Device) -> bool {
+        // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the pointer
+        // and the HRESULT.
         self.endpoint(device).is_some_and(|ep| unsafe { ep.GetMute().map(|b| b.as_bool()).unwrap_or(false) })
     }
 
@@ -700,6 +748,8 @@ impl Mixer {
         let Some(ep) = self.endpoint(device) else {
             return Readout { name: name.into(), volume: 0, muted: false, live: false };
         };
+        // SAFETY: COM call on an interface this mixer holds; the windows crate wraps the pointer
+        // and the HRESULT. No event context is passed.
         unsafe {
             let mut vol = ep.GetMasterVolumeLevelScalar().unwrap_or(0.0);
             let mut muted = ep.GetMute().map(|b| b.as_bool()).unwrap_or(false);
@@ -778,6 +828,34 @@ impl Mixer {
             })
             .collect()
     }
+
+    /// What `--check` reports, as counts only: no session or device is named.
+    pub fn census(&self) -> Census {
+        // SAFETY: COM calls on the enumerator this mixer created; nothing is written.
+        let (outputs, default_output) = unsafe {
+            let outputs = self.devices.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE).and_then(|c| c.GetCount());
+            (outputs.unwrap_or(0) as usize, self.devices.GetDefaultAudioEndpoint(eRender, eConsole).is_ok())
+        };
+        Census {
+            outputs,
+            default_output,
+            output_muted: self.device_muted(Device::Master),
+            sessions: self.enumerate().len(),
+            mic: self.open_mic().is_some(),
+        }
+    }
+}
+
+/// Core Audio as `--check` sees it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Census {
+    /// Active output devices.
+    pub outputs: usize,
+    pub default_output: bool,
+    pub output_muted: bool,
+    /// App sessions on all active output devices (system sounds not counted).
+    pub sessions: usize,
+    pub mic: bool,
 }
 
 pub fn mic_channel(channels: &[ChannelCfg]) -> Option<usize> {
@@ -808,6 +886,17 @@ pub fn assign(
     named.or_else(|| channels.iter().position(|c| matches!(c.target, ChannelTarget::Other)))
 }
 
+/// What one `follow` pass has learned so far, per channel.
+#[derive(Default)]
+struct Seen<'a> {
+    /// The channel's mute was read from its first settled session.
+    adopted: Vec<bool>,
+    /// Apps whose moved slider was taken in (the first session of each app).
+    followed: HashSet<&'a str>,
+    /// Channels that were off and came back on through one app.
+    came_back: BTreeSet<usize>,
+}
+
 /// Whether programme audio is playing, for the pad's idle timers.
 #[derive(Default)]
 pub struct Audible {
@@ -831,6 +920,12 @@ impl Audible {
         }
         self.on
     }
+}
+
+/// How loud a session is really heard: its peak after its own slider and mute, and nothing
+/// with the default output device muted. A peak below `AUDIBLE` counts as silence.
+fn heard_peak(peak: f32, level: f32, muted: bool, output_muted: bool) -> f32 {
+    if peak > AUDIBLE && !muted && !output_muted { peak * level } else { 0.0 }
 }
 
 /// Multiplies each app's trim once, however many sessions it has.
@@ -1037,6 +1132,20 @@ mod tests {
         assert!(close(a.get(), 0.175), "still turned down: {}", a.get());
         m.set_focus(None, &channels());
         assert!(close(a.get(), 0.7), "the change survives Focus: {}", a.get());
+    }
+
+    #[test]
+    fn programme_audio_counts_after_the_apps_own_volume_and_mute() {
+        assert!(close(heard_peak(0.5, 0.5, false, false), 0.25));
+        assert_eq!(heard_peak(0.5, 1.0, true, false), 0.0, "the app is muted");
+        assert_eq!(heard_peak(0.5, 1.0, false, true), 0.0, "the default output device is muted");
+        assert_eq!(heard_peak(0.009, 1.0, false, false), 0.0, "below about -40 dBFS");
+        // Loud at the source but turned down to a whisper: the idle timers may run.
+        let mut a = Audible::default();
+        let t0 = Instant::now();
+        let quiet = heard_peak(0.5, 0.01, false, false);
+        assert!(!a.update(quiet, t0) && !a.update(quiet, t0 + Duration::from_secs(5)));
+        assert!((20.0 * AUDIBLE.log10() - -40.0).abs() < 0.01, "AUDIBLE is -40 dBFS");
     }
 
     #[test]

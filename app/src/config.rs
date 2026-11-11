@@ -576,6 +576,30 @@ pub fn parse(text: &str) -> Result<Config, String> {
     raw.check()
 }
 
+/// A problem in config.toml, told without quoting the file: where it is (for what the TOML
+/// reader finds, 1-based) and why.
+#[derive(Debug, PartialEq)]
+pub struct Problem {
+    pub at: Option<(usize, usize)>,
+    pub reason: String,
+}
+
+/// `parse`, with the place of a TOML error as a line and column (for `--check`).
+pub fn parse_located(text: &str) -> Result<Config, Problem> {
+    let raw: RawConfig = toml::from_str(text).map_err(|e| Problem {
+        at: e.span().map(|s| line_column(text, s.start)),
+        reason: e.message().trim().to_string(),
+    })?;
+    raw.check().map_err(|reason| Problem { at: None, reason })
+}
+
+/// Line and column (1-based, in characters) of a byte offset into `text`.
+fn line_column(text: &str, offset: usize) -> (usize, usize) {
+    let before = text.get(..offset).unwrap_or(text);
+    let line_start = before.rfind('\n').map_or(0, |i| i + 1);
+    (before.matches('\n').count() + 1, before[line_start..].chars().count() + 1)
+}
+
 pub fn defaults() -> Config {
     parse(DEFAULT).expect("built-in config is valid")
 }
@@ -766,6 +790,16 @@ mod tests {
         assert!(problem("[[channel]]\nname = \"Gaming\"\ntarget = \"other\"").contains("1 to 5"), "what the pad shows");
         assert!(problem("[[channel]]\nname = \"\"\ntarget = \"other\"").contains("1 to 5"));
         assert!(parse("[[channel]]\nname = \"Gamer\"\ntarget = \"other\"").is_ok());
+    }
+
+    #[test]
+    fn a_toml_error_has_a_line_and_a_column() {
+        let at = |text: &str| parse_located(text).err().and_then(|p| p.at);
+        assert_eq!(at("[[channel]\nname = 1"), Some((1, 11)), "syntax: where the second bracket should be");
+        assert_eq!(at("step = 2\n[[channel]]\nname = 1\ntarget = \"other\""), Some((3, 8)), "type: the value");
+        assert_eq!(at("[[channel]]\nname = \"A\""), None, "a rule of this app, not of TOML");
+        assert_eq!(line_column("ab\ncd\u{e9}f", 7), (2, 4), "columns count characters");
+        assert!(parse_located(DEFAULT).is_ok());
     }
 
     #[test]
