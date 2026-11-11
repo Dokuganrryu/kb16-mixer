@@ -172,7 +172,7 @@ const TCM_GETCURSEL: u32 = 0x130B;
 const TCM_INSERTITEMW: u32 = 0x133E;
 const SS_CENTER: u32 = 1;
 
-const STATUS_IDLE: &str = "Changes apply the moment you make them and are saved to config.toml.";
+const STATUS_IDLE: &str = "Changes apply the moment you make them (a name once you press Enter or leave its box) and are saved to config.toml.";
 
 /// One app as the Channels tab lists it.
 #[derive(Clone, PartialEq, Debug)]
@@ -439,6 +439,8 @@ thread_local! {
     static SEEN: RefCell<Option<String>> = const { RefCell::new(None) };
     /// Set while the window itself writes into its controls, so that is not taken as typing.
     static FILLING: Cell<bool> = const { Cell::new(false) };
+    /// The text box being typed in, if any: Enter applies it.
+    static EDITING: Cell<Option<i32>> = const { Cell::new(None) };
     /// The tab pages' colour, for the labels, tick boxes and slider on them.
     static PANE: Cell<Option<COLORREF>> = const { Cell::new(None) };
     static PANE_BRUSH: Cell<HBRUSH> = const { Cell::new(HBRUSH(std::ptr::null_mut())) };
@@ -1142,10 +1144,11 @@ fn change_number(id: i32) -> Outcome {
     saved()
 }
 
+const LOGO_NAME_RULE: &str = "the name on the screen is 1 to 10 letters, digits or spaces";
+
 fn change_name(cfg: &Config) -> Outcome {
     let typed = text_of(ID_NAME);
-    let name = config::parse_name(&typed)
-        .map_err(|_| "the name on the screen is 1 to 10 letters, digits or spaces".to_string())?;
+    let name = config::parse_name(&typed).map_err(|_| LOGO_NAME_RULE.to_string())?;
     if name == cfg.name {
         return Ok(None);
     }
@@ -1168,9 +1171,42 @@ fn change_autostart() -> Outcome {
     ))
 }
 
+/// The command id Enter sends from a text box.
+const ENTER: i32 = IDOK.0;
+
+fn apply_box(cfg: &Config, id: i32) -> Outcome {
+    match id {
+        ID_NAME => change_name(cfg),
+        _ => rename(cfg, (id - ID_CH_NAME) as usize),
+    }
+}
+
+/// While a name is typed: says what is wrong with it, or how to apply it. Nothing is written.
+fn typing(cfg: &Config, id: i32) {
+    let typed = text_of(id);
+    let (problem, unchanged) = match id {
+        ID_NAME => {
+            let parsed = config::parse_name(&typed);
+            (parsed.is_err().then(|| LOGO_NAME_RULE.to_string()), parsed.is_ok_and(|n| n == cfg.name))
+        }
+        _ => {
+            let i = (id - ID_CH_NAME) as usize;
+            let name = typed.trim();
+            let Some(ch) = cfg.channels.get(i) else { return };
+            (if name == ch.name { None } else { channel_name_problem(&cfg.channels, i, name) }, name == ch.name)
+        }
+    };
+    match problem {
+        Some(why) => status(&format!("Not changed: {why}.")),
+        None if !unchanged => status("Press Enter or leave the box to apply the new name."),
+        None => {}
+    }
+}
+
 /// Applies one control's new value; then the window shows what is in force.
 fn changed(hwnd: HWND, id: i32, code: u32) {
-    if FILLING.get() {
+    // While the window is torn down its boxes still report losing focus; nothing to apply then.
+    if FILLING.get() || window().is_none() {
         return;
     }
     let cfg = crate::current_config();
@@ -1188,11 +1224,25 @@ fn changed(hwnd: HWND, id: i32, code: u32) {
             .and_then(|()| saved()),
             None => Ok(None),
         },
-        (ID_CH_NAME..=203, EN_CHANGE) => rename(&cfg, (id - ID_CH_NAME) as usize),
+        // A name is applied once it is complete (Enter, or leaving the box), never letter by
+        // letter: each apply reloads everything, and the pad keeps its logo name in flash.
+        (ID_CH_NAME..=203 | ID_NAME, EN_SETFOCUS) => {
+            EDITING.set(Some(id));
+            return;
+        }
+        (ID_CH_NAME..=203 | ID_NAME, EN_CHANGE) => return typing(&cfg, id),
+        (ID_CH_NAME..=203 | ID_NAME, EN_KILLFOCUS) => {
+            EDITING.set(None);
+            apply_box(&cfg, id)
+        }
+        // Enter in a text box (IsDialogMessage turns it into IDOK).
+        (ENTER, _) => match EDITING.get() {
+            Some(id) => apply_box(&cfg, id),
+            None => return,
+        },
         (ID_CH_KIND..=213, CBN_SELCHANGE) => change_kind(&cfg, (id - ID_CH_KIND) as usize),
         (ID_CH_ADD..=243, BN_CLICKED) => add(hwnd, &cfg, (id - ID_CH_ADD) as usize),
         (ID_CH_REMOVE..=253, BN_CLICKED) => remove(&cfg, (id - ID_CH_REMOVE) as usize),
-        (ID_NAME, EN_CHANGE) => change_name(&cfg),
         (ID_STEP | ID_DUCK | ID_SHIFT | ID_SCREEN_OFF | ID_LIGHTS_DIM, CBN_SELCHANGE) => change_number(id),
         (ID_BRIGHTNESS, _) => {
             let percent = send(child(ID_BRIGHTNESS), TBM_GETPOS, 0, 0).clamp(10, 100);
@@ -1265,6 +1315,9 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
             WM_CLOSE => {
+                if let Some(id) = EDITING.get() {
+                    changed(hwnd, id, EN_KILLFOCUS);
+                }
                 let _ = DestroyWindow(hwnd);
                 LRESULT(0)
             }
@@ -1275,6 +1328,7 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                 MEMBERS.with_borrow_mut(Vec::clear);
                 HIDDEN.with_borrow_mut(Vec::clear);
                 SEEN.set(None);
+                EDITING.set(None);
                 NEXT_LABEL.set(ID_LABELS);
                 if !PANE_BRUSH.get().is_invalid() {
                     let _ = DeleteObject(PANE_BRUSH.replace(HBRUSH::default()).into());

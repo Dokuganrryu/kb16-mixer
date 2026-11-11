@@ -649,14 +649,15 @@ pub fn save_apps(apps: &HashMap<String, String>) {
 
 /// Channels that kept their place but got a new name, (old, new): what is remembered by name
 /// (levels, apps moved there) follows them. A name that still exists elsewhere, or a new name
-/// that was already there, is a reshuffle, not a rename.
+/// that was already there, is a reshuffle, not a rename. A change of case only is a rename:
+/// levels are kept under the exact name.
 pub fn renames(before: &[String], now: &[ChannelCfg]) -> Vec<(String, String)> {
     let had = |name: &str| before.iter().any(|b| b.eq_ignore_ascii_case(name));
     let has = |name: &str| now.iter().any(|c| c.name.eq_ignore_ascii_case(name));
     before
         .iter()
         .zip(now)
-        .filter(|(old, c)| !old.eq_ignore_ascii_case(&c.name) && !has(old) && !had(&c.name))
+        .filter(|(old, c)| **old != c.name && (old.eq_ignore_ascii_case(&c.name) || (!has(old) && !had(&c.name))))
         .map(|(old, c)| (old.clone(), c.name.clone()))
         .collect()
 }
@@ -836,7 +837,12 @@ mod tests {
         };
         assert_eq!(with(["Mic", "Talk", "Game", "Media"]), [("Chat".to_string(), "Talk".to_string())]);
         assert!(with(["Mic", "Chat", "Game", "Media"]).is_empty());
-        assert!(with(["Mic", "chat", "Game", "Media"]).is_empty(), "case only");
+        assert_eq!(
+            with(["Mic", "CHAT", "Game", "Media"]),
+            [("Chat".to_string(), "CHAT".to_string())],
+            "case only: the level is remembered by the exact name"
+        );
+        assert!(with(["Mic", "game", "chat", "Media"]).is_empty(), "swapped, whatever the case");
         assert!(with(["Mic", "Game", "Chat", "Media"]).is_empty(), "swapped, not renamed");
         assert!(renames(&[], &defaults().channels).is_empty(), "first load");
     }
