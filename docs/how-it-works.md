@@ -36,6 +36,7 @@ Windows uses its built-in HID driver for all three interfaces. The project has n
 
 The app sends a heartbeat message each second when it has nothing else to send. Thus the pad stays in mixer mode while the app runs.
 If you close the app or select **Pause** in the tray menu, the pad goes back to keyboard mode after 3 seconds.
+**Pause** first sets the pad back to page 1 and lets go of all held mixer keys (Focus, Talk, Move, Switch page). A stop of **Pause** does the same.
 
 In mixer mode, `mixer_keys = false` in the config file gives the keys their keyboard-mode layout. The knobs and lights stay in mixer mode.
 
@@ -65,6 +66,15 @@ A mixer key (`mute`, `focus`, `talk`, `move`, `page`, `open:`) goes to the app a
 The firmware keeps only the key table of the current page. When the page changes, the app sends the key table of the new page.
 The firmware remembers the action of each key at the time of the press. The release then always matches the press, also if the page changed in between.
 
+The firmware never drops a key release:
+
+- If its event queue is full, the key scan tries the change again at the next scan.
+- If the PC does not take a release report, the firmware sends it again every 100 ms until the PC takes it.
+- When the USB bus is suspended, reset or switched off, the firmware releases all typed keys. It sends that state when the bus is back.
+
+Thus a lost release cannot leave a key (for example Ctrl or Shift) held on the PC.
+Knob detents that wait for the queue are limited to 8 for each knob.
+
 When the USB bus is suspended (the PC sleeps or is off), the lights and the screen go off.
 
 ### Screens
@@ -85,8 +95,9 @@ The screen goes off and the key lights dim after a number of minutes without act
 Activity is one of these:
 
 - A key press or a knob turn.
-- A readout or a notice on the screen.
 - Audible sound, as the app decides it (frame flag bit 2).
+
+A readout or a notice on the screen is not activity. Thus a notice such as `Config loaded` does not keep the screen on.
 
 The app decides that sound is audible when all of these are true:
 
@@ -103,14 +114,40 @@ The meters always show the raw levels, before the volume and mute of each progra
 |---|---|
 | Main thread | Tray icon, tray menu, settings window and its dialogs (Win32 message loop) |
 | Pad listener | Waits for raw HID messages from the pad and passes them to the worker. It reconnects when the pad is connected again. It also reads the firmware version from the device list. |
-| Worker | Changes the volume and mute in Windows. Sends frames, settings, names, the logo name and the key table to the pad. Saves the state. It is the only writer of `apps.toml`. |
+| Worker | Handles knob and key events. Changes the volume and mute in Windows. Sends frames, settings, names, the logo name and the key table to the pad. Saves the state. It is the only writer of `apps.toml`. |
 | Open thread | One short thread for each `open:` key press. It starts the target, so that a slow target does not stop the worker. |
 
 The listener and the worker each open a handle to the raw HID interface. The listener reads. The worker writes.
 The settings window asks the worker for the list of programs, and asks it to undo a move.
 
-The worker sends a frame (levels, volumes, mutes, flags) approximately 30 times per second while sound plays or a control moves.
-After 3 seconds without sound or input, it sends a frame 5 times per second. It sends a frame only when the frame changed.
+When you click **Quit**, or when Windows ends the session (logoff or shutdown), the main thread tells the worker to stop.
+The worker stops Focus and Talk, gives all levels back, and saves the state. The main thread waits for this, for 3 seconds at most.
+
+### App modules
+
+| Module | Contents |
+|---|---|
+| `main.rs` | Start, command-line options, tray menu, worker loop, `open:` |
+| `keys.rs` | The mixer keys (Mute, Focus, Talk, Move, Switch page, `open:`), one event at a time in the order of arrival |
+| `audio.rs` | The volume engine: audio sessions, channels, Focus, meters, the audible rule |
+| `trim.rs` | The trim rules, and the knob target (whole channel or one program) |
+| `pad.rs` | The raw HID link to the pad |
+| `config.rs` | `config.toml`, `apps.toml`, `state.toml` |
+| `settings.rs` | The settings window |
+| `dialog.rs` | The Shortcut, Open and Add a program dialogs |
+| `procs.rs` | Program names from the Toolhelp snapshot, and the foreground window |
+
+The worker sends a frame (levels, volumes, mutes, flags) only when the frame changed.
+It checks for a change approximately 30 times per second when one of these is true:
+
+- A key or a knob of the pad was touched in the last 3 seconds.
+- A program plays audible sound.
+- A meter is at approximately −30 dBFS or higher.
+
+Otherwise it checks every 200 ms. An open microphone in a quiet room stays below −30 dBFS, so it does not keep the fast rate.
+
+The worker handles key presses and releases one at a time, in the order in which they arrived (`app/src/keys.rs`).
+Thus a quick release and press of Talk cannot leave the microphone in the wrong state.
 It reads the volume state of Windows again every 1.5 seconds.
 It sends the settings, names, logo name and key table on connect, after a config change, and every 30 seconds.
 
@@ -171,9 +208,13 @@ In a channel that you never set on the pad, the app follows the level of the pro
 - A Mute key mutes the whole channel. It never changes a level or a trim.
 - A turn up on a muted channel unmutes it. A turn up never unmutes the microphone.
 - Focus turns the sessions of the other channels down from their real level. When Focus stops, each session gets exactly that level back.
+- The app tracks each audio session separately. A program can have more than one session (for example, one for each output device), and each session keeps its own real level.
+- A session that starts while Focus is on is also turned down.
+- If a program closes while Focus is on, the app keeps its real level. When the program starts again, it gets that level back.
+- A session that leaves a turned-down channel gets its real level back.
 - While Focus turns a channel down, the app learns nothing from Windows for that channel.
 - The microphone channel is never turned down.
-- The app writes the original levels to `state.toml` at once. If the app stops while Focus is on, it restores those levels at the next start.
+- The app writes the real levels to `state.toml` at once. If the app stops while Focus is on, it restores those levels at the next start.
 
 ## Channels and programs
 
@@ -202,13 +243,14 @@ The app skips the "System Sounds" session.
 | Names of running programs, and their parent process | Toolhelp process snapshot (`CreateToolhelp32Snapshot`) | Read |
 | The process of the foreground window (for `focused` and Move) | `GetForegroundWindow`, `GetWindowThreadProcessId` | Read |
 | The pad, through its raw HID interface, and its USB release number | hidapi | Read and write |
-| The target of an `open:` key | `ShellExecuteExW` with the verb "open" | Starts it, as a double-click in Explorer does |
+| The target of an `open:` key | `ShellExecuteExW` with the verb "open" | Starts it, as a double-click in Explorer does. An existing file, given by its full path, starts in its own folder. |
 | Files that you select with **Browse...** in a dialog | The standard Windows file dialog | Read the path only |
 | `config.toml`, `apps.toml`, `state.toml`, `log.txt`, `selftest.txt` in the settings folder | File system | Read and write |
 | The value `kb16-mixer` in `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` (Start with Windows) | Registry | Read and write. Never written when `KB16_MIXER_DIR` is set. |
 | Notepad and Explorer, when you click **Open config file** or **Open settings folder** | Process start | Starts them |
 
-An `open:` key does not ask for administrator rights (no elevation). The app does not keep a handle to the started process.
+An `open:` key does not ask for administrator rights (no elevation), and passes no arguments. The app does not keep a handle to the started process.
+If the target is an existing file given by its full path, the program starts in the folder of that file. Otherwise Windows selects the folder.
 If the start fails, the pad shows `Open failed`, and the app writes a line to `log.txt`.
 
 ## What the app never touches

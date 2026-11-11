@@ -128,7 +128,7 @@ A pull request that breaks one of these rules will not be merged.
 - Never write the bootloader region (`0x08000000` to `0x08001FFF`).
 - Keep the three ways into the bootloader (top-left key at start, four corner keys, the bootloader message).
 - Keep the watchdog and the crash counter.
-- Do not write flash more often than necessary. The name page has a limit of one write each minute.
+- Do not write flash more often than necessary. The name page has a limit of one write each minute, and of 8 writes for each power-up.
 
 ### All code
 

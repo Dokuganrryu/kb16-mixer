@@ -48,7 +48,10 @@ The app does **not** start with Windows until you select **Start with Windows** 
 To open the window, click the tray icon. You can also right-click the tray icon, then click **Settings...**.
 The window has three tabs: **Keys**, **Channels** and **Pad**.
 
-Each change applies immediately and goes into `config.toml`. The app keeps the comments and the layout of the file.
+A change in a list, a slider, a tick box or a button applies immediately and goes into `config.toml`.
+The text boxes are the channel names and the name on the screen. A text box applies when you press Enter, leave the box, or close the window.
+While you type, the status line tells you if the name is not correct.
+The app keeps the comments and the layout of the file.
 The status line at the bottom says what changed, or why the app did not accept a change.
 
 - The window does not accept a change that makes the file incorrect. The status line then gives the reason.
@@ -118,7 +121,7 @@ The tab has one column for each channel.
 
 | Control | Use |
 |---|---|
-| **Name** | The name of the channel: 1 to 6 letters, digits or spaces |
+| **Name** | The name of the channel: 1 to 5 letters, digits or spaces. Press Enter or leave the box to apply it. |
 | **Plays** | The kind of channel: **These apps**, **Everything else**, **Microphone** or **App in front** |
 | List | The programs of the channel |
 | **Add...** | Adds a program to the channel. Only for **These apps**. |
@@ -157,7 +160,7 @@ To add or remove a channel, edit the config file. See [Channels](#channels).
 
 | Control | Values | Config setting |
 |---|---|---|
-| **Name on the screen** | 1 to 10 letters, digits or spaces | `name` |
+| **Name on the screen** | 1 to 10 letters, digits or spaces. Press Enter or leave the box to apply it. | `name` |
 | **Light brightness** | A slider, 10 % to 100 % | `brightness` |
 | **Knob step** | 1, 2, 3, 5 or 10 % per click | `step` |
 | **Focus turns the others down to** | Almost silent (10 %), A quarter (25 %), Half (50 %), Three quarters (75 %) | `duck` |
@@ -201,7 +204,7 @@ A reload sets the pad back to page 1.
 A number outside its range is set to the nearest limit. For example, `step = 900` becomes `20`.
 A `name` outside its rule is a mistake: the app does not load the file.
 
-Activity is a key press, a knob turn, a readout or notice on the screen, or audible sound from a program.
+Activity is a key press, a knob turn, or audible sound from a program. A readout or a notice on the screen is not activity.
 Sound is audible when a program plays above approximately −40 dBFS, after its own volume and mute, for at least 1 second.
 A muted output device and the microphone do not count. For the full rule, see [how-it-works.md](how-it-works.md#idle-rule).
 
@@ -256,7 +259,13 @@ The keys have two pages:
 | `[keys]` | Page 1, the mixer page | Mixer keys and media keys |
 | `[keys2]` | Page 2, the keypad page | Digits |
 
-The pad starts on page 1. A disconnect of the pad, a stop of the app, or a reload of the config file sets it back to page 1.
+The pad starts on page 1. These events set it back to page 1:
+
+- A disconnect of the pad.
+- A stop of the app.
+- **Pause** in the tray menu.
+- A reload of the config file.
+
 
 Each table has four rows, `row1` (top) to `row4` (bottom). Each row has exactly four entries, from left to right.
 Each column belongs to the channel with the same position in the list of channels.
@@ -302,6 +311,7 @@ You cannot move a program into the microphone channel.
 ### Open a target
 
 An `open:` key opens its target as a double-click in Explorer does. Windows selects the program that opens it.
+If the target is an existing file, given by its full path, the program starts in the folder of that file.
 
 ```toml
 row1 = ["page", "open:C:\\Tools\\obs64.exe", "open:%USERPROFILE%\\Downloads", "open:https://example.com"]
@@ -355,7 +365,7 @@ The first channel belongs to the left key column, the second to the next column,
 
 | Setting | Required | Meaning |
 |---|---|---|
-| `name` | yes | Name of the channel. The mixer screen shows the first 5 characters, in upper case. The settings window accepts 1 to 6 letters, digits or spaces. |
+| `name` | yes | Name of the channel: 1 to 5 characters. The mixer screen shows it in upper case. The settings window accepts only letters, digits and spaces. |
 | `color` | no | Tint of the key lights, as `"#rrggbb"`. Without it, the app uses a soft white tint. |
 | `apps` | see below | A list of program file names, for example `["Discord.exe", "Teams.exe"]`. Case is not important. |
 | `target` | see below | `"apps"`, `"mic"`, `"other"` or `"focused"` |
@@ -448,6 +458,7 @@ The fourth column has no channel. Its `mute` and `focus` keys would do nothing, 
 | `channel X: unknown target "..."` | `target` is not `apps`, `mic`, `other` or `focused`. |
 | `knob1 = "...": no channel with that name` | The knob names a channel that does not exist. |
 | `name = "...": 1 to 10 letters, digits or spaces` | The logo name is empty, too long, or has other characters. |
+| `channel name "...": 1 to 5 characters, what the pad's screen shows` | A channel name is empty or longer than 5 characters. |
 | `[keys] row1: 3 entries, a row has 4 keys` | A row does not have exactly 4 entries. The same for `[keys2]`. |
 | `[keys2] has no "page" key, so there would be no way back to [keys]` | Page 1 has a `page` key, and page 2 has none. |
 | `key "...": not an action, media key or key name` | The key name is not known. |

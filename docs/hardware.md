@@ -96,7 +96,8 @@ The name page holds one record of 16-bit words:
 | 7 | Fletcher-16 checksum of words 0–6 |
 
 The firmware reads the record at start. If the record is not correct (for example, a blank page), the screen shows `KB16`.
-The firmware writes the page only when the app sends a different name, and at most one time each minute.
+The firmware writes the page only when the app sends a different name. It writes at most one time each minute, and at most 8 times for each power-up.
+After the limit, a new name shows from RAM until the next start.
 An erase stops the CPU for approximately 20 ms.
 
 ## Bootloader

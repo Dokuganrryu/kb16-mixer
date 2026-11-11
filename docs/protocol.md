@@ -29,6 +29,7 @@ On Windows, the app writes 33 bytes: report ID `0`, then the 32 bytes of the mes
 | `CHANNELS` | 4 | Number of channels, one for each key column |
 | `KEYS_PER_REPORT` | 8 | Keys in one `KEYS` message |
 | `NAME_LEN` | 6 | Bytes of one channel name |
+| `NAME_SHOWN` | 5 | Characters of a channel name that the mixer screen shows. The app accepts no longer name. |
 | `POPUP_LEN` | 16 | Bytes of popup text |
 | `LOGO_NAME_LEN` | 10 | Bytes of the name on the logo screen |
 | `NOTICE` | 255 | Popup volume value: show the text only |
@@ -82,7 +83,7 @@ A large readout or a notice on the screen.
 
 `Popup::notice()` in the protocol crate makes a notice: `knob` 0, `volume` 255, `muted` 0.
 The app sends all its text messages (for example `Config error`, `MIXER`, `KEYS`, `Open failed`) as notices.
-The pad shows a popup for 1.3 seconds. A popup counts as activity for the idle timers.
+The pad shows a popup for 1.3 seconds. A popup does not count as activity for the idle timers.
 
 ### `0x20` SETTINGS
 
@@ -104,7 +105,13 @@ The app sends `255` for a setting of `0` (never) in the config file.
 
 ### `0x21` FRAME
 
-The live state. The app sends it approximately 30 times per second while there is activity, and only when it changed.
+The live state. The app sends a frame only when it changed. It checks for a change approximately 30 times per second when one of these is true:
+
+- A key or a knob of the pad was touched in the last 3 seconds.
+- A program plays audible sound (bit 2).
+- A meter is at approximately −30 dBFS or higher.
+
+Otherwise it checks every 200 ms.
 
 | Byte | Field | Contents |
 |---|---|---|
@@ -139,7 +146,7 @@ When the pad receives a message after 3 seconds or more without one, it sets bit
 | 14–19 | `name2` | Name of channel 3, 6 bytes |
 | 20–25 | `name3` | Name of channel 4, 6 bytes |
 
-The app sends printable ASCII in upper case. The mixer screen shows the first 5 characters.
+The app sends printable ASCII in upper case. A channel name has 1 to 5 characters (`NAME_SHOWN`), because the screen strip of a channel has space for 5. The sixth byte is zero.
 
 ### `0x23` KEYS
 

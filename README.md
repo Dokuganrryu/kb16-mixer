@@ -41,11 +41,14 @@ The project has one tested pad. This is what was tested, and how:
 
 | Item | Tested on the real pad | Tested by automated tests and builds only |
 |---|---|---|
-| Mixer: channels, volume, mute, Focus, Talk, Move | yes | |
+| Basic mixer: a knob moves a channel, Mute keys, meters (earlier version) | yes | |
+| Focus, Talk, Move (earlier version) | yes | |
 | Keys, knob turns, key lights, screen | yes | |
 | Flashing and recovery | yes, with earlier versions of the firmware | |
 | Two key pages | | yes |
 | Knob press to select one program in a channel | | yes |
+| Volume balance (trim) rules | | yes |
+| Focus with several audio sessions of one program | | yes |
 | Idle rule (screen off and lights dim only after no sound and no touch) | | yes |
 | Name on the logo screen, kept in the pad | | yes |
 | `open:` key action | | yes |
@@ -150,7 +153,8 @@ The knobs then send media keys. See [Keyboard mode](docs/configuration.md#keyboa
 ## Settings
 
 Click the tray icon to open the settings window. It has three tabs: **Keys**, **Channels** and **Pad**.
-All changes apply immediately. The app writes them into `%APPDATA%\kb16-mixer\config.toml`.
+A change applies immediately. A name in a text box applies when you press Enter or leave the box.
+The app writes the changes into `%APPDATA%\kb16-mixer\config.toml`.
 You can also edit this file by hand. A mistake in the file does not break the app: the last correct settings stay active, and the tray menu shows the problem.
 
 See [Configuration](docs/configuration.md) for the window and for all settings.
