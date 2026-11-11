@@ -206,7 +206,7 @@ fn draw_mixer(fb: &mut Fb, m: &Mixer, peaks: &[u8; NCH]) {
         let x0 = c as i32 * 32;
         let muted = m.mutes & (1 << c) != 0;
         let name = trimmed(&m.names[c]);
-        let name = &name[..name.len().min(5)];
+        let name = &name[..name.len().min(kb16_mixer_protocol::NAME_SHOWN)];
         if c as u8 == m.selected {
             fb.pill(x0, 0, x0 + 30, 8);
             fb.centred(x0, 1, name, false);

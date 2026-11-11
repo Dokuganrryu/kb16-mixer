@@ -48,6 +48,9 @@ pub const CHANNELS: usize = 4;
 pub const KEYS_PER_REPORT: usize = 8;
 /// Bytes of a channel name.
 pub const NAME_LEN: usize = 6;
+/// Letters of a channel name the mixer screen draws: its strip is 31 px wide and a 5x7 letter
+/// takes 6, so a sixth letter would not fit.
+pub const NAME_SHOWN: usize = 5;
 /// Bytes of popup text.
 pub const POPUP_LEN: usize = 16;
 /// Bytes of the name on the logo screen.

@@ -73,6 +73,7 @@ row3 = ["enter", "1", "2", "3"]                   # enter; digits
 row4 = ["mute",  "mute", "mute", "mute"]          # mute stays at hand on both pages
 
 # CHANNELS: up to 4, one per key column, left to right.
+#   name = "..."        1 to 5 characters: what the pad's screen has room for
 #   target = "mic"      your microphone: the meter shows your voice
 #   apps = [...]        these apps (exe names, case-insensitive)
 #   target = "other"    every app no other channel claims (games land here)
@@ -456,6 +457,10 @@ impl RawConfig {
         let palette = [[220, 230, 255], [200, 210, 255], [230, 236, 255], [210, 240, 255]];
         let mut channels = Vec::new();
         for (i, c) in self.channel.into_iter().enumerate() {
+            let shown = kb16_mixer_protocol::NAME_SHOWN;
+            if c.name.trim().is_empty() || c.name.chars().count() > shown {
+                return Err(format!("channel name {:?}: 1 to {shown} characters, what the pad's screen shows", c.name));
+            }
             let color = match c.color.as_deref() {
                 None => palette[i],
                 Some(text) => parse_color(text).ok_or(format!("channel {}: color {text:?} is not #rrggbb", c.name))?,
@@ -758,6 +763,9 @@ mod tests {
         assert!(problem("[[channel]\nname = 1").contains("line 1"), "syntax errors carry the line");
         let five = "[[channel]]\nname = \"A\"\ntarget = \"other\"\n".repeat(5);
         assert!(problem(&five).contains("4 columns"));
+        assert!(problem("[[channel]]\nname = \"Gaming\"\ntarget = \"other\"").contains("1 to 5"), "what the pad shows");
+        assert!(problem("[[channel]]\nname = \"\"\ntarget = \"other\"").contains("1 to 5"));
+        assert!(parse("[[channel]]\nname = \"Gamer\"\ntarget = \"other\"").is_ok());
     }
 
     #[test]

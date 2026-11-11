@@ -119,7 +119,7 @@ fn kind_about(kind: usize) -> &'static str {
 /// Channel names the knobs read as something else.
 const KNOB_WORDS: [&str; 5] = ["master", "system", "mic", "focused", "selected"];
 /// What the pad's screen has room for.
-const CHANNEL_NAME_LEN: usize = kb16_mixer_protocol::NAME_LEN;
+const CHANNEL_NAME_LEN: usize = kb16_mixer_protocol::NAME_SHOWN;
 
 // ------------------------------------------------------------------ control ids
 
@@ -1605,9 +1605,12 @@ mod tests {
         let c = config::defaults().channels;
         assert_eq!(channel_name_problem(&c, 1, "Voice"), None);
         assert!(channel_name_problem(&c, 1, "").unwrap().contains("needs a name"));
-        assert!(channel_name_problem(&c, 1, "Discord").unwrap().contains("1 to 6"));
+        assert!(channel_name_problem(&c, 1, "Gamer").is_none(), "5 letters fit the screen");
+        assert!(channel_name_problem(&c, 1, "Gaming").unwrap().contains("1 to 5"), "a sixth does not");
         assert!(channel_name_problem(&c, 1, "game").unwrap().contains("already called Game"));
-        assert!(channel_name_problem(&c, 1, "Master").unwrap().contains("knobs"));
+        let mut no_mic_name = c.clone();
+        no_mic_name[0].name = "Voice".into();
+        assert!(channel_name_problem(&no_mic_name, 1, "MIC").unwrap().contains("knobs"));
         assert_eq!(channel_name_problem(&c, 0, "MIC"), None, "the microphone channel may be Mic");
         assert!(kind_problem(&c, 1, 2).unwrap().contains("Mic is already"), "one microphone");
         assert!(kind_problem(&c, 1, 1).unwrap().contains("Game is already"), "one catch-all");
