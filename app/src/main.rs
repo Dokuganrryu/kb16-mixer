@@ -25,8 +25,12 @@ use std::time::{Duration, Instant};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use windows::Win32::Foundation::*;
+use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx};
 use windows::Win32::System::Registry::*;
 use windows::Win32::System::Threading::{CreateMutexW, GetCurrentThreadId};
+use windows::Win32::UI::Shell::{
+    SEE_MASK_DOENVSUBST, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, ShellExecuteExW,
+};
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{HSTRING, PCWSTR, w};
 
@@ -130,8 +134,8 @@ fn main() {
         std::thread::spawn(move || pad::listen(ev_tx, paused));
     }
     {
-        let (cfg, generation, paused) = (cfg.clone(), generation.clone(), paused.clone());
-        std::thread::spawn(move || worker(ev_rx, cfg, generation, paused, main_thread));
+        let (notices, cfg, generation, paused) = (ev_tx.clone(), cfg.clone(), generation.clone(), paused.clone());
+        std::thread::spawn(move || worker(ev_rx, notices, cfg, generation, paused, main_thread));
     }
     if startup_problem.is_some() {
         let _ = ev_tx.send(PadEvent::Notice("Config error".into()));
@@ -146,6 +150,7 @@ fn main() {
 /// The mixer loop: reacts to the pad at once, and ticks to follow Windows and feed the pad.
 fn worker(
     events: Receiver<PadEvent>,
+    notices: Sender<PadEvent>,
     cfg: Arc<RwLock<Config>>,
     generation: Arc<AtomicU64>,
     paused: Arc<AtomicBool>,
@@ -179,7 +184,7 @@ fn worker(
     let mut page_key: Option<(Instant, usize)> = None;
     // What each key meant when it went down, so its release does the matching thing even
     // after the page changed underneath it.
-    let mut held: [[Option<KeyAction>; 4]; 4] = [[None; 4]; 4];
+    let mut held: [[Option<KeyAction>; 4]; 4] = Default::default();
     // What each knob is aimed at: its channel, or for a few seconds one app in it.
     let mut aims: [trim::Aim; 3] = Default::default();
 
@@ -266,8 +271,8 @@ fn worker(
             if row as usize >= 4 || col >= 4 {
                 continue;
             }
-            let action = cfg.pages[page][row as usize][col];
-            held[row as usize][col] = Some(action);
+            let action = cfg.pages[page][row as usize][col].clone();
+            held[row as usize][col] = Some(action.clone());
             // Move is held like a shift key: the next key picks the column.
             if move_armed && action != KeyAction::Move && col < n {
                 let (outcome, app) = mixer.move_focused(col, channels);
@@ -289,7 +294,7 @@ fn worker(
             match action {
                 KeyAction::Mute if col < n => popup = show(mixer.change_channel(col, None, channels)),
                 // Talk, or Focus on the microphone's column, which means the same thing.
-                _ if is_talk(action, col, channels) => {
+                _ if is_talk(&action, col, channels) => {
                     if talk_restore.is_none() {
                         let muted = mixer.mic_muted();
                         talk_restore = Some(muted);
@@ -309,6 +314,7 @@ fn worker(
                     page_key = Some((Instant::now(), page));
                     page = 1 - page;
                 }
+                KeyAction::Open(target) => open(target, notices.clone()),
                 KeyAction::Move => {
                     move_armed = true;
                     popup = match mixer.where_is_focused(channels) {
@@ -339,7 +345,7 @@ fn worker(
                         page = back;
                     }
                 }
-                _ if is_talk(action, col, channels) => {
+                _ if is_talk(&action, col, channels) => {
                     if let Some(muted) = talk_restore.take() {
                         mixer.set_mic_muted(muted, channels);
                         popup = notice(if muted { "Mic off".into() } else { "Mic live".into() });
@@ -364,7 +370,7 @@ fn worker(
             move_armed = false;
             page = 0;
             page_key = None;
-            held = [[None; 4]; 4];
+            held = Default::default();
             if let Some(muted) = talk_restore.take() {
                 mixer.set_mic_muted(muted, channels);
             }
@@ -520,8 +526,33 @@ fn worker(
 }
 
 /// Talk, or a Focus key sitting in the microphone's column.
-fn is_talk(action: KeyAction, col: usize, channels: &[config::ChannelCfg]) -> bool {
-    action == KeyAction::Talk || (action == KeyAction::Focus && audio::mic_channel(channels) == Some(col))
+fn is_talk(action: &KeyAction, col: usize, channels: &[config::ChannelCfg]) -> bool {
+    *action == KeyAction::Talk || (*action == KeyAction::Focus && audio::mic_channel(channels) == Some(col))
+}
+
+/// Opens a program, file, folder or URL the way a double-click in Explorer would: the shell
+/// picks the handler, nothing is elevated, and no other process is touched. It runs on a
+/// thread of its own, so a slow target (a network path, a sleeping drive) never holds up the
+/// mixer; a failure is logged and shown on the pad.
+fn open(target: String, notices: Sender<PadEvent>) {
+    std::thread::spawn(move || unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        let file = HSTRING::from(target.as_str());
+        let mut info = SHELLEXECUTEINFOW {
+            cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+            // Our own notice replaces the shell's error dialogs; NOASYNC because this thread
+            // ends right after the call.
+            fMask: SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI | SEE_MASK_DOENVSUBST,
+            lpVerb: w!("open"),
+            lpFile: PCWSTR(file.as_ptr()),
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
+        };
+        if let Err(e) = ShellExecuteExW(&mut info) {
+            log(&format!("could not open {target:?}: {e}"));
+            let _ = notices.send(PadEvent::Notice("Open failed".into()));
+        }
+    });
 }
 
 fn clip(s: &str, max: usize) -> &str {

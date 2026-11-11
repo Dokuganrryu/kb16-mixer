@@ -48,6 +48,8 @@ knob3 = "Game"        # big knob
 #   "page"    tap: switch to the other page of keys; tap again to come back. Hold instead
 #             and the other page lasts only while held. The screen shows MIXER or KEYS.
 #             If [keys] has a page key, [keys2] needs one too, so there is a way back.
+#   "open:<what>"  opens a program, file, folder or web address, as a double-click would:
+#             "open:C:\\Tools\\obs64.exe", "open:%USERPROFILE%\\Downloads", "open:https://..."
 #   "none"    does nothing
 #
 # Anything else is typed by the pad itself as a real key press, so it works everywhere,
@@ -164,18 +166,27 @@ pub struct ChannelCfg {
     pub target: ChannelTarget,
 }
 
-/// What one of the 16 keys does. The first five are handled by this app; the last two are
+/// What one of the 16 keys does. Up to `Open` they are handled by this app; the last two are
 /// typed by the pad itself as real key presses.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Default)]
 pub enum KeyAction {
     Mute,
     Focus,
     Talk,
     Move,
     Page,
+    /// Shell-open this program, file, folder or URL.
+    Open(String),
+    #[default]
     Nothing,
-    Keyboard { code: u8, mods: u8 },
-    Media { tap: u8, hold: u8 },
+    Keyboard {
+        code: u8,
+        mods: u8,
+    },
+    Media {
+        tap: u8,
+        hold: u8,
+    },
 }
 
 pub type KeyGrid = [[KeyAction; 4]; 4];
@@ -238,7 +249,16 @@ fn key_usage(name: &str) -> Option<u8> {
 }
 
 pub fn parse_key(text: &str) -> Result<KeyAction, String> {
-    let name = text.trim().to_lowercase();
+    // Before lowercasing: a path or URL keeps its case.
+    let trimmed = text.trim();
+    if trimmed.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("open:")) {
+        let target = trimmed[5..].trim().trim_matches('"').trim();
+        if target.is_empty() {
+            return Err(format!("key {text:?}: open: needs a program, file, folder or web address after it"));
+        }
+        return Ok(KeyAction::Open(target.to_string()));
+    }
+    let name = trimmed.to_lowercase();
     let unknown = || format!("key {text:?}: not an action, media key or key name");
     match name.as_str() {
         "" | "none" => return Ok(KeyAction::Nothing),
@@ -281,7 +301,7 @@ pub fn parse_key(text: &str) -> Result<KeyAction, String> {
 fn parse_grid(raw: RawKeys, page: usize) -> Result<KeyGrid, String> {
     let table = PAGE_TABLES[page];
     let rows = [raw.row1, raw.row2, raw.row3, raw.row4];
-    let mut grid = [[KeyAction::Nothing; 4]; 4];
+    let mut grid = KeyGrid::default();
     for (r, row) in rows.into_iter().enumerate() {
         let names: Vec<String> = match row {
             Some(names) if names.len() == 4 => names,
@@ -298,7 +318,7 @@ fn parse_grid(raw: RawKeys, page: usize) -> Result<KeyGrid, String> {
 /// Both pages, refused if a tap could switch to the keypad page with no key there to switch back.
 fn parse_pages(keys: RawKeys, keys2: RawKeys) -> Result<[KeyGrid; PAGES], String> {
     let pages = [parse_grid(keys, 0)?, parse_grid(keys2, 1)?];
-    let has_page_key = |g: &KeyGrid| g.iter().flatten().any(|&a| a == KeyAction::Page);
+    let has_page_key = |g: &KeyGrid| g.iter().flatten().any(|a| *a == KeyAction::Page);
     if has_page_key(&pages[0]) && !has_page_key(&pages[1]) {
         return Err("[keys2] has no \"page\" key, so there would be no way back to [keys]".into());
     }
@@ -613,11 +633,11 @@ mod tests {
         );
         assert_eq!(c.default_selected(), 2);
         let [mixer, keypad] = c.pages;
-        assert_eq!(mixer[3], [KeyAction::Mute; 4], "bottom row mutes");
-        assert_eq!(keypad[3], [KeyAction::Mute; 4], "on both pages");
+        assert_eq!(mixer[3], [const { KeyAction::Mute }; 4], "bottom row mutes");
+        assert_eq!(keypad[3], [const { KeyAction::Mute }; 4], "on both pages");
         assert_eq!(mixer[2][0], KeyAction::Talk);
-        assert_eq!(mixer[2][1..], [KeyAction::Focus; 3]);
-        assert_eq!((mixer[0][0], keypad[0][0]), (KeyAction::Page, KeyAction::Page));
+        assert_eq!(mixer[2][1..], [const { KeyAction::Focus }; 3]);
+        assert_eq!((&mixer[0][0], &keypad[0][0]), (&KeyAction::Page, &KeyAction::Page));
         assert_eq!(mixer[0][1..], [0xB6, 0xCD, 0xB5].map(|tap| KeyAction::Media { tap, hold: 0 }), "prev play next");
         assert_eq!(mixer[1][0], KeyAction::Move);
         assert_eq!(mixer[1][1], KeyAction::Keyboard { code: 0x16, mods: 0x0A }, "win+shift+s");
@@ -669,6 +689,12 @@ mod tests {
         assert!(parse_key("ctrl+").is_err());
         assert!(parse_key("a+b").unwrap_err().contains("one key"));
         assert!(parse_key("mute|focus").unwrap_err().contains("media"));
+        assert_eq!(parse_key(" Open:C:\\Tools\\OBS.exe "), Ok(KeyAction::Open("C:\\Tools\\OBS.exe".into())));
+        assert_eq!(parse_key("open: \"D:\\My Games\" "), Ok(KeyAction::Open("D:\\My Games".into())));
+        assert_eq!(parse_key("OPEN:https://example.com/A"), Ok(KeyAction::Open("https://example.com/A".into())));
+        assert!(parse_key("open:").unwrap_err().contains("needs a program"));
+        assert!(parse_key("open: \"\"").is_err());
+        assert!(parse_key("opener").is_err(), "only the prefix counts");
         let short = "[keys]\nrow1 = [\"mute\"]\n[[channel]]\nname = \"A\"\ntarget = \"other\"";
         assert!(problem(short).contains("a row has 4 keys"));
     }

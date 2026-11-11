@@ -204,9 +204,9 @@ fn selection(parent: HWND, id: i32) -> Option<usize> {
 
 /// Choices for a key: the standard list, plus the current text if it is something custom
 /// (a key combination typed into the file), so opening the window never loses it.
-fn key_choices(current: KeyAction, raw: &str) -> (Vec<(String, String)>, usize) {
+fn key_choices(current: &KeyAction, raw: &str) -> (Vec<(String, String)>, usize) {
     let mut list: Vec<(String, String)> = KEY_CHOICES.iter().map(|(l, v)| (l.to_string(), v.to_string())).collect();
-    let at = list.iter().position(|(_, v)| config::parse_key(v) == Ok(current)).unwrap_or_else(|| {
+    let at = list.iter().position(|(_, v)| config::parse_key(v).as_ref() == Ok(current)).unwrap_or_else(|| {
         list.push((raw.to_string(), raw.to_string()));
         list.len() - 1
     });
@@ -247,7 +247,7 @@ fn build(hwnd: HWND, cfg: &Config) {
     for r in 0..4 {
         label(hwnd, ROW_NAMES[r], 16, 62 + r as i32 * 30, 96);
         for c in 0..4 {
-            let (list, at) = key_choices(cfg.pages[0][r][c], &raw_keys[r][c]);
+            let (list, at) = key_choices(&cfg.pages[0][r][c], &raw_keys[r][c]);
             combo(
                 hwnd,
                 ID_KEY + (r * 4 + c) as i32,
@@ -346,7 +346,7 @@ fn changed(hwnd: HWND, id: i32) -> Result<(), String> {
     match (id, pick) {
         (ID_KEY..=115, Some(i)) => {
             let (r, c) = (((id - ID_KEY) / 4) as usize, ((id - ID_KEY) % 4) as usize);
-            let (list, _) = key_choices(cfg.pages[0][r][c], &config::raw_keys()[r][c]);
+            let (list, _) = key_choices(&cfg.pages[0][r][c], &config::raw_keys()[r][c]);
             let Some((_, text)) = list.get(i) else { return Ok(()) };
             set_key(r, c, text)?;
         }
@@ -496,7 +496,7 @@ mod tests {
         let cfg = config::load().expect("still a valid config");
         assert_eq!(cfg.pages[0][0][1], KeyAction::Keyboard { code: 0x07, mods: 0x03 });
         assert_eq!(cfg.pages[0][2][3], KeyAction::Nothing);
-        assert_eq!(cfg.pages[0][3], [KeyAction::Mute; 4], "untouched rows stay");
+        assert_eq!(cfg.pages[0][3], [const { KeyAction::Mute }; 4], "untouched rows stay");
         assert_eq!(cfg.pages[1], config::defaults().pages[1], "the keypad page is left alone");
         assert!(text.contains("[keys2]\nrow1 = [\"page\",  \"7\", \"8\", \"9\"]"));
         assert!(cfg.knobs[1] == KnobBinding::Master);

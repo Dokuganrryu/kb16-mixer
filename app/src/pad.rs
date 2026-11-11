@@ -206,10 +206,10 @@ pub fn logo_name_message(name: &str) -> Report {
 /// Tells the pad what its 16 keys do: two reports of 8 keys each.
 pub fn key_messages(grid: &crate::config::KeyGrid) -> [Report; 2] {
     use crate::config::KeyAction::*;
-    let key = |i: usize| match grid[i / 4][i % 4] {
-        Mute | Focus | Talk | Move | Page => Key::Host,
-        Keyboard { code, mods } => Key::Keyboard { code, mods },
-        Media { tap, hold } => Key::Media { tap, hold },
+    let key = |i: usize| match &grid[i / 4][i % 4] {
+        Mute | Focus | Talk | Move | Page | Open(_) => Key::Host,
+        &Keyboard { code, mods } => Key::Keyboard { code, mods },
+        &Media { tap, hold } => Key::Media { tap, hold },
         Nothing => Key::Nothing,
     };
     [0, 1].map(|half| {
