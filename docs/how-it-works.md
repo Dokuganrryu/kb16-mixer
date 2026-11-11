@@ -37,7 +37,7 @@ Windows uses its built-in HID driver for all three interfaces. The project has n
 
 The app sends a heartbeat message each second when it has nothing else to send. Thus the pad stays in mixer mode while the app runs.
 If you close the app or select **Pause** in the tray menu, the pad goes back to keyboard mode after 3 seconds.
-**Pause** first sets the pad back to page 1 and lets go of all held mixer keys (Focus, Talk, Move, Switch page). A stop of **Pause** does the same.
+**Pause** first sets the pad back to page 1 and releases all held mixer keys (Focus, Talk, Move, Switch page). When you select **Pause** again to stop it, the app does the same.
 
 In mixer mode, `mixer_keys = false` in the config file gives the keys their keyboard-mode layout. The knobs and lights stay in mixer mode.
 
