@@ -40,8 +40,9 @@ use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuIt
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Registry::*;
-use windows::Win32::System::Threading::{CreateMutexW, GetCurrentThreadId};
+use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Shell::{
     SEE_MASK_DOENVSUBST, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, ShellExecuteExW,
 };
@@ -184,7 +185,8 @@ fn main() {
     let generation = Arc::new(AtomicU64::new(0));
     let paused = Arc::new(AtomicBool::new(false));
     let (ev_tx, ev_rx) = mpsc::channel();
-    let main_thread = unsafe { GetCurrentThreadId() };
+    // Before the worker starts: it posts to this window.
+    let ui = ui_window().0 as usize;
 
     if !no_pad {
         let (ev_tx, paused) = (ev_tx.clone(), paused.clone());
@@ -192,7 +194,7 @@ fn main() {
     }
     {
         let (notices, cfg, generation, paused) = (ev_tx.clone(), cfg.clone(), generation.clone(), paused.clone());
-        std::thread::spawn(move || worker(ev_rx, notices, cfg, generation, paused, main_thread));
+        std::thread::spawn(move || worker(ev_rx, notices, cfg, generation, paused, ui));
     }
     if startup_problem.is_some() {
         let _ = ev_tx.send(PadEvent::Notice("Config error".into()));
@@ -212,7 +214,7 @@ fn worker(
     cfg: Arc<RwLock<Config>>,
     generation: Arc<AtomicU64>,
     paused: Arc<AtomicBool>,
-    main_thread: u32,
+    ui: usize,
 ) {
     let mut mixer = match Mixer::new() {
         Ok(m) => m,
@@ -297,7 +299,7 @@ fn worker(
         // Coalesce: a fast spin becomes one change per knob.
         let mut turns = [0i32; 3];
         let mut presses = [0usize; 3];
-        let mut closing = false;
+        let mut closing: Option<Sender<()>> = None;
         let mut popup: Option<Show> = None;
         let is_paused = paused.load(Ordering::Relaxed);
         if !batch.is_empty() {
@@ -305,7 +307,7 @@ fn worker(
         }
         let now = Instant::now();
         for e in batch {
-            let mut desk = Desk { mixer: &mut mixer, channels, popup: &mut popup, notices: &notices, main_thread };
+            let mut desk = Desk { mixer: &mut mixer, channels, popup: &mut popup, notices: &notices, ui };
             match e {
                 // Input still on its way when Pause was chosen belongs to no one.
                 PadEvent::Turn { .. } | PadEvent::Press { .. } | PadEvent::Key { .. } | PadEvent::KeyUp { .. }
@@ -314,9 +316,9 @@ fn worker(
                 PadEvent::Press { knob } if knob < 3 => presses[knob as usize] += 1,
                 PadEvent::Key { row, col } => keys.press(row as usize, col as usize, now, &cfg, &mut desk),
                 PadEvent::KeyUp { row, col } => keys.release(row as usize, col as usize, now, &cfg, &mut desk),
-                PadEvent::Shutdown => {
+                PadEvent::Shutdown(done) => {
                     keys.let_go(&mut desk);
-                    closing = true;
+                    closing = Some(done);
                 }
                 PadEvent::Connected(c) => {
                     pad_present = c;
@@ -328,9 +330,7 @@ fn worker(
                     }
                     meta_sent = None;
                     last_frame = [0; 32];
-                    unsafe {
-                        let _ = PostThreadMessageW(main_thread, WM_PAD_STATUS, WPARAM(c as usize), LPARAM(0));
-                    }
+                    post_ui(ui, WM_PAD_STATUS);
                 }
                 PadEvent::Notice(text) => popup = Some(Show::Notice(text)),
                 PadEvent::Apps(reply) => {
@@ -354,7 +354,7 @@ fn worker(
         // ways the app and the pad start over on page 1 with nothing held.
         if is_paused != was_paused {
             was_paused = is_paused;
-            keys.let_go(&mut Desk { mixer: &mut mixer, channels, popup: &mut popup, notices: &notices, main_thread });
+            keys.let_go(&mut Desk { mixer: &mut mixer, channels, popup: &mut popup, notices: &notices, ui });
             meta_sent = None;
             last_frame = [0; 32];
             farewell = is_paused;
@@ -428,11 +428,12 @@ fn worker(
             saved = now_state;
             unsaved_since = Some(if urgent { Instant::now() - SAVE_AFTER } else { Instant::now() });
         }
-        if unsaved_since.is_some_and(|t| t.elapsed() >= SAVE_AFTER) || (closing && unsaved_since.is_some()) {
+        if unsaved_since.is_some_and(|t| t.elapsed() >= SAVE_AFTER) || (closing.is_some() && unsaved_since.is_some()) {
             config::save_state(&saved);
             unsaved_since = None;
         }
-        if closing {
+        if let Some(done) = closing {
+            let _ = done.send(());
             return;
         }
 
@@ -534,7 +535,7 @@ struct Desk<'a> {
     channels: &'a [ChannelCfg],
     popup: &'a mut Option<Show>,
     notices: &'a Sender<PadEvent>,
-    main_thread: u32,
+    ui: usize,
 }
 
 impl Desk<'_> {
@@ -582,9 +583,7 @@ impl keys::Hands for Desk<'_> {
         };
         if matches!(outcome, Moved::To | Moved::BackToAuto) {
             config::save_apps(&self.mixer.moved);
-            unsafe {
-                let _ = PostThreadMessageW(self.main_thread, WM_APPS_MOVED, WPARAM(0), LPARAM(0));
-            }
+            post_ui(self.ui, WM_APPS_MOVED);
         }
         self.notice(text);
     }
@@ -813,18 +812,22 @@ fn tray(paused: Arc<AtomicBool>, to_mixer: Sender<PadEvent>, start: Start) -> Re
         settings::open_at(tab, None);
     }
 
-    let mut msg = MSG::default();
-    unsafe {
-        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-            if msg.message == WM_PAD_STATUS && !pause.is_checked() {
-                let text = status_line(start.no_pad);
+    {
+        let (tray, status, pause, no_pad) = (tray.clone(), status.clone(), pause.clone(), start.no_pad);
+        let on_pad_status = move || {
+            if !pause.is_checked() {
+                let text = status_line(no_pad);
                 let _ = tray.set_tooltip(Some(&text));
                 status.set_text(text);
                 settings::pad_changed();
             }
-            if msg.message == WM_APPS_MOVED {
-                settings::apps_moved();
-            }
+        };
+        PAD_STATUS.set(Some(Box::new(on_pad_status)));
+    }
+
+    let mut msg = MSG::default();
+    unsafe {
+        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             // Tab / arrow-key navigation inside the settings window.
             if settings::window().is_some_and(|w| IsDialogMessageW(w, &msg).as_bool()) {
                 continue;
@@ -839,9 +842,7 @@ fn tray(paused: Arc<AtomicBool>, to_mixer: Sender<PadEvent>, start: Start) -> Re
             }
             while let Ok(ev) = MenuEvent::receiver().try_recv() {
                 if ev.id == quit.id() {
-                    // Let the mixer undo Focus / Talk and save before the process ends.
-                    let _ = to_mixer.send(PadEvent::Shutdown);
-                    std::thread::sleep(Duration::from_millis(250));
+                    stop_mixer();
                     PostQuitMessage(0);
                 } else if ev.id == open_settings.id() {
                     settings::open();
@@ -879,7 +880,86 @@ fn tray(paused: Arc<AtomicBool>, to_mixer: Sender<PadEvent>, start: Start) -> Re
             }
         }
     }
+    // It holds the tray icon, which is only taken off the taskbar when the last copy goes.
+    PAD_STATUS.set(None);
     Ok(())
+}
+
+thread_local! {
+    /// What the hidden window does when the pad comes or goes (it updates the tray).
+    static PAD_STATUS: std::cell::RefCell<Option<Box<dyn Fn()>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Lets the mixer undo Focus and Talk and save, and waits until it has. The wait is bounded,
+/// so a mixer stuck in a Core Audio call cannot hold up Quit or the end of a Windows session.
+fn stop_mixer() {
+    let (done, answer) = mpsc::channel();
+    if tell_mixer(PadEvent::Shutdown(done)) {
+        let _ = answer.recv_timeout(Duration::from_secs(3));
+    }
+}
+
+/// A window nobody sees, for what the worker tells the main thread and for the end of a Windows
+/// session. A message to a window still arrives while a menu or a dialog runs its own message
+/// loop, where a thread message would be dropped. It is a top-level window, not a message-only
+/// one, because only top-level windows are told that the session ends.
+fn ui_window() -> HWND {
+    unsafe {
+        let instance: HINSTANCE = GetModuleHandleW(None).map(|m| m.into()).unwrap_or_default();
+        RegisterClassW(&WNDCLASSW {
+            lpfnWndProc: Some(ui_proc),
+            hInstance: instance,
+            lpszClassName: w!("kb16-mixer-ui"),
+            ..Default::default()
+        });
+        CreateWindowExW(
+            WS_EX_TOOLWINDOW,
+            w!("kb16-mixer-ui"),
+            w!("KB16 mixer"),
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Some(instance),
+            None,
+        )
+        .unwrap_or_else(|e| {
+            log(&format!("could not create the hidden window: {e}"));
+            HWND::default()
+        })
+    }
+}
+
+fn post_ui(ui: usize, msg: u32) {
+    unsafe {
+        let _ = PostMessageW(Some(HWND(ui as *mut _)), msg, WPARAM(0), LPARAM(0));
+    }
+}
+
+unsafe extern "system" fn ui_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    match msg {
+        WM_PAD_STATUS => {
+            PAD_STATUS.with_borrow(|f| f.as_ref().map(|f| f()));
+            LRESULT(0)
+        }
+        WM_APPS_MOVED => {
+            settings::apps_moved();
+            LRESULT(0)
+        }
+        WM_QUERYENDSESSION => LRESULT(1),
+        // The session really ends (wparam false: it was called off). The process may be
+        // stopped any time after this returns, so the apps Focus or Talk changed are put right now.
+        WM_ENDSESSION => {
+            if wparam.0 != 0 {
+                stop_mixer();
+            }
+            LRESULT(0)
+        }
+        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
 }
 
 #[cfg(test)]

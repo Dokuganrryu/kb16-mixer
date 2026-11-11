@@ -33,8 +33,9 @@ pub enum PadEvent {
     Connected(bool),
     /// Not from the pad: a short message for its screen (config problems and the like).
     Notice(String),
-    /// Not from the pad: the app is closing; undo anything temporary first.
-    Shutdown,
+    /// Not from the pad: the app is closing; undo anything temporary first. Answered once that
+    /// is done and the state is saved.
+    Shutdown(Sender<()>),
     /// Not from the pad: the settings window asks which apps have a volume slider right now
     /// (exe names, lowercase, sorted).
     Apps(Sender<Vec<String>>),
