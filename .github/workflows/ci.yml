@@ -176,15 +176,20 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      # Each check runs also when an earlier check failed, so that one run shows all problems.
       - name: Unit tests of the scripts
         run: python3 -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py
       - name: STE check of all Markdown files
+        if: ${{ !cancelled() }}
         run: python3 scripts/ste-lint.py
       - name: Privacy check (files and commit addresses)
+        if: ${{ !cancelled() }}
         run: python3 scripts/check-privacy.py --history HEAD
       - name: Link check
+        if: ${{ !cancelled() }}
         run: python3 scripts/check-links.py
       - name: Schema check of the workflows, Dependabot and the issue forms
+        if: ${{ !cancelled() }}
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet check-jsonschema==0.38.2
