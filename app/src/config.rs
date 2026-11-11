@@ -636,12 +636,20 @@ pub fn load() -> Result<Config, String> {
     parse(&text)
 }
 
-/// Replaces a file so that it is never seen half written: a crash or a full disk leaves the old
-/// one in place.
+/// Replaces a file so that it is never seen half written. The new text goes to a side file,
+/// which is flushed to the disk (`sync_all`) before it takes the old file's place in one rename.
+/// After a crash, a full disk or a power cut the file is therefore whole: the old text or the
+/// new one. The rename itself is not flushed, so a power cut just after it can leave the old
+/// text. Not tested with a real power cut.
 pub fn write_whole(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, text)?;
-    std::fs::rename(&tmp, path).inspect_err(|_| {
+    let written = (|| {
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()
+    })();
+    written.and_then(|()| std::fs::rename(&tmp, path)).inspect_err(|_| {
         let _ = std::fs::remove_file(&tmp);
     })
 }
@@ -713,8 +721,11 @@ pub struct Saved {
     /// Channel levels set on the pad, 0.0..=1.0, by channel name.
     #[serde(default)]
     pub levels: HashMap<String, f32>,
-    /// Apps Focus has turned down right now (exe -> their real level). Written the moment
-    /// Focus starts, so even if the PC is switched off mid-focus they get their level back.
+    /// Apps Focus has turned down right now (exe -> their real level). Written in the same pass
+    /// of the mixer loop that turns them down, not after the usual wait (see `worker.rs`), and
+    /// flushed to the disk (see `write_whole`). If the PC is switched off mid-focus, they get
+    /// their real level back on the next start. A power cut in the moment between the turn-down
+    /// and that write (a few milliseconds) loses it.
     #[serde(default)]
     pub restore: HashMap<String, f32>,
     /// Apps turned on their own inside a channel: exe -> share of the channel level (0..1).
@@ -894,6 +905,32 @@ mod tests {
         assert!(!migrate_from(&base), "only once");
         assert_eq!(std::fs::read_to_string(base.join(DIR_NAME).join("config.toml")).unwrap(), "step = 3");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_whole_write_leaves_the_complete_file_and_no_side_file() {
+        let dir = std::env::temp_dir().join(format!("kb16-write-whole-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("state.toml");
+        let long = "[levels]
+"
+        .to_string()
+            + &"\"Game\" = 0.5
+"
+            .repeat(2000);
+        for text in [
+            long.as_str(),
+            "[levels]
+\"Chat\" = 0.25
+",
+        ] {
+            write_whole(&file, text).unwrap();
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), text, "the whole text, the old one replaced");
+            let names: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+            assert_eq!(names, ["state.toml"], "no side file is left");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
