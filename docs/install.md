@@ -296,8 +296,12 @@ After `Download done`, the line `dfu-util exit 74` is normal.
 
 The script writes only the firmware area (`0x08002000`). It does not write the bootloader. It does not write unless you type `YES`.
 
-If the pad is not in the bootloader when the script starts, the script asks: "Restart it into its bootloader with kb16-mixer.exe? (y/N)". Type `y` only if the pad has this firmware already. For the stock firmware, press Enter. The script then tells you what to do. It waits for the bootloader for 120 seconds at most.
-When you type `y`, the script stops `kb16-mixer.exe` if it runs. It starts the app again after the write.
+If the pad is not in the bootloader when the script starts, the script asks: "Restart it into its bootloader with kb16-mixer.exe? (y/N)".
+
+- If the pad has this firmware already, type `y`. The script stops `kb16-mixer.exe` if it runs. After the write, it starts the app again.
+- If the pad has the stock firmware, press Enter. The script then tells you what to do.
+
+The script waits for the bootloader for 120 seconds at most.
 
 ## 7. Restart the pad
 
