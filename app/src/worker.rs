@@ -293,12 +293,7 @@ impl Worker {
         let mixer = &mut self.mixer;
         let binding = cfg.knobs[knob];
         let delta = turns as f32 * cfg.step;
-        let channel = match binding {
-            KnobBinding::Selected => Some(mixer.focus().unwrap_or_else(|| cfg.default_selected())),
-            KnobBinding::Channel(c) if c < channels.len() => Some(c),
-            _ => None,
-        };
-        let Some(c) = channel else {
+        let Some(c) = knob_channel(binding, mixer.focus(), cfg.default_selected(), channels.len()) else {
             // Master, mic or the app in front: a press only shows the level (a zero step
             // changes nothing); mute lives on the keys.
             let delta = if turns != 0 { delta } else { 0.0 };
@@ -495,6 +490,39 @@ fn is_loud(levels: &[u8]) -> bool {
     levels.iter().any(|&l| l >= LOUD)
 }
 
+/// The channel a knob turns: for "selected", the one Focus stands out, else the default one.
+/// None for the master volume, the microphone and the app in front.
+fn knob_channel(binding: KnobBinding, focus: Option<usize>, default_selected: usize, channels: usize) -> Option<usize> {
+    match binding {
+        KnobBinding::Selected => Some(focus.unwrap_or(default_selected)),
+        KnobBinding::Channel(c) if c < channels => Some(c),
+        _ => None,
+    }
+}
+
+/// The pad's notice after the Move key, cut to fit the 16 characters of a screen line: the
+/// channel name is kept whole and the app name gives way.
+fn moved_notice(outcome: &Moved, app: &str, channel: &str) -> String {
+    match outcome {
+        Moved::To => format!("{}>{}", clip(app, 15usize.saturating_sub(channel.len())), channel),
+        Moved::BackToAuto => format!("{}>auto", clip(app, 11)),
+        Moved::NothingFocused => "No app in front".into(),
+        Moved::NotAnAppChannel => "Apps only".into(),
+    }
+}
+
+/// The pad's notice for the app in front and its channel, cut to 16 characters as above.
+fn where_notice(found: Option<(String, Option<usize>)>, channels: &[ChannelCfg]) -> String {
+    match found {
+        Some((app, Some(c))) => {
+            let channel = channels.get(c).map_or("", |c| c.name.as_str());
+            format!("{}: {}", clip(&app, 14usize.saturating_sub(channel.len())), channel)
+        }
+        Some((app, None)) => clip(&app, 16).to_string(),
+        None => "No app in front".into(),
+    }
+}
+
 fn level_popup(r: Readout) -> Show {
     let name = if r.live { r.name } else { format!("{} (idle)", r.name) };
     Show::Level { name, volume: r.volume, muted: r.muted }
@@ -545,29 +573,15 @@ impl keys::Hands for Desk<'_> {
 
     fn move_to(&mut self, col: usize) {
         let (outcome, app) = self.mixer.move_focused(col, self.channels);
-        let channel = &self.channels[col].name;
-        let text = match outcome {
-            Moved::To => format!("{}>{}", clip(&app, 15usize.saturating_sub(channel.len())), channel),
-            Moved::BackToAuto => format!("{}>auto", clip(&app, 11)),
-            Moved::NothingFocused => "No app in front".into(),
-            Moved::NotAnAppChannel => "Apps only".into(),
-        };
         if matches!(outcome, Moved::To | Moved::BackToAuto) {
             config::save_apps(&self.mixer.moved);
             post_ui(self.ui, WM_APPS_MOVED);
         }
-        self.notice(text);
+        self.notice(moved_notice(&outcome, &app, &self.channels[col].name));
     }
 
     fn show_where(&mut self) {
-        let text = match self.mixer.where_is_focused(self.channels) {
-            Some((app, Some(c))) => {
-                let channel = &self.channels[c].name;
-                format!("{}: {}", clip(&app, 14usize.saturating_sub(channel.len())), channel)
-            }
-            Some((app, None)) => clip(&app, 16).to_string(),
-            None => "No app in front".into(),
-        };
+        let text = where_notice(self.mixer.where_is_focused(self.channels), self.channels);
         self.notice(text);
     }
 
@@ -624,6 +638,59 @@ mod tests {
         assert!(save_due(&mut saved, &mut save_at, moved, true, t1), "closing writes what is waiting");
         let same = saved.clone();
         assert!(!save_due(&mut saved, &mut save_at, same, true, t1), "and nothing twice");
+    }
+
+    #[test]
+    fn a_knob_set_to_selected_follows_focus() {
+        assert_eq!(knob_channel(KnobBinding::Selected, None, 2, 4), Some(2), "the default channel");
+        assert_eq!(knob_channel(KnobBinding::Selected, Some(1), 2, 4), Some(1), "the one Focus stands out");
+        assert_eq!(knob_channel(KnobBinding::Channel(3), Some(1), 2, 4), Some(3), "its own channel, whatever Focus");
+        assert_eq!(knob_channel(KnobBinding::Channel(4), None, 2, 4), None, "no such channel");
+        for other in [KnobBinding::Master, KnobBinding::Mic, KnobBinding::Focused] {
+            assert_eq!(knob_channel(other, Some(1), 2, 4), None);
+        }
+    }
+
+    #[test]
+    fn notices_about_the_app_in_front_fit_one_screen_line() {
+        let channels = config::defaults().channels; // Mic, Chat, Game, Media
+        let long = "Averyverylongappname";
+        let cases = [
+            (moved_notice(&Moved::To, "Spotify", "Media"), "Spotify>Media"),
+            (moved_notice(&Moved::To, long, "Media"), "Averyveryl>Media"),
+            (moved_notice(&Moved::BackToAuto, long, "Media"), "Averyverylo>auto"),
+            (moved_notice(&Moved::NothingFocused, long, "Media"), "No app in front"),
+            (moved_notice(&Moved::NotAnAppChannel, long, "Mic"), "Apps only"),
+            (where_notice(Some(("Spotify".into(), Some(3))), &channels), "Spotify: Media"),
+            (where_notice(Some((long.into(), Some(1))), &channels), "Averyveryl: Chat"),
+            (where_notice(Some((long.into(), None)), &channels), "Averyverylongapp"),
+            (where_notice(None, &channels), "No app in front"),
+        ];
+        for (got, want) in cases {
+            assert_eq!(got, want);
+            assert!(got.chars().count() <= 16, "{got}");
+        }
+        assert_eq!(
+            moved_notice(&Moved::To, "Ünïcödéappnamelong", "Game"),
+            "Ünïcödéappn>Game",
+            "app: characters, not bytes"
+        );
+    }
+
+    #[test]
+    fn the_saved_state_keeps_pad_levels_and_real_trims_rounded() {
+        let channels = config::defaults().channels; // Mic, Chat, Game, Media
+        let mut mixer = Mixer::new().expect("COM");
+        mixer.faders = vec![audio::Fader::default(); 4];
+        mixer.faders[2].volume = 0.4567;
+        mixer.faders[2].pinned = true;
+        mixer.faders[3].volume = 0.9; // read from an app, never set on the pad
+        mixer.trims = [("a.exe".to_string(), 0.12345), ("b.exe".to_string(), 0.9995)].into();
+        mixer.restore = [("c.exe".to_string(), 0.7)].into();
+        let state = saved_state(&mixer, &channels);
+        assert_eq!(state.levels, [("Game".to_string(), 0.46)].into(), "only what was set on the pad");
+        assert_eq!(state.trims, [("a.exe".to_string(), 0.123)].into(), "a trim of about 1 is no trim");
+        assert_eq!(state.restore, mixer.restore);
     }
 
     #[test]
