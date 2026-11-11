@@ -44,10 +44,18 @@ This section lists the work of the quality round after the first independent rev
 - CI has new jobs: a smoke test of the app with `--check`, the script checks, `cargo deny`, and a dry run of the release zip.
 - The app is now a library and a small program, so that tests can use the library. The worker, the tray, `--check`, `open:` and **Start with Windows** each have their own module.
 - The settings window code is now in the folders `app/src/settings/` and `app/src/dialog/`.
+- The settings window has a new look. It has dark and light themes that follow Windows, smooth rounded controls and short animations that respect the Windows animation setting. It also has per-monitor scaling, and the same controls and keyboard use as before.
 - Each `unsafe` block in the app and in the firmware has a `SAFETY` comment. Clippy refuses a block without one.
 - The documents follow the rules of Simplified Technical English more strictly.
 - `SECURITY.md` describes the threat model. It says that the bootloader marker `BOOT` never changes and is not a secret.
 - The documents say that an `open:` target that needs administrator rights shows the User Account Control (UAC) prompt of Windows. Nobody tested this.
+
+### Fixed
+
+- `flash.ps1` waits for `kb16-mixer.exe --bootloader` and reads its real exit code. Before, the message about the bootloader request could be wrong.
+- `flash.sh` shows the last step (unplug the pad) only after `dfu-util` shows `Download done`. Otherwise it stops with exit code 1.
+- `nan`, `inf` and `-inf` for `step`, `brightness` or `duck` in `config.toml` are errors. Before, `nan` went through the range check.
+- `--settings` accepts only the full tab names `keys`, `channels` and `pad`, in upper case or lower case. Before, `--settingsx` also opened the window.
 
 ## [0.1.0] - planned
 
