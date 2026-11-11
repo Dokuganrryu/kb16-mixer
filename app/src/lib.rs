@@ -17,6 +17,7 @@ mod autostart;
 mod check;
 #[deny(clippy::undocumented_unsafe_blocks)]
 pub mod config;
+#[deny(clippy::undocumented_unsafe_blocks)]
 mod dialog;
 #[deny(clippy::undocumented_unsafe_blocks)]
 mod keys;
@@ -26,11 +27,14 @@ mod open;
 mod pad;
 #[deny(clippy::undocumented_unsafe_blocks)]
 pub mod procs;
+#[deny(clippy::undocumented_unsafe_blocks)]
 mod settings;
 #[deny(clippy::undocumented_unsafe_blocks)]
 mod tray;
 #[deny(clippy::undocumented_unsafe_blocks)]
 pub mod trim;
+#[deny(clippy::undocumented_unsafe_blocks)]
+mod win;
 #[deny(clippy::undocumented_unsafe_blocks)]
 mod worker;
 
