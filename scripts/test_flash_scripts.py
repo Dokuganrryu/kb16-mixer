@@ -223,7 +223,9 @@ class FlashPs1(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         # "release" is the folder of the script, as in the release zip. Its parent stands for the
         # repository root, for the ..\tools search.
-        self.root = Path(tmp.name)
+        # resolve(): the temp folder can be a short 8.3 path (as on the GitHub Windows runner),
+        # and PowerShell prints the long one. The tests compare paths as text.
+        self.root = Path(tmp.name).resolve()
         self.folder = self.root / "release"
         self.folder.mkdir()
         text = (SCRIPTS / "flash.ps1").read_text(encoding="utf-8")
