@@ -397,7 +397,7 @@ app        OK    kb16-mixer 0.1.0, settings in the default folder
 pad        OK    KB16 Mixer, firmware 0.1.0 (USB D010:1601)
 settings   OK    config.toml is valid (4 channels).
 autostart  OK    Start with Windows is off.
-audio      OK    2 output device(s), 3 app session(s), a microphone.
+audio      OK    2 output device(s), 3 app session(s), a microphone. Output: the Windows default.
 Result: OK
 ```
 

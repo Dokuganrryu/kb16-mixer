@@ -12,6 +12,8 @@ For the definition of each term, see [glossary.md](glossary.md).
 - [The settings window](#the-settings-window)
 - [Edit the file by hand](#edit-the-file-by-hand)
 - [General settings](#general-settings)
+- [Key lights](#key-lights)
+- [Audio output](#audio-output)
 - [Knobs](#knobs)
 - [Keys and pages](#keys-and-pages)
 - [Channels](#channels)
@@ -205,7 +207,7 @@ A reload sets the pad back to page 1, stops Focus, and sets each knob back to it
 | `oled_top` | `3` | 0–6 | Pixel rows that the screen content moves down. Increase it if the top of the screen looks cut off. |
 | `duck` | `0.25` | 0.0–1.0 | Focus sets the other channels to this part of their level. 0.25 = one quarter. |
 | `screen_off_min` | `10` | 0–240 | Minutes without activity before the screen goes off. 0 = never. |
-| `lights_dim_min` | `10` | 0–240 | Minutes without activity before the key lights dim. 0 = never. |
+| `lights_dim_min` | `10` | 0–240 | Minutes without activity before the key lights dim. 0 = never. After three times this time (at most 240 minutes), the lights go off. |
 | `mixer_keys` | `true` | `true`, `false` | `false` = the keys type their keyboard-mode keys. The knobs and the lights stay in mixer mode. |
 
 The app changes a number outside its range to the nearest limit. For example, `step = 900` becomes `20`, and `oled_top = 9` becomes `6`.
@@ -220,6 +222,49 @@ A muted output device and the microphone do not count. For the full rule, see [h
 The pad keeps the `name` in its flash memory. Thus it shows the name also at power-up, before the app runs.
 A name that is too wide for the logo letters uses a smaller font.
 
+## Key lights
+
+The `[lights]` table is optional.
+
+```toml
+[lights]
+idle_percent = 0
+```
+
+| Setting | Default | Range | Meaning |
+|---|---|---|---|
+| `idle_percent` | `0` | 0–100 | The light that the key lights keep when they dim, in percent of their normal light. 0 = the pad default (6 %). |
+
+A value above 100 becomes 100. A negative value, a fraction or a value in quotes is an error.
+
+6 % of the light looks approximately one third as bright, because the eye is more sensitive to low light.
+The lights fade down in 0.7 seconds. They fade off in 2 seconds. They come back in 0.15 seconds.
+
+For the idle rule, see [how-it-works.md](how-it-works.md#idle-rule).
+
+Firmware up to the draft release 0.1.0 ignores `idle_percent`. It also uses an earlier brightness curve, so a `brightness` value looks a little different with it. Nobody did a test of these values on a pad.
+
+## Audio output
+
+The `[audio]` table is optional. It tells the app which output device to use.
+
+```toml
+[audio]
+output = "default"
+```
+
+| Value | The app uses |
+|---|---|
+| `"default"` (the default) | The Windows default output device. When you change the default device in Windows, the app follows it at once. |
+| A device ID, for example `"{0.0.0.00000000}.{...}"` | Only that device. The settings window writes the ID. |
+
+With `"default"`, the `master` knob and the mute rule use the default device. The programs on all active output devices stay on their knobs.
+
+With a device ID, the `master` knob, the mute rule and the programs use only that device.
+When that device is not active (for example, it is disconnected), the app uses the Windows default. It keeps the setting. When the device is active again, the app uses it again.
+
+A value that is not `"default"` and does not start with `{` is an error.
+
 ## Knobs
 
 The `[knobs]` table gives the target of each knob.
@@ -232,28 +277,68 @@ The `[knobs]` table gives the target of each knob.
 
 Values:
 
-| Value | Target | Knob press |
-|---|---|---|
-| The name of a channel | That channel (case is not important) | Selects the next program in the channel |
-| `"master"` or `"system"` | The volume of the default output device | Shows the level |
-| `"mic"` | The level of the microphone | Shows the level |
-| `"focused"` | The foreground program, in each channel. When the desktop or the taskbar is in front, the knob changes nothing and the screen shows `Nothing in front`. | Shows the level |
-| `"selected"` | The channel that has Focus. If no channel has Focus: the `other` channel, or else the first channel that is not the microphone. | Selects the next program in that channel |
+| Value | Target | Knob tap (default `mute`) | Knob hold (default `pick`) |
+|---|---|---|---|
+| The name of a channel | That channel (case is not important) | Mutes or unmutes the channel | Selects the next program in the channel |
+| `"master"` or `"system"` | The volume of the output device (see [Audio output](#audio-output)) | Mutes or unmutes that device | Shows the level |
+| `"mic"` | The level of the microphone | Mutes or unmutes the microphone | Shows the level |
+| `"focused"` | The foreground program, in each channel. When the desktop or the taskbar is in front, the knob changes nothing and the screen shows `Nothing in front`. | Mutes or unmutes the foreground program | Shows the level |
+| `"selected"` | The channel that has Focus. If no channel has Focus: the `other` channel, or else the first channel that is not the microphone. | Mutes or unmutes that channel | Selects the next program in that channel |
 
 If you remove a knob line, `knob1` and `knob2` become `"master"`, and `knob3` becomes `"selected"`.
 
-A knob press does not mute. Use a Mute key.
+A tap mutes the full channel, also when the knob has one program selected.
+
+### Knob presses
+
+The `[knob_press]` table gives the actions of the knob push buttons. It is optional.
+
+```toml
+[knob_press.knob1]
+tap = "mute"
+hold = "pick"
+double = "none"
+```
+
+The same applies to `[knob_press.knob2]` and `[knob_press.knob3]`.
+
+| Setting | Default | When |
+|---|---|---|
+| `tap` | `"mute"` | You push the knob and release it in less than 350 ms. |
+| `hold` | `"pick"` | You hold the knob down for 350 ms. The action starts while you hold the knob. |
+| `double` | `"none"` | You tap the knob two times in 280 ms. |
+
+| Value | Action |
+|---|---|
+| `"mute"` | Mutes or unmutes the knob target |
+| `"pick"` | Selects the next program in the channel. See [One program in a channel](#one-program-in-a-channel). On a `master`, `mic` or `focused` knob, it shows the level. |
+| `"open:<target>"` | Opens a target. See [Open a target](#open-a-target). |
+| `"none"` or `""` | Does nothing |
+
+Case is not important. A setting that you remove gets its default.
+The app does not accept media keys and key names here, because the pad types keys itself. The app does not send key presses.
+
+Rules:
+
+- When `double` is `"none"`, a tap acts at once.
+- When `double` has an action, a tap waits 280 ms for a second tap.
+- A turn of the knob before the hold time cancels the press. After the hold time, you can turn the knob while you hold it.
+
+> **NOTE:** For a hold, the pad must have firmware that is newer than the draft release 0.1.0. That firmware sends a message when you release the knob.
+
+With the firmware of the draft release 0.1.0, each press is a tap (or a double tap). The `hold` action then does not occur.
+Both firmware images show the version 0.1.0. To get the new firmware, build it from source. See [build-from-source.md](build-from-source.md).
 
 ### One program in a channel
 
-A knob on a channel can control the full channel or one program in it.
+A knob on a channel can control the full channel or one program in it. These steps use the default `hold = "pick"`.
 
-1. Press the knob. It selects the first program that has an audio session in the channel (in the order of the program name).
+1. Hold the knob down until the screen changes. It selects the first program that has an audio session in the channel (in the order of the program name).
 2. Turn the knob. Only that program changes. The other programs keep their sound.
-3. Press the knob again. It selects the next program.
-4. After the last program, a press selects the full channel again.
+3. Hold the knob again. It selects the next program.
+4. After the last program, a hold selects the full channel again.
 
-The screen shows the name and the level of the knob target after each press.
+The screen shows the name and the level of the knob target after each hold.
 After 8 seconds without a touch on that knob, the knob goes back to the full channel. It also goes back when the selected program stops.
 If the channel has no program, the screen shows `No app in <channel>`.
 
@@ -316,6 +401,30 @@ The app does these actions. They work only while the app runs.
 
 A mixer key is a key with one of these actions: `mute`, `focus`, `talk`, `move`, `page` or `open:`.
 You cannot move a program into the microphone channel.
+
+### Hold and double tap on keys
+
+A key can also have a hold action and a double-tap action. These tables are optional:
+
+| Table | Goes with |
+|---|---|
+| `[keys_hold]`, `[keys_double]` | `[keys]` (page 1) |
+| `[keys2_hold]`, `[keys2_double]` | `[keys2]` (page 2) |
+
+Each table has rows as in `[keys]`. A row that you remove has no hold or double tap. The values are `"mute"`, `"open:<target>"` and `"none"`.
+This example opens the Windows sound settings when you hold the left Mute key:
+
+```toml
+[keys_hold]
+row4 = ["open:ms-settings:sound", "none", "none", "none"]
+```
+
+Rules:
+
+- A hold or a double tap is possible only on a key with the tap `mute`, `open:` or `none`.
+- A hold starts after 350 ms, while you hold the key.
+- When a key has a double tap, its tap waits 280 ms for a second tap.
+- A key without a hold and a double tap acts at once, when you push it.
 
 ### Open a target
 
@@ -402,25 +511,27 @@ If you rename a channel and keep its position, its saved level and its moved pro
 
 ### The default channels
 
+The four colours are tints of ice white. They differ only in warmth: the Mic tint is a little warm, and the Game tint is a little cool. Nobody saw these tints on a pad.
+
 ```toml
 [[channel]]
 name = "Mic"
-color = "#dce6ff"
+color = "#e6dcd7"
 target = "mic"
 
 [[channel]]
 name = "Chat"
-color = "#c8d2ff"
+color = "#c8d7ff"
 apps = ["Discord.exe", "DiscordPTB.exe", "DiscordCanary.exe", "Teams.exe", "ms-teams.exe", "Zoom.exe", "TeamSpeak.exe", "ts3client_win64.exe", "Mumble.exe"]
 
 [[channel]]
 name = "Game"
-color = "#e6ecff"
+color = "#afcdff"
 target = "other"
 
 [[channel]]
 name = "Media"
-color = "#d2f0ff"
+color = "#d7def5"
 apps = ["Spotify.exe", "AppleMusic.exe", "TIDAL.exe", "foobar2000.exe", "MusicBee.exe", "vlc.exe", "mpv.exe",
         "chrome.exe", "firefox.exe", "msedge.exe", "brave.exe", "opera.exe", "opera_gx.exe", "vivaldi.exe", "arc.exe"]
 ```
@@ -470,12 +581,21 @@ The fourth column has no channel. Its `mute` and `focus` keys would do nothing. 
 | `knob1 = "...": no channel with that name` | The knob names a channel that does not exist. |
 | `name = "...": 1 to 10 letters, digits or spaces` | The logo name is empty, too long, or has other characters. |
 | `channel name "...": 1 to 5 characters, what the pad's screen shows` | A channel name is empty or longer than 5 characters. |
-| `[keys] row1: 3 entries, a row has 4 keys` | A row does not have exactly 4 entries. The same for `[keys2]`. |
+| `[keys] row1: 3 entries, a row has 4 keys` | A row does not have exactly 4 entries. The same for `[keys2]` and the hold and double-tap tables. |
 | `[keys2] has no "page" key, so there would be no way back to [keys]` | Page 1 has a `page` key, and page 2 has none. |
 | `[keys] row1: key "...": not an action, media key or key name` | The key name is not known. |
 | `[keys] row1: key "...": one key plus modifiers, please` | The entry has more than one key. |
 | `[keys] row1: key "...": tap\|hold works with media keys (play, next, prev, stop)` | A tap/hold entry has a value that is not a media key. |
 | `[keys] row1: key "...": open: needs a program, file, folder or web address after it` | An `open:` entry has no target. |
+| `[knob_press.knob1] hold: "...": here only mute, pick, open:<what> or none work (...)` | A knob press has a media key or a key name. |
+| `[keys_hold] row1: "...": here only mute, open:<what> or none work (...)` | A key hold or double tap has a media key or a key name. |
+| `[keys_hold] row1: "pick": pick works on knob presses only` | A key hold or double tap has `pick`. |
+| `[keys_hold] row1 key 2: a hold or double tap needs a key whose tap is mute, open: or none` | The tap of that key in `[keys]` is a different action. |
+| `[keys_double] row1: a list of 4 keys` | The row is not a list. |
+| `[lights] idle_percent: a whole number from 0 to 100` | The value is negative, a fraction, or in quotes. |
+| `[audio] output = "...": "default" or a device id from the settings window` | The value is not `"default"` and not a device ID. |
+| `[knob_press] is not a table` | The name of a table has a value that is not a table. |
+| `[knob_press.knob1] tap: text in quotes, such as "none"` | The value is not in quotes. |
 
 A key error starts with the page and the row, for example `[keys] row1:` or `[keys2] row3:`.
 A TOML syntax error shows the line number.
@@ -527,7 +647,7 @@ app        OK    kb16-mixer 0.1.0, settings in the default folder
 pad        OK    KB16 Mixer, firmware 0.1.0 (USB D010:1601)
 settings   OK    config.toml is valid (4 channels).
 autostart  OK    Start with Windows is off.
-audio      OK    2 output device(s), 5 app session(s), a microphone.
+audio      OK    2 output device(s), 5 app session(s), a microphone. Output: the Windows default.
 Result: OK
 ```
 
@@ -540,6 +660,15 @@ These are the `pad` messages:
 | `FAIL  The pad is in bootloader mode (USB 1EAF:0003). Unplug it and plug it in again.` | The pad waits for a flash. |
 | `FAIL  No pad found. Check the USB cable and port.` | Windows does not see the pad. |
 | `WARN  <n> pads are connected (...). The app uses only one. Connect only one pad.` | More than one pad is connected. |
+
+The end of the `audio` line tells which output device the app uses:
+
+| End of the line | Meaning |
+|---|---|
+| `OK ... Output: the Windows default.` | `[audio] output` is `"default"`. |
+| `OK ... Output: the device chosen in the settings.` | The app uses the device in `[audio] output`. |
+| `WARN ... The output device chosen in the settings is not active; the Windows default is used.` | The chosen device is disconnected or turned off. |
+| `... That output device is muted.` | The output device that the app uses is muted. |
 
 The exit code is 0 when no line shows `FAIL`. Otherwise it is 1.
 The report gives no program names, user names, folder names, pad names or serial numbers. The only text from a device is the product string of a pad with other firmware.
