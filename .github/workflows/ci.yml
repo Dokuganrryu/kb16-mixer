@@ -140,6 +140,12 @@ jobs:
           if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then echo "::error::--check exited with $code"; exit 1; fi
           grep -Eq '^app +OK ' "$RUNNER_TEMP/check.txt"
           tail -n 1 "$RUNNER_TEMP/check.txt" | grep -Eq '^Result: (OK|[0-9]+ problems?)$'
+      # The flash.ps1 tests need Windows PowerShell and the C# compiler, so they skip in the docs
+      # job on Ubuntu. Here a skip is a failure. The tests use a fake dfu-util and no pad.
+      - name: Flasher tests (flash.ps1 and flash.sh)
+        env:
+          KB16_REQUIRE_PS1_TESTS: "1"
+        run: python -m unittest -v scripts/test_flash_scripts.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: kb16-mixer-app
