@@ -21,11 +21,13 @@ then ..\firmware\target\kb16-mixer-firmware.bin (a build from source).
 
 .PARAMETER DfuUtil
 The path of dfu-util. Default: dfu-util.exe or dfu-util-static.exe on the PATH, then
-the same names in the tools folder next to this script.
+the same names in the tools folder next to this script (the release folder), then in
+the tools folder one level up (the repository root, for a build from source).
 
 .PARAMETER Backup
 Read the present firmware area into this new file before the write.
-The script does not overwrite a file that exists.
+The script does not overwrite a file that exists. With -DryRun the script also makes
+the backup, so it needs the pad in its bootloader.
 
 .PARAMETER DryRun
 Do all the checks (and the backup, if you ask for it), but do not write the pad,
@@ -76,13 +78,18 @@ function Find-DfuUtil {
         $onPath = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($onPath) { return $onPath.Source }
     }
-    foreach ($name in @('dfu-util.exe', 'dfu-util-static.exe')) {
-        $local = Join-Path $PSScriptRoot "tools\$name"
-        if (Test-Path -LiteralPath $local -PathType Leaf) { return $local }
+    # tools\ next to the script is the release folder; ..\tools\ is the repository root, which
+    # .gitignore keeps out of git and where scripts/flash.sh also looks.
+    $folders = @((Join-Path $PSScriptRoot 'tools'), (Join-Path (Split-Path $PSScriptRoot -Parent) 'tools'))
+    foreach ($folder in $folders) {
+        foreach ($name in @('dfu-util.exe', 'dfu-util-static.exe')) {
+            $local = Join-Path $folder $name
+            if (Test-Path -LiteralPath $local -PathType Leaf) { return $local }
+        }
     }
-    $local = Join-Path $PSScriptRoot 'tools'
-    Stop-Flash ("dfu-util not found. Put dfu-util-static.exe in $local, put it on the PATH, or give -DfuUtil <path>. " +
-        'Get it from https://dfu-util.sourceforge.net (see docs/install.md).')
+    Stop-Flash ('dfu-util not found. The script looked for dfu-util.exe and dfu-util-static.exe on the PATH, ' +
+        "in $($folders[0]) and in $($folders[1]). Put dfu-util-static.exe in one of these folders, " +
+        'or give -DfuUtil <path>. Get it from https://dfu-util.sourceforge.net (see docs/install.md).')
 }
 
 function Find-Firmware {
@@ -202,6 +209,10 @@ if ($Backup -and (Test-Path -LiteralPath $Backup)) {
 $restart = @()
 $found = Get-Bootloaders
 if ($found.Count -eq 0) {
+    if ($DryRun -and $Backup) {
+        Stop-Flash ('-Backup needs the pad in bootloader mode (USB 1EAF:0003), also with -DryRun. No backup was made. ' +
+            'Put the pad into its bootloader, then run the script again.')
+    }
     if ($DryRun) {
         Write-Host ''
         Write-Host 'No pad in bootloader mode (USB 1EAF:0003) is connected.'
