@@ -259,3 +259,27 @@ fn an_address_outside_the_reserved_pages_never_touches_the_controller() {
         assert!(f.ops.is_empty(), "{addr:#x}: {:?}", f.ops);
     }
 }
+
+// --- The busy-wait budget -----------------------------------------------------------------------
+
+/// The wait in microseconds that `WAIT_POLLS` polls give when each poll takes `cycles` CPU
+/// cycles at `mhz`.
+fn budget_us(cycles: u64, mhz: u64) -> u64 {
+    u64::from(flash::WAIT_POLLS) * cycles / mhz
+}
+
+#[test]
+fn the_busy_wait_outlasts_the_slowest_page_erase_at_full_speed() {
+    // The shortest wait: the fastest clock and the fewest cycles a poll can take.
+    let shortest = budget_us(flash::POLL_MIN_CYCLES.into(), flash::CPU_MAX_MHZ.into());
+    assert!(shortest >= 2 * u64::from(flash::ERASE_MAX_US), "{shortest} us is under twice the 40 ms erase");
+    assert_eq!(flash::ERASE_MAX_US, 40_000, "STM32F103 datasheet, tERASE max");
+}
+
+#[test]
+fn the_busy_wait_ends_before_the_watchdog_at_the_reset_clock() {
+    // The longest wait without a stall: the 8 MHz reset clock. The watchdog (LSI / 32, reload
+    // 2500) fires after 1.33 s when the LSI runs at its 60 kHz maximum.
+    let longest = budget_us(flash::POLL_MIN_CYCLES.into(), 8);
+    assert!(longest < 1_333_000, "{longest} us reaches the watchdog");
+}

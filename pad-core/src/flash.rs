@@ -67,10 +67,19 @@ pub fn check_program(addr: usize, words: usize) -> Result<(), Error> {
 /// Unlock sequence for FLASH_KEYR (RM0008).
 pub const KEY1: u32 = 0x4567_0123;
 pub const KEY2: u32 = 0xCDEF_89AB;
-/// BSY polls before giving up. The CPU stalls on flash reads while the controller works, so
-/// one poll lasts most of the operation; a page erase takes 40 ms at most. This bound is far
-/// above any real wait at both 8 and 72 MHz and well below the ~2 s watchdog.
-pub const WAIT_POLLS: u32 = 1_000_000;
+/// Longest page erase, in microseconds: tERASE max in the STM32F103xB datasheet (DS5319). The
+/// APM32F103 clone is taken to be as slow; its own figure was not checked.
+pub const ERASE_MAX_US: u32 = 40_000;
+/// Fastest CPU clock, in MHz (HCLK at 72 MHz once the PLL runs).
+pub const CPU_MAX_MHZ: u32 = 72;
+/// Fewest CPU cycles one BSY poll can take on the Cortex-M3: a 2-cycle load of FLASH_SR and a
+/// 2-cycle test and taken branch, with no flash wait state counted.
+pub const POLL_MIN_CYCLES: u32 = 4;
+/// BSY polls before giving up: twice the longest erase even when every poll is as short as it
+/// can be at full speed. In practice the CPU stalls on its own flash fetches while the controller
+/// works, so one poll lasts most of the operation. At the 8 MHz reset clock (the panic handler
+/// can run there) the same count lasts 0.72 s, below the watchdog's 1.33 s at the fastest LSI.
+pub const WAIT_POLLS: u32 = 2 * ERASE_MAX_US * CPU_MAX_MHZ / POLL_MIN_CYCLES;
 
 /// FLASH_SR error flags, as read before they were cleared.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
