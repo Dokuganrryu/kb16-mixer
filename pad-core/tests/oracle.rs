@@ -24,10 +24,15 @@
 //! `old::leds` is compared only for the meter ballistics, which the screen draws and which did
 //! not change.
 //!
-//! The screen differs on purpose: the mixer, the readout and the notices have a new layout,
-//! and the logo's light streak crosses once instead of every 5.2 s (see `pad_core::oled`). So
-//! only what stayed is compared: when the idle logo shows, and its letters once both streaks
-//! are off screen. The new screens are pinned in the unit tests of `pad_core::oled`.
+//! The screen differs on purpose while it moves: meters glide between segments, a readout
+//! pushes the screen beneath it up and leaves the same way, a page change slides sideways, a
+//! mute change inverts the channel name for 200 ms, and a detent past 0 or 100 shows an end
+//! stop for three frames (see `pad_core::oled`). The notices have a new layout, and the logo's
+//! light streak crosses once instead of every 5.2 s. So the Classic style's mixer and readout
+//! are compared only when `Screen::moving` says the screen is at rest; then they must match
+//! bit for bit. The logo is compared for when it shows, and for its letters once both streaks
+//! are off screen. The motion and the other styles are pinned in the unit tests of
+//! `pad_core::oled`.
 
 use kb16_mixer_protocol::{HostMsg, LOGO_NAME_LEN, NEVER, NOTICE};
 use pad_core::Time;
@@ -1513,12 +1518,12 @@ fn the_lights_keep_the_same_meters() {
 }
 
 #[test]
-fn the_idle_logo_shows_at_the_same_times_with_the_same_letters() {
+fn the_classic_screen_draws_the_same_pixels_at_rest_and_the_same_logo() {
     use pad_core::oled::{Fb, Input, Screen};
     let mut rng = Rng(0xD15C_0DE5_1234_5678);
     let names = [*b"KB16\0\0\0\0\0\0", *b"DESK PC\0\0\0", *b"WWWWWWWWWW", *b"J Q\0\0\0\0\0\0\0", [0; 10]];
     let popups = [*b"GAME\0\0\0\0\0\0\0\0\0\0\0\0", *b"Config loaded\0\0\0", *b"A VERY LONG NAME", [b' '; 16]];
-    let mut compared = 0;
+    let (mut compared, mut logos) = (0, 0);
     let mut meter = [0u8; 4];
     // Panel row `y` of column `x` in a frame buffer.
     let bit = |buf: &[u8; 513], x: usize, y: i32| buf[1 + (y as usize / 8) * 128 + x] & 1 << (y % 8) != 0;
@@ -1590,7 +1595,19 @@ fn the_idle_logo_shows_at_the_same_times_with_the_same_letters() {
                 style: 0,
             };
             let b = screen.draw(&mut fb, now, since_boot, &input);
-            assert_eq!(a, b);
+            if !screen.moving() {
+                assert_eq!(a, b);
+            }
+            // The old readout bar started over at its value when a readout came back; the new
+            // one carries on from where it was, so the two can still be gliding apart.
+            let old_bar_rests = !o.popup_open
+                || popup.is_none_or(|p| p.volume == NOTICE || o.shown_vol == p.volume.min(100) as u32 * 10);
+            let notice = popup
+                .is_some_and(|p| alive && p.volume == NOTICE && now.saturating_duration_since(p.at).as_millis() < 1300);
+            if !screen.moving() && old_bar_rests && since_boot >= 1800 && !b && !notice {
+                assert_eq!(o.fb.buf, fb.buf);
+                compared += 1;
+            }
             if since_boot >= 1800 {
                 logo_at = if b { logo_at.or(Some(now)) } else { None };
             }
@@ -1602,11 +1619,12 @@ fn the_idle_logo_shows_at_the_same_times_with_the_same_letters() {
                         assert_eq!(bit(&o.fb.buf, x, y), bit(&fb.buf, x, y), "letter pixel ({x}, {y})");
                     }
                 }
-                compared += 1;
+                logos += 1;
             }
         }
     }
-    assert!(compared > 1000, "only {compared} logo frames compared");
+    assert!(compared > 4000, "only {compared} mixer and readout frames at rest");
+    assert!(logos > 1000, "only {logos} logo frames compared");
 }
 
 #[test]
