@@ -1,7 +1,8 @@
 //! The real window, made hidden and driven with the messages its controls send: each change is
 //! applied, saved to config.toml and confirmed as before the restyle. Nothing is ever shown.
-//! Skips (with a note) where Windows cannot make a window, as on a build machine without a
-//! desktop.
+//! Skips with a SKIPPED line where Windows cannot make a window, as on a build machine without
+//! a desktop, but fails instead when `CI` is set: the GitHub Windows runner can make hidden
+//! windows, so a skip there would hide a broken test.
 
 use super::controls::{CONTROLS, child, text_of};
 use super::ids::*;
@@ -63,12 +64,19 @@ fn destroy() {
     }
 }
 
+/// Says why the test did not run, past the test runner's capture of `eprintln!`, so that it
+/// shows in a passing run; under `CI` it fails instead.
+fn skip(reason: &str) {
+    use std::io::Write;
+    assert!(std::env::var_os("CI").is_none(), "CI is set, so this may not skip: {reason}");
+    let _ = writeln!(std::io::stderr(), "SKIPPED: {reason}");
+}
+
 #[test]
 fn the_window_applies_and_saves_each_change_as_before() {
     let dir = test_folder();
     let Some(hwnd) = create(None, None) else {
-        eprintln!("skipped: Windows could not make a window here (no desktop)");
-        return;
+        return skip("Windows could not make a window here (no desktop)");
     };
     // SAFETY: reads the style of our own window.
     let shown = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32 & WS_VISIBLE.0 != 0;
