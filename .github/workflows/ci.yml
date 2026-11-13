@@ -230,6 +230,37 @@ jobs:
           done
           exit $status
 
+  # Each crate must build with the oldest Rust that its Cargo.toml declares (rust-version).
+  # The version comes from Cargo.toml, so this job needs no change when an MSRV moves.
+  msrv:
+    name: MSRV (${{ matrix.crate }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { crate: protocol, os: ubuntu-latest, args: --all-targets }
+          - { crate: pad-core, os: ubuntu-latest, args: --all-targets }
+          # The target comes from firmware/.cargo/config.toml. A no_std crate has no test target.
+          - { crate: firmware, os: ubuntu-latest, args: "" }
+          - { crate: app, os: windows-latest, args: --all-targets }
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.crate }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain at the declared rust-version
+        run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
+          test -n "$msrv"
+          echo "MSRV=$msrv" >> "$GITHUB_ENV"
+          rustup toolchain install "$msrv" --profile minimal --target thumbv7m-none-eabi
+      - run: cargo "+$MSRV" check --locked ${{ matrix.args }}
+
   # A dry run of the release packaging with the binaries of this run.
   package:
     name: Release zip (dry run)
