@@ -1,18 +1,11 @@
 # cargo-about configuration for scripts/third-party-notices.py.
 # A crate must be usable under one of these licences, or cargo-about stops. Where a crate offers a
 # choice, the first licence of this list that it offers is the one used.
+# The same list as the `allow` list of deny.toml (see the reason there). Keep the two lists equal.
 accepted = [
     "MIT",
     "Apache-2.0",
-    "Apache-2.0 WITH LLVM-exception",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "ISC",
-    "Zlib",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
-    "0BSD",
-    "MIT-0",
 ]
 # Build scripts and their dependencies put no code into the binaries.
 ignore-build-dependencies = true
