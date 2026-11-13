@@ -64,7 +64,7 @@ Some steps tell you to open PowerShell in a folder. Do this:
 2. Download `kb16-mixer-0.1.0-windows-x64.zip`.
 3. Download `SHA256SUMS`.
 
-The zip holds these files (planned layout):
+The zip holds these files:
 
 | File | Contents |
 |---|---|
