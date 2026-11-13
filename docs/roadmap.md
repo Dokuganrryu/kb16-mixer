@@ -12,7 +12,7 @@ The order and the content can change.
 ## Done
 
 - **A release with the new firmware.** Version 0.2.0 has the firmware that sends knob releases. Its version lets `--check` tell it from the internal version 0.1.0.
-- **Motion on the pad, and knob gestures.** The key lights move smoothly along set curves, not with spring physics. The screen changes in one frame and fades with the lights. A knob has a tap, a hold and a double tap. The app follows the Windows default output device. See [how-it-works.md](how-it-works.md#screen-changes).
+- **Motion on the pad, and knob gestures.** The screen and the key lights move smoothly along set curves, not with spring physics. A knob has a tap, a hold and a double tap. The app follows the Windows default output device. See [how-it-works.md](how-it-works.md#screen-motion).
   Nobody did a test of these functions on a pad. For the knob hold, the pad must have firmware 0.2.0 or later.
 - **A new look for the settings window.** The window stays a plain Win32 window, with a new style: dark and light themes, smooth rounded controls and short animations. See [design/settings-ui.md](design/settings-ui.md).
   The owner measured a GPU user-interface framework for the window and rejected it.

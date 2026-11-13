@@ -19,7 +19,7 @@ It is not a driver, and it does not route audio. The app uses no keyboard hooks 
 - A knob turn changes the volume of a **channel**: a named list of programs, for example "Chat" or "Media".
 - A knob tap mutes or unmutes what the knob turns. A knob hold selects one program in the channel. The next turns change only that program.
 - A key mutes a channel. A key turns the other channels down (Focus). While you hold a key, the microphone mute changes (the **Talk** key).
-- The key lights show the live sound level of each channel, and its volume for a moment after a change. The screen shows names, levels and volumes.
+- The key lights show the live sound level of each channel. The screen shows names, levels and volumes.
 - The app follows the Windows default output device when it changes. You can also select one output device.
 - Other keys type F13–F24, media keys or key combinations, as a usual USB keyboard.
 - A second page of keys is a number pad. A key can also open a program, a file, a folder or a web address.
@@ -28,16 +28,15 @@ It is not a driver, and it does not route audio. The app uses no keyboard hooks 
 ## What the pad shows
 
 The screen has 128 x 32 pixels. The firmware code drew these pictures (`pad-core/examples/render_oled.rs`), at four times the size.
-The pictures show the screens at rest. They do not show the fades of the screen.
+The pictures show the screens at rest. They do not show the motion between the screens.
 
 | Screen | When the pad shows it |
 |---|---|
 | ![The logo screen: the name KB16 in large letters](docs/images/oled-logo.png) | The logo with the name (default `KB16`). For 1.8 seconds after start, in keyboard mode, and after 45 seconds without activity. |
-| ![The mixer screen: four columns GAME, MUSIC, CHAT and WEB with the values 80, 55 and 30 and a rail under each; GAME is in an inverted pill, and CHAT shows MUTE](docs/images/oled-mixer.png) | The mixer screen, while the app runs. Each column shows a channel: the name, the volume as a number, and a rail that becomes thicker with the sound. An inverted name is the channel that has Focus. `MUTE` shows a muted channel. |
-| ![A readout: Music, 64 in large digits, and a bar](docs/images/oled-popup.png) | A readout for 1.3 seconds after a knob turn, a knob press or a mute: the name, the volume and a bar |
-| ![A muted readout: Music, Muted, and a hollow bar](docs/images/oled-muted.png) | The readout of a muted channel: `Muted` and a hollow bar |
+| ![The mixer screen: four columns GAME, MUSIC, CHAT and WEB, each with a meter, a volume bar and a value; GAME is inverted, and CHAT shows MUTE](docs/images/oled-mixer.png) | The mixer screen, while the app runs. Each column shows a channel: the name, the live meter, the volume bar and the value. An inverted name is the channel that has Focus. `MUTE` shows a muted channel. |
+| ![A readout: MUSIC, 64 % and a bar](docs/images/oled-popup.png) | A readout for 1.3 seconds after a knob turn, a knob press or a mute: the name, the value and a bar |
 | ![A notice: Config loaded](docs/images/oled-notice.png) | A notice for 1.3 seconds, for example `Config loaded` |
-| ![The mixer screen with a short mark at the right edge](docs/images/oled-page2.png) | The mixer screen while page 2 is active. A short mark is at the right edge. The meter lights stay dim on page 2. |
+| ![The mixer screen with a short mark at the right edge](docs/images/oled-page2.png) | The mixer screen while page 2 is active. A short mark is at the right edge. |
 
 ## Is my pad supported?
 

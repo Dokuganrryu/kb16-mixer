@@ -191,7 +191,6 @@ async fn host_rx(mut rx: hid::HidReader<'static, UsbDriver, 32>) {
                     first_report = true;
                     diag::log(0x5100);
                 }
-                let popup = matches!(buf[..n], [kb16_mixer_protocol::MAGIC, kb16_mixer_protocol::id::POPUP, ..]);
                 match state::handle_report(&buf[..n]) {
                     state::After::Nothing => {}
                     state::After::Bootloader => {
@@ -199,9 +198,6 @@ async fn host_rx(mut rx: hid::HidReader<'static, UsbDriver, 32>) {
                         state::enter_bootloader();
                     }
                     state::After::SaveName(n) => name::save(&n),
-                }
-                if popup {
-                    oled::DRAW_NOW.signal(());
                 }
             }
             Err(_) => Timer::after_millis(50).await,

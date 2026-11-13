@@ -33,7 +33,7 @@ Windows uses its built-in HID driver for all three interfaces. The project has n
 
 | Mode | When | Keys | Knobs | Lights |
 |---|---|---|---|---|
-| Mixer mode | The app sent a message in the last 3 seconds | As set on the current page | Send turns and presses to the app | Level meters of the channels. After a volume change, the column of that channel shows the volume for 1.3 seconds. |
+| Mixer mode | The app sent a message in the last 3 seconds | As set on the current page | Send turns and presses to the app | Level meters of the channels |
 | Keyboard mode | No message from the app for 3 seconds | Fixed keyboard layout (see [configuration.md](configuration.md#keyboard-mode)) | Fixed media keys | Slow white light |
 
 The app sends a heartbeat message each second when it has nothing else to send. Thus the pad stays in mixer mode while the app runs.
@@ -84,7 +84,7 @@ In mixer mode, `mixer_keys = false` in the config file gives the keys their keyb
 | `host_rx` | on each message | Reads raw HID messages from the app, updates the shared state, and saves a new logo name |
 | `usb_task` | continuous | Runs the USB device |
 | `leds::run` | 200 Hz | Calculates the key lights and sends the data to the 16 WS2812 LEDs |
-| `oled::run` | approximately 30 Hz | Draws the screen. A new readout draws at once, at most once in 8 ms. Sends only the changed columns of each 8-row page over I2C with DMA. After start and after the screen comes on again, it sends the full picture. |
+| `oled::run` | approximately 30 Hz | Draws the screen. Sends the picture over I2C with DMA, only when the picture changed |
 | `watchdog` | 4 Hz | Feeds the watchdog. Marks the firmware as healthy after 10 seconds. |
 
 A key that types (a `Keyboard` or `Media` key) goes from the pad directly to Windows. The app does not see it.
@@ -111,36 +111,29 @@ When the PC suspends the USB bus (the PC sleeps or is off), the lights and the s
 | Screen | When |
 |---|---|
 | Logo with the name (default `KB16`) | For 1.8 seconds after start, in keyboard mode, and in mixer mode after 45 seconds without activity |
-| Mixer screen: one column for each channel (the name in capital letters, the volume as a number or `MUTE`, and a rail) | In mixer mode |
-| Readout: a name, the volume in large digits (or `Muted`) and a bar | For 1.3 seconds after a knob turn, a knob press or a mute |
-| Notice: text only (for example `MIXER`, `KEYS`, `Focus Chat`, `Open failed`). A long notice uses a smaller font. | For 1.3 seconds |
+| Mixer screen: one column for each channel (name, live meter, volume bar, value or `MUTE`) | In mixer mode |
+| Readout: a name, a value and a bar | For 1.3 seconds after a knob turn, a knob press or a mute |
+| Notice: text only (for example `MIXER`, `KEYS`, `Focus Chat`, `Open failed`) | For 1.3 seconds |
 
-On the mixer screen, each rail shows the volume of its channel as a line of 1 pixel. The rail is 2 pixels thick as far as the live sound goes.
-An inverted name is the channel that has Focus.
-A short vertical mark at the left edge means that the microphone is muted. The pad does not know which channel is the microphone, so the mark shows for each mute of the microphone.
+On the mixer screen, a line under the names means that the microphone is muted.
 A short vertical mark at the right edge means that page 2 is active.
 
-On the readout, the number uses the digits of the logo. For a muted channel, `Muted` replaces the number and the bar is hollow.
-A knob turn at 0 or 100 cannot change the volume. Then a short end stop shows at that end of the bar for 0.1 seconds.
+### Screen motion
 
-### Screen changes
+The screen moves between its states. These times are in `pad-core/src/oled.rs`:
 
-The screen does not move between its states. These times are in `pad-core/src/oled.rs`:
+- The meters move smoothly between segments. They go up fast and come down more slowly. A meter waits approximately 0.2 seconds before it drops by one segment, so a level on a segment edge does not flicker.
+- A readout comes in from below in 0.1 seconds and pushes the mixer screen up. When the readout ends, it goes down again in 0.07 seconds. A new readout during this motion continues from the current position.
+- When the page changes, the screen slides in from the side of the new page in 0.14 seconds. Page 2 comes from the right, and page 1 comes from the left. The `MIXER` or `KEYS` notice comes in with the slide.
+- A change back to the earlier page in less than 1.5 seconds moves the screen by 4 pixels only. This occurs, for example, when you release a held page key.
+- When the mute of a channel changes, the channel name shows inverted for 0.2 seconds.
+- The screen does not go off at once. It fades out in 0.8 seconds. Then it goes off. When it comes on again, it fades in in 0.12 seconds.
 
-- A readout, a notice, a page change and a mute show in the frame of their message.
-- The live sound on a rail goes up at once. It comes down with the key lights. A half pixel of hysteresis stops a flicker at a pixel edge.
-- After the screen-off limit, the screen fades out in 0.7 seconds, together with the key lights. Then it goes off.
-- When the screen comes on again, the firmware sends the full picture first. Then it starts the screen at full contrast. Thus no previous picture or noise shows.
-- The logo comes in from the left in 0.9 seconds, after start and when the screensaver starts. Then its streak crosses it one time. One period of its wave is approximately 9 seconds.
-
-The pictures in `docs/images/` show the screens at rest. Nobody did a test of these changes on a pad.
+The pictures in `docs/images/` show the screens at rest. Nobody did a test of the motion on a pad.
 
 ### Light motion
 
 The key lights also move smoothly. These values are in `pad-core/src/leds.rs`:
-
-- After a volume change, the three meter lights of that channel show its volume for 1.3 seconds, the same time as the readout. They use the same glides as the meter. The first message from a new app session is not a change.
-- On page 2, the meter lights stay dim and even. The mute row does not change.
 
 - Each light glides to its new level. It goes up fast (approximately 35 ms) and down slowly (approximately 250 ms). A mute changes the colour to amber in approximately 60 ms.
 - The brightness uses a gamma curve of 2.4, so equal steps of `brightness` look approximately equal.
@@ -151,7 +144,7 @@ The key lights also move smoothly. These values are in `pad-core/src/leds.rs`:
 
 The screen goes off and the key lights dim after a number of minutes without activity (`screen_off_min`, `lights_dim_min`).
 
-- After `screen_off_min`, the screen fades out in 0.7 seconds. Then it goes off. With the default limits (`screen_off_min` and `lights_dim_min` both 10), the screen and the key lights fade at the same time.
+- The screen fades out in the last 0.8 seconds of `screen_off_min`. Thus it goes off at the same time as before.
 - The key lights fade down in 0.7 seconds to 6 % of their usual light. The setting `[lights] idle_percent` changes this value.
 - After three times `lights_dim_min` (at most 240 minutes), the key lights fade off in 2 seconds. When `lights_dim_min` is 0 (no timer), they also do not go off.
 - After activity, the lights come back in 0.15 seconds.

@@ -171,13 +171,9 @@ The test pad has the firmware of the internal version 0.1.0. At this time, nobod
 | Smooth key lights while audio plays (glide, gamma 2.4, dither) | | | | NOT YET VERIFIED |
 | Idle dim of the key lights to `idle_percent`, and the lights off after three times `lights_dim_min` | | | | NOT YET VERIFIED |
 | The new channel tints (ice white) and amber for mute | | | | NOT YET VERIFIED |
-| The new mixer screen: capital names, numbers, rails, the Focus pill, the microphone mark | | | | NOT YET VERIFIED |
-| The readout in large digits, `Muted`, and the end stop at 0 and 100 | | | | NOT YET VERIFIED |
-| The volume on the meter lights for 1.3 seconds after a knob turn | | | | NOT YET VERIFIED |
-| Page 2 lights: dim, even meter lights, the mute row unchanged | | | | NOT YET VERIFIED |
-| The firmware sends only the changed columns of the screen: no tearing, no column that does not update | | | | NOT YET VERIFIED |
-| The screen comes on again without noise or an old picture | | | | NOT YET VERIFIED |
-| The screen fade after the screen-off limit, with the key lights | | | | NOT YET VERIFIED |
+| Screen motion: gliding meters and the fade before the screen goes off | | | | NOT YET VERIFIED |
+| Screen motion: page slide and the 4-pixel nudge | | | | NOT YET VERIFIED |
+| Screen motion: the readout push and the mute flash | | | | NOT YET VERIFIED |
 | The idle rule and its thresholds | | | | NOT YET VERIFIED |
 | The logo name in flash | | | | NOT YET VERIFIED |
 | `open:` | | | | NOT YET VERIFIED |

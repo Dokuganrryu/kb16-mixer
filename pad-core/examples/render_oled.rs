@@ -12,8 +12,8 @@ use pad_core::state::{DEFAULT_OLED_TOP, Mixer, Popup};
 use std::path::Path;
 
 const SCALE: usize = 4;
-/// A time well after the boot splash, when the logo has wiped in and its streak has passed.
-const NOW: u64 = 18_600;
+/// A time well after the boot splash, with the logo's light streak off screen.
+const NOW: u64 = 3 * 5200 + 3000;
 
 fn name<const N: usize>(s: &str) -> [u8; N] {
     let mut out = [0u8; N];
@@ -43,13 +43,13 @@ fn input(alive: bool, mixer: Mixer, popup: Option<Popup<u64>>) -> Input<u64> {
 
 fn draw(input: &Input<u64>) -> Fb {
     let mut fb = Fb::new(DEFAULT_OLED_TOP as i32);
-    let mut screen = Screen::new(0);
+    let mut screen = Screen::new(NOW);
     screen.draw(&mut fb, NOW, NOW + SPLASH_MS, input);
     fb
 }
 
-fn popup(volume: u8, muted: bool, text: &str) -> Popup<u64> {
-    Popup { at: NOW, volume, muted, name: name::<16>(text) }
+fn popup(volume: u8, text: &str) -> Popup<u64> {
+    Popup { at: NOW, volume, muted: false, name: name::<16>(text) }
 }
 
 fn main() -> std::io::Result<()> {
@@ -58,9 +58,8 @@ fn main() -> std::io::Result<()> {
     let screens = [
         ("oled-logo", input(false, mixer(false), None)),
         ("oled-mixer", input(true, mixer(false), None)),
-        ("oled-popup", input(true, mixer(false), Some(popup(64, false, "Music")))),
-        ("oled-muted", input(true, mixer(false), Some(popup(64, true, "Music")))),
-        ("oled-notice", input(true, mixer(false), Some(popup(NOTICE, false, "Config loaded")))),
+        ("oled-popup", input(true, mixer(false), Some(popup(64, "MUSIC")))),
+        ("oled-notice", input(true, mixer(false), Some(popup(NOTICE, "Config loaded")))),
         ("oled-page2", input(true, mixer(true), None)),
     ];
     for (file, input) in &screens {

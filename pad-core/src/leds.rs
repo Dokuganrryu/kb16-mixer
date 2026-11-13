@@ -14,14 +14,12 @@
 //!   one unit and never past the target, so it is monotone and lands exactly.
 //! - Gamma 2.4 (a 65-point table) turns brightness into light.
 //! - Idle dimming and the fade-in after a mode change are eased curves in time.
-//! - A turned knob shows on its own column: for `POPUP_MS` the three meter LEDs show the fader
-//!   in place of the sound, with the same glides, so the screen can cut while the lights move.
 //! - The 8-bit LEDs get temporal dithering: the light is resolved to a quarter of a step and
 //!   the remainder carries to the next frame, so slow fades near black do not stair-step.
 
 use crate::Time;
 use crate::assets::SIN;
-use crate::state::{Mixer, NCH, POPUP_MS, RIPPLES, Ripple, past};
+use crate::state::{Mixer, NCH, RIPPLES, Ripple, past};
 use kb16_mixer_protocol::NEVER;
 
 pub const N: usize = 16;
@@ -35,10 +33,8 @@ const FULL: u32 = 0xFFFF;
 const POWER_CAP: u32 = (N as u32) * FULL * 3 * 9 / 20;
 const FADE_MS: u64 = 700;
 const RIPPLE_MS: u64 = 520;
-/// Idle easing: down to the dim level, down to off, and back up on any touch or sound. The
-/// screen fades out over the same time from the same moment (with the default limits), so the
-/// pad goes quiet as one.
-pub const DIM_MS: u64 = 700;
+/// Idle easing: down to the dim level, down to off, and back up on any touch or sound.
+const DIM_MS: u64 = 700;
 const OFF_MS: u64 = 2000;
 const WAKE_MS: u64 = 150;
 /// How much light the dimmed lights keep, in percent of normal, unless the host sets it.
@@ -173,16 +169,11 @@ const METER_FLOOR_FOCUS: u32 = 141;
 const SWELL: u32 = 26;
 const MUTE_KEY: u32 = 144;
 const MUTE_KEY_FOCUS: u32 = 220;
-/// On the second key page the meter rows rest, even and dim, in ice white: the keys there are
-/// not channels, and the mute row still is.
-const PAGE2_REST: u32 = 84;
 
-/// `faders`: a bit per channel whose meter shows its volume in place of its sound.
 fn render_mixer<T: Time>(
     f: &mut Frame,
     m: &Mixer,
     disp: &[u32; NCH],
-    faders: u8,
     swell: u32,
     ripples: &[Option<Ripple<T>>; RIPPLES],
     now: T,
@@ -209,17 +200,10 @@ fn render_mixer<T: Time>(
             f.put(led, tint, pt(if sel { MUTE_KEY_FOCUS } else { MUTE_KEY }) + glow);
             continue;
         }
-        if m.second_page {
-            f.put(led, ICE, pt(PAGE2_REST) + glow);
-            continue;
-        }
         // Meter: row 2 is the bottom segment, row 0 the top. The whole pad swells with the sound.
-        // A fader lifts its column's floor as focus does.
-        let fader = faders & (1 << col) != 0;
-        let floor = pt(if sel || fader { METER_FLOOR_FOCUS } else { METER_FLOOR }) + swell * SWELL / 255;
-        let level = if fader { m.volume[col] as u32 * 0xFF00 / 100 } else { disp[col] };
+        let floor = pt(if sel { METER_FLOOR_FOCUS } else { METER_FLOOR }) + swell * SWELL / 255;
         let seg = 2 - row;
-        let fill = (level * 3).saturating_sub(seg * 0xFF00).min(0xFF00);
+        let fill = (disp[col] * 3).saturating_sub(seg * 0xFF00).min(0xFF00);
         f.put(led, tint, floor + (FULL - floor) * fill / 0xFF00 + glow);
     }
 }
@@ -241,8 +225,6 @@ pub struct Input<T> {
     pub mixer: Mixer,
     pub brightness: u8,
     pub ripples: [Option<Ripple<T>>; RIPPLES],
-    /// The host that is there has sent a frame (`State::frame_seen`).
-    pub frame_seen: bool,
     pub activity: T,
     pub dim_after: u8,
     /// Light the dimmed LEDs keep, in percent of normal; 0 = [`DEFAULT_IDLE_PERCENT`].
@@ -335,11 +317,6 @@ pub struct Lights<T> {
     disp: [u32; NCH],
     /// Overall loudness envelope, 8.8.
     swell: u32,
-    /// The volumes of the last host frame; `None` until this host's first frame, which is not a
-    /// change anybody made.
-    vol: Option<[u8; NCH]>,
-    /// When each channel's volume last changed.
-    touch: [Option<T>; NCH],
     mode_alive: bool,
     mode_since: T,
     /// Idle dimming, perceptual 0..=65535 (full = awake).
@@ -361,8 +338,6 @@ impl<T: Time> Lights<T> {
         Lights {
             disp: [0; NCH],
             swell: 0,
-            vol: None,
-            touch: [None; NCH],
             mode_alive: false,
             mode_since: now,
             dim: Ease::new(FULL, now),
@@ -434,26 +409,9 @@ impl<T: Time> Lights<T> {
             self.swell -= (self.swell - loudest) / 48;
         }
 
-        // The pad finds the moved channel by comparing volumes with the last frame.
-        let known = (s.alive && s.frame_seen).then_some(s.mixer.volume);
-        if let (Some(was), Some(is)) = (self.vol, known) {
-            for ((t, a), b) in self.touch.iter_mut().zip(was).zip(is) {
-                if a != b {
-                    *t = Some(now);
-                }
-            }
-        }
-        self.vol = known;
-        let mut faders = 0;
-        for (i, t) in self.touch.iter().enumerate() {
-            if t.is_some_and(|t| now.ms_since(t) < POPUP_MS) {
-                faders |= 1 << i;
-            }
-        }
-
         let mut f = Frame { bright: [0; N], colour: [None; N] };
         if s.alive {
-            render_mixer(&mut f, &s.mixer, &self.disp, faders, self.swell, &s.ripples, now);
+            render_mixer(&mut f, &s.mixer, &self.disp, self.swell, &s.ripples, now);
         } else {
             render_idle(&mut f, &s.ripples, now);
         }

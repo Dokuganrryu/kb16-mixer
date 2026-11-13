@@ -24,10 +24,11 @@
 //! `old::leds` is compared only for the meter ballistics, which the screen draws and which did
 //! not change.
 //!
-//! The screen differs on purpose: the mixer, the readout and the notices have a new layout,
-//! and the logo's light streak crosses once instead of every 5.2 s (see `pad_core::oled`). So
-//! only what stayed is compared: when the idle logo shows, and its letters once both streaks
-//! are off screen. The new screens are pinned in the unit tests of `pad_core::oled`.
+//! The screen differs on purpose while it moves: meters glide between segments, a readout
+//! pushes the screen beneath it up and leaves the same way, a page change slides sideways, and
+//! a mute change inverts the channel name for 200 ms (see `pad_core::oled`). So frames are
+//! compared only when `Screen::moving` says the screen is at rest; then they must match bit for
+//! bit. The motion itself is pinned in the unit tests of `pad_core::oled`.
 
 use kb16_mixer_protocol::{HostMsg, LOGO_NAME_LEN, NEVER, NOTICE};
 use pad_core::Time;
@@ -1500,7 +1501,6 @@ fn the_lights_keep_the_same_meters() {
                     mixer: new_mixer(&mixer),
                     brightness,
                     ripples: ripples.map(|r| r.map(|r| pad_core::state::Ripple { at: r.at, row: r.row, col: r.col })),
-                    frame_seen: true,
                     activity,
                     dim_after,
                     idle_percent: 0,
@@ -1513,15 +1513,13 @@ fn the_lights_keep_the_same_meters() {
 }
 
 #[test]
-fn the_idle_logo_shows_at_the_same_times_with_the_same_letters() {
+fn the_screen_draws_the_same_pixels() {
     use pad_core::oled::{Fb, Input, Screen};
     let mut rng = Rng(0xD15C_0DE5_1234_5678);
     let names = [*b"KB16\0\0\0\0\0\0", *b"DESK PC\0\0\0", *b"WWWWWWWWWW", *b"J Q\0\0\0\0\0\0\0", [0; 10]];
     let popups = [*b"GAME\0\0\0\0\0\0\0\0\0\0\0\0", *b"Config loaded\0\0\0", *b"A VERY LONG NAME", [b' '; 16]];
     let mut compared = 0;
     let mut meter = [0u8; 4];
-    // Panel row `y` of column `x` in a frame buffer.
-    let bit = |buf: &[u8; 513], x: usize, y: i32| buf[1 + (y as usize / 8) * 128 + x] & 1 << (y % 8) != 0;
     for _run in 0..40 {
         let mut now = Instant::from_ticks(rng.below(5_000_000));
         let boot = now;
@@ -1529,8 +1527,6 @@ fn the_idle_logo_shows_at_the_same_times_with_the_same_letters() {
         let mut o = old::oled::Run::new(now, top);
         let mut fb = Fb::new(top);
         let mut screen = Screen::new(now);
-        // When the new logo came on: at boot, and again each time the idle logo comes back.
-        let mut logo_at = Some(now);
         let mut mixer = random_mixer(&mut rng);
         let mut popup: Option<old::state::Popup> = None;
         let mut alive = rng.chance(2);
@@ -1589,23 +1585,18 @@ fn the_idle_logo_shows_at_the_same_times_with_the_same_letters() {
                 meters: meter,
             };
             let b = screen.draw(&mut fb, now, since_boot, &input);
-            assert_eq!(a, b);
-            if since_boot >= 1800 {
-                logo_at = if b { logo_at.or(Some(now)) } else { None };
-            }
-            let new_streak_gone = logo_at.is_some_and(|t| now.ms_since(t) >= 1000);
-            let old_streak = now.as_millis() % 5200;
-            if b && new_streak_gone && !(45..790).contains(&old_streak) {
-                for y in top..top + 24 {
-                    for x in 0..128 {
-                        assert_eq!(bit(&o.fb.buf, x, y), bit(&fb.buf, x, y), "letter pixel ({x}, {y})");
-                    }
-                }
+            // The old popup bar started over at its value when a popup came back; the new one
+            // carries on from where it was, so the two can still be gliding apart.
+            let old_bar_rests = !o.popup_open
+                || popup.is_none_or(|p| p.volume == NOTICE || o.shown_vol == p.volume.min(100) as u32 * 10);
+            if !screen.moving() && old_bar_rests {
+                assert_eq!(a, b);
+                assert_eq!(o.fb.buf, fb.buf);
                 compared += 1;
             }
         }
     }
-    assert!(compared > 1000, "only {compared} logo frames compared");
+    assert!(compared > 40 * 1500 / 3, "only {compared} frames at rest");
 }
 
 #[test]
