@@ -5,33 +5,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The
 
 ## [Unreleased]
 
-Nobody did a test of these changes on a pad.
-
-For the knob hold, the pad must have new firmware. The firmware of the draft release 0.1.0 does not send the knob release. Until you flash the new firmware, each knob press acts as a tap.
-The new firmware also has the version 0.1.0. Thus `--check` and the settings window do not tell it from the draft release.
-
-### Added
-
-- A knob has a tap, a hold (350 ms) and a double tap. By default, a tap mutes or unmutes the knob target, and a hold selects the next program in the channel. The new `[knob_press]` table changes the actions.
-- Mute keys, `open:` keys and `none` keys can have a hold and a double tap: `[keys_hold]`, `[keys_double]`, `[keys2_hold]` and `[keys2_double]`.
-- Protocol: the pad sends `KNOB_UP` (`0x05`) when you release a knob, while the app is present. The app does not wait for it, because the firmware of the draft release does not send it. A previous app ignores the message.
-- Protocol: byte 19 of `SETTINGS` (`idle_led_percent`) sets the light of the dimmed key lights. The new setting is `[lights] idle_percent`. The firmware of the draft release ignores the byte.
-- `[audio] output`: `"default"` follows the Windows default output device when it changes. A device ID selects one device. While that device is disconnected, the app uses the Windows default.
-- The `audio` line of `--check` tells which output device the app uses.
-- New controls in the settings window: **Output device** and **Dim lights to** (**Pad** tab), and the knob tap, hold and double tap (**Keys** tab).
-- Screen motion: the meters glide, a readout pushes in and out, and the page slides. A channel name flashes when its mute changes. The screen fades before it goes off.
-
-### Changed
-
-- A knob tap mutes. Before, a knob press selected the next program. The hold does that at this time.
-- The key lights glide to each new level, with gamma 2.4 and a dither in quarter steps. Before, the light changed in visible steps.
-- Idle: the key lights dim to 6 % of their light in 0.7 seconds. After three times `lights_dim_min` (at most 240 minutes), they go off. Before, they dimmed to approximately 14 % and stayed on.
-- New default channel tints, all ice white with a different warmth: Mic `#e6dcd7`, Chat `#c8d7ff`, Game `#afcdff`, Media `#d7def5`. A `config.toml` with a `color` for each channel keeps its colours.
-- The rule for audible sound uses the output device of each program. Before, it used only the Windows default device.
-
-## [0.1.0] - 2026-11-13
+## [0.2.0] - 2026-11-13
 
 This is the first public version. It is a pre-release.
+
+Version 0.1.0 was an internal version. Nobody published it. The firmware of 0.2.0 sends the version 0.2.0. Thus `--check` and the settings window tell it from the firmware of 0.1.0.
+
+Nobody did a test of version 0.2.0 on a pad. The hardware tests in the section "Tests" used earlier builds.
 
 The sections "Added", "Changed", "Removed" and "Fixed" list the work of the quality rounds after the first two independent reviews. The other sections list the parts of the first version.
 
@@ -41,7 +21,7 @@ The sections "Added", "Changed", "Removed" and "Fixed" list the work of the qual
 - The `pad-core` crate holds the firmware logic that touches no hardware register. Its tests run on the PC and in CI. It holds the route of each key and knob, the keyboard report, and the bootloader marks and their order. It also holds the order of the flash steps (behind a `Controller` trait) and the write limit of the name page.
 - A flash guard in the firmware. The firmware writes flash only in the name page and in the crash log. It also reads the error flags of the flash controller after each write (PGERR and WRPRTERR).
 - An end-to-end audio test for the app: `cargo test --test audio_e2e -- --ignored`. A Windows PC with an audio output device is necessary. CI does not run it.
-- A release workflow. For a version tag, it checks the versions and the changelog, and builds one zip file, `SHA256SUMS` and a build attestation. It makes only a draft pre-release. It does not publish a release. A manual dry run passed. This release is the first run for a tag.
+- A release workflow. For a version tag, it checks the versions and the changelog, and builds one zip file, `SHA256SUMS` and a build attestation. It makes only a draft pre-release. It does not publish a release. A manual dry run and a run for the internal tag `v0.1.0` passed.
 - `scripts/package-release.py` makes the release zip. It rejects a bad firmware image or exe. The zip is reproducible.
 - `scripts/check-privacy.py` finds e-mail addresses, user paths, account SIDs and tokens in the repository, and other addresses than GitHub noreply addresses in the commits. The check accepts the bot form that Dependabot uses.
 - `scripts/check-links.py` checks the relative links and the anchors in the Markdown files.
@@ -65,6 +45,14 @@ The sections "Added", "Changed", "Removed" and "Fixed" list the work of the qual
 - Tests: no 32-byte report makes a protocol decoder panic, and the option tables of the settings window do not change by accident.
 - `docs/flashing.md` gives a last-resort recovery with an SWD debug probe. Nobody did a test of it.
 - An issue form for a pad that does not work. It asks for the output of `--check`.
+- A knob has a tap, a hold (350 ms) and a double tap. By default, a tap mutes or unmutes the knob target, and a hold selects the next program in the channel. The new `[knob_press]` table changes the actions.
+- Mute keys, `open:` keys and `none` keys can have a hold and a double tap: `[keys_hold]`, `[keys_double]`, `[keys2_hold]` and `[keys2_double]`.
+- Protocol: the pad sends `KNOB_UP` (`0x05`) when you release a knob, while the app is present. The app does not wait for it, because the firmware of the internal version 0.1.0 does not send it. An earlier app ignores the message.
+- Protocol: byte 19 of `SETTINGS` (`idle_led_percent`) sets the light of the dimmed key lights. The new setting is `[lights] idle_percent`. The firmware of the internal version 0.1.0 ignores the byte.
+- `[audio] output`: `"default"` follows the Windows default output device when it changes. A device ID selects one device. While that device is disconnected, the app uses the Windows default.
+- The `audio` line of `--check` tells which output device the app uses.
+- New controls in the settings window: **Output device** and **Dim lights to** (**Pad** tab), and the knob tap, hold and double tap (**Keys** tab).
+- Screen motion: the meters glide, a readout pushes in and out, and the page slides. A channel name flashes when its mute changes. The screen fades before it goes off.
 
 ### Changed
 
@@ -82,6 +70,11 @@ The sections "Added", "Changed", "Removed" and "Fixed" list the work of the qual
 - `deny.toml` and `scripts/about.toml` accept only the licences that the dependencies use: MIT, Apache-2.0 and Unicode-3.0.
 - The `protocol` crate forbids unsafe code.
 - The settings window test shows `SKIPPED` when Windows cannot make a window. When `CI` has a value, it gives an error in that case.
+- A knob tap mutes. Before, a knob press selected the next program. The hold does that at this time.
+- The key lights glide to each new level, with gamma 2.4 and a dither in quarter steps. Before, the light changed in visible steps.
+- Idle: the key lights dim to 6 % of their light in 0.7 seconds. After three times `lights_dim_min` (at most 240 minutes), they go off. Before, they dimmed to approximately 14 % and stayed on.
+- New default channel tints, all ice white with a different warmth: Mic `#e6dcd7`, Chat `#c8d7ff`, Game `#afcdff`, Media `#d7def5`. A `config.toml` with a `color` for each channel keeps its colours.
+- The rule for audible sound uses the output device of each program. Before, it used only the Windows default device.
 
 ### Removed
 
@@ -102,7 +95,6 @@ The sections "Added", "Changed", "Removed" and "Fixed" list the work of the qual
 - `nan`, `inf` and `-inf` for `step`, `brightness` or `duck` in `config.toml` are errors. Before, `nan` went through the range check.
 - `--settings` accepts only the full tab names `keys`, `channels` and `pad`, in upper case or lower case. Before, `--settingsx` also opened the window.
 
-
 ### Firmware
 
 - Embassy firmware for the DOIO KB16-01 rev2 (APM32F103CB). The firmware starts at `0x08002000`. It does not write the stm32duino bootloader.
@@ -122,7 +114,7 @@ The sections "Added", "Changed", "Removed" and "Fixed" list the work of the qual
 
 - A Windows tray app that controls the volume and mute of programs in the Windows volume mixer, and the microphone.
 - Up to 4 channels, with names of 1 to 5 characters. A channel is a list of programs, the microphone, all other programs, or the foreground program.
-- A knob press selects one program in a channel. Each program keeps its balance in the channel (trim), also at 0 % and 100 %.
+- A knob hold selects one program in a channel. Each program keeps its balance in the channel (trim), also at 0 % and 100 %.
 - The app tracks each audio session separately. Focus gives each session its previous level back, also for programs that closed while Focus was on.
 - The app handles key presses and releases in the order of arrival.
 - Key actions: **Mute**, **Focus**, **Talk**, **Move**, **Switch page** and `open:<target>`. The pad types all other keys.
@@ -144,7 +136,7 @@ The sections "Added", "Changed", "Removed" and "Fixed" list the work of the qual
 
 ### Tests
 
-For the full list of hardware tests, see [docs/testing.md](https://github.com/Dokuganrryu/kb16-mixer/blob/v0.1.0/docs/testing.md#verified-on-the-pad).
+For the full list of hardware tests, see [docs/testing.md](https://github.com/Dokuganrryu/kb16-mixer/blob/v0.2.0/docs/testing.md#verified-on-the-pad).
 
-[Unreleased]: https://github.com/Dokuganrryu/kb16-mixer/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Dokuganrryu/kb16-mixer/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Dokuganrryu/kb16-mixer/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Dokuganrryu/kb16-mixer/releases/tag/v0.2.0
