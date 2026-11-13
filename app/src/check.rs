@@ -103,7 +103,6 @@ fn count_bootloaders(ids: &[u16]) -> usize {
         .count()
 }
 
-/// None when there is no config.toml yet; the error kind when it cannot be read.
 /// Core Audio as the app would use it, on the output device config.toml chooses (the Windows
 /// default when the file is missing or wrong).
 fn census(config: Option<Result<String, std::io::ErrorKind>>) -> windows::core::Result<Census> {
@@ -114,6 +113,7 @@ fn census(config: Option<Result<String, std::io::ErrorKind>>) -> windows::core::
     Ok(mixer.census())
 }
 
+/// None when there is no config.toml yet; the error kind when it cannot be read.
 fn read_config() -> Option<Result<String, std::io::ErrorKind>> {
     match std::fs::read_to_string(config::path()) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
