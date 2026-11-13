@@ -47,6 +47,7 @@ On Windows, the app writes 33 bytes: report ID `0`, then the 32 bytes of the mes
 | `0x02` | `PRESS` | pad to app |
 | `0x03` | `KEY_DOWN` | pad to app |
 | `0x04` | `KEY_UP` | pad to app |
+| `0x05` | `KNOB_UP` | pad to app |
 | `0x10` | `POPUP` | app to pad |
 | `0x20` | `SETTINGS` | app to pad |
 | `0x21` | `FRAME` | app to pad |
@@ -102,8 +103,12 @@ The pad shows a popup for 1.3 seconds. For the idle timers, a popup is not activ
 | 16 | `oled_top_plus_one` | Screen offset in pixel rows, plus one. 0 = pad default (3). The pad uses at most 6. |
 | 17 | `screen_off_min` | Minutes without activity before the screen goes off. 0 = pad default (10). 255 = never. |
 | 18 | `lights_dim_min` | Minutes without activity before the lights dim. 0 = pad default (10). 255 = never. |
+| 19 | `idle_led_percent` | Light that the dimmed lights keep, in percent of the normal light (1–100). 0 = pad default (6). |
 
 The app sends `255` for a setting of `0` (no timer) in the config file. It sends at most `240` minutes, and a brightness of at least `1`.
+The pad uses an `idle_led_percent` above 100 as 100.
+
+Byte 19 came after the draft release 0.1.0. Firmware from before it ignores the byte. An app from before it sends `0`, so the pad uses its default.
 
 ### `0x21` FRAME
 
@@ -217,16 +222,20 @@ Each program on the PC that can open the raw HID interface can send this message
 
 ## Pad to app
 
-| Byte | `0x01` TURN | `0x02` PRESS | `0x03` KEY_DOWN | `0x04` KEY_UP |
-|---|---|---|---|---|
-| 0 | `0xD1` | `0xD1` | `0xD1` | `0xD1` |
-| 1 | `0x01` | `0x02` | `0x03` | `0x04` |
-| 2 | Knob (0–2) | Knob (0–2) | Row (0–3) | Row (0–3) |
-| 3 | Delta, signed: +1 clockwise, −1 (`0xFF`) counterclockwise | 0 | Column (0–3) | Column (0–3) |
+| Byte | `0x01` TURN | `0x02` PRESS | `0x03` KEY_DOWN | `0x04` KEY_UP | `0x05` KNOB_UP |
+|---|---|---|---|---|---|
+| 0 | `0xD1` | `0xD1` | `0xD1` | `0xD1` | `0xD1` |
+| 1 | `0x01` | `0x02` | `0x03` | `0x04` | `0x05` |
+| 2 | Knob (0–2) | Knob (0–2) | Row (0–3) | Row (0–3) | Knob (0–2) |
+| 3 | Delta, signed: +1 clockwise, −1 (`0xFF`) counterclockwise | 0 | Column (0–3) | Column (0–3) | 0 |
 
 Knob 0 is the small left knob, knob 1 is the small right knob, and knob 2 is the large knob.
 One `TURN` message is one detent.
-The pad sends `PRESS` only when you push a knob down, not when you release it.
+
+The pad sends `PRESS` when you push a knob down. While the app is present, it also sends `KNOB_UP` when you release the knob.
+The app uses the time between `PRESS` and `KNOB_UP` to find a hold.
+Firmware up to the draft release 0.1.0 does not send `KNOB_UP`. Thus the app must not wait for it. The app then uses each `PRESS` as a press and a release together: a tap or a double tap, but not a hold.
+
 The pad sends `KEY_DOWN` and `KEY_UP` only for keys of the type `Host`.
 
 ## Version
@@ -242,6 +251,8 @@ The firmware sends its version as the release number of its USB device (`bcdDevi
 
 The major version can be 0–99. The minor and patch versions can be 0–9. A version that does not fit stops the build.
 `device_release()` ignores a pre-release part (for example `-beta`).
+
+The firmware that sends `KNOB_UP` and reads byte 19 also has the version 0.1.0. Thus the version does not tell it from the draft release 0.1.0.
 
 ## Decode rules
 
