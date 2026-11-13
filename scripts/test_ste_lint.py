@@ -40,7 +40,7 @@ class SentenceLength(unittest.TestCase):
         self.assertEqual(rules(item), [])
 
     def test_inline_code_counts_as_one_word(self):
-        text = "Run `" + " ".join(["x"] * 40) + "` now.\n"
+        text = "Run `" + " ".join(["x"] * 40) + "` again.\n"
         self.assertEqual(rules(text), [])
 
 
@@ -68,7 +68,7 @@ class Passive(unittest.TestCase):
         self.assertEqual(rules("The page is written once.\n"), ["passive"])
 
     def test_irregular_participle_with_adverb_fails(self):
-        self.assertEqual(rules("The name is never sent.\n"), ["passive"])
+        self.assertEqual(rules("The name is also sent.\n"), ["passive"])
 
     def test_state_adjective_passes(self):
         self.assertEqual(rules("When the pad is connected, the light comes on.\n"), [])
@@ -76,8 +76,8 @@ class Passive(unittest.TestCase):
     def test_active_voice_passes(self):
         self.assertEqual(rules("The firmware writes the page once.\n"), [])
 
-    def test_need_is_not_a_participle(self):
-        self.assertEqual(rules("There is need for a cable.\n"), [])
+    def test_red_is_not_a_participle(self):
+        self.assertEqual(rules("The light is red.\n"), [])
 
 
 class IngForms(unittest.TestCase):
@@ -121,6 +121,49 @@ class BannedWords(unittest.TestCase):
 
     def test_word_that_contains_a_banned_word_passes(self):
         self.assertEqual(rules("Adjust the trim. The justification follows.\n"), [])
+
+
+class Vocabulary(unittest.TestCase):
+    def found(self, text: str) -> list[str]:
+        return [f.detail for f in ste.check_text("test.md", text + "\n")
+                if f.rule == "vocabulary"]
+
+    def test_word_that_is_not_approved_fails_with_its_alternative(self):
+        self.assertEqual(self.found("You need a cable."), ["need: use NECESSARY or MUST"])
+
+    def test_each_form_of_a_word_fails(self):
+        for text in ("It needs a cable.", "A cable was needed.", "The app fails.",
+                     "The app failed.", "It takes 2 s.", "It took 2 s."):
+            with self.subTest(text=text):
+                self.assertEqual(len(self.found(text)), 1)
+
+    def test_approved_word_passes(self):
+        self.assertEqual(self.found("A cable is necessary. The app does not start."), [])
+
+    def test_word_inside_a_longer_word_passes(self):
+        self.assertEqual(self.found("The company sends an anyway notice. Knowledge helps."), [])
+
+    def test_check_and_test_as_nouns_pass(self):
+        self.assertEqual(self.found("Do a check of the pad. The test passes. Run the checks."), [])
+
+    def test_check_and_test_as_verbs_fail(self):
+        for text in ("Check the pad.", "You must test the pad.", "The author tested it."):
+            with self.subTest(text=text):
+                self.assertEqual(len(self.found(text)), 1)
+
+    def test_not_tested_is_the_status_label(self):
+        self.assertEqual(self.found("Windows 10 is not tested."), [])
+
+    def test_two_word_entry_fails(self):
+        self.assertEqual(self.found("Turn on the switch."), ["turn on/off: use START, STOP or SET"])
+
+    def test_code_bold_and_quotes_pass(self):
+        self.assertEqual(self.found('Run `--never`. Click **Restore**. It shows "need".'), [])
+
+    def test_each_entry_has_an_alternative(self):
+        for name, _, alternative in ste.VOCABULARY:
+            with self.subTest(name=name):
+                self.assertTrue(alternative.startswith("use "))
 
 
 class NounClusters(unittest.TestCase):

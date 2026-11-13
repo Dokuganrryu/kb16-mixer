@@ -3,8 +3,9 @@
 
 This is a heuristic helper. It is NOT a certified STE checker. It finds the
 rules that a program can see (sentence length, passive forms, banned words and
-similar). It cannot check the STE dictionary, the meaning of a word, or the
-order of the text. A person must still read the text.
+similar), and a short table of words that the STE dictionary does not approve.
+It cannot check the full STE dictionary, the meaning of a word, its part of
+speech, or the order of the text. A person must still read the text.
 
 Usage:
     python scripts/ste-lint.py [--summary] [--allow FILE] [--no-allow] [PATH ...]
@@ -32,6 +33,10 @@ Rules:
     ing-form          a word that ends in "-ing" and is not in the allow-list
     two-instructions  more than one instruction in one sentence
     banned-word       a word or phrase that STE does not use
+    vocabulary        a word from a short table of words that the ASD-STE100
+                      Issue 9 dictionary does not approve; the message gives
+                      the approved alternative (heuristic only: the table is
+                      not the dictionary, and the part of speech is a guess)
     noun-cluster      more than three nouns in a row (heuristic only)
     paragraph-length  more than 6 sentences in one paragraph
 
@@ -125,6 +130,64 @@ BANNED = [
 ]
 BANNED_RE = [(name, re.compile(rx, re.IGNORECASE)) for name, rx in BANNED]
 
+# Words that the ASD-STE100 Issue 9 dictionary lists as NOT approved, each
+# with the approved alternative that the dictionary gives. This is a short
+# table of the words that this project's docs used. It is not the dictionary:
+# a word that is not in this table can still be wrong. A technical name or a
+# technical verb (see docs/glossary.md) is not in the table.
+# "check" and "test" are approved as nouns. After these words, or at the start
+# of a sentence, they are verbs. "Not tested" stays: it is the status label of
+# this project (see docs/glossary.md).
+VERB_BEFORE = "(?:(?<=^)|" + "|".join(
+    rf"(?<=\b{w} )" for w in ("to", "you", "must", "can", "not", "and", "then", "will")
+) + ")"
+# Each pattern matches whole words only.
+VOCABULARY = [
+    ("need", r"need(s|ed)?", "use NECESSARY or MUST"),
+    ("require", r"requir(e|es|ed)", "use NECESSARY or MUST"),
+    ("allow", r"allow(s|ed)?", "use LET"),
+    ("ensure", r"ensures?", "use MAKE SURE"),
+    ("provide", r"provid(e|es|ed)", "use GIVE or SUPPLY"),
+    ("appear", r"appear(s|ed)?", "use SHOW or COME INTO VIEW"),
+    ("decide", r"decid(e|es|ed)", "use SELECT or DECISION"),
+    ("undo", r"und(o|oes|one)", "use CANCEL or REMOVE"),
+    ("restore", r"restor(e|es|ed)", "use PUT BACK or SET AGAIN"),
+    ("talk", r"talk(s|ed)?", "use SPEAK or COMMUNICATE"),
+    ("take", r"(take|takes|taken|took)", "use GET, REMOVE or NECESSARY"),
+    ("turn on/off", r"turn(s|ed)?\s+(on|off)", "use START, STOP or SET"),
+    ("fix", r"fix(es|ed)?", "use REPAIR or CORRECT"),
+    ("fail", r"fail(s|ed)?", "use IF ... NOT, DEFECTIVE or UNSATISFACTORY"),
+    ("refuse", r"refus(e|es|ed)", "use REJECT"),
+    ("mistake", r"mistakes?", "use ERROR"),
+    ("describe", r"describ(e|es|ed)", "use GIVE or TELL"),
+    ("check (verb)", VERB_BEFORE + r"check|checked", "use MAKE SURE, EXAMINE or DO A CHECK"),
+    ("test (verb)", VERB_BEFORE + r"test|(?<!not )tested", "use DO A TEST"),
+    ("never", r"never", "use DO NOT or NOT"),
+    ("now", r"now", "use AT THIS TIME, or delete it"),
+    ("already", r"already", "use NO OTHER or IN PROGRESS, or delete it"),
+    ("still", r"still", "use STAY or CONTINUE"),
+    ("instead", r"instead", "use ALTERNATIVE or IN PLACE OF"),
+    ("any", r"any", "use ALL, EACH, ONE or A"),
+    ("every", r"every", "use ALL, EACH or INTERVAL"),
+    ("whose", r"whose", "use a different construction"),
+    ("neither", r"(neither|nor)", "use NOT ... AND NOT"),
+    ("real", r"real(ly)?", "use AGREE, CORRECT, or delete it"),
+    ("normal", r"normal(ly)?", "use USUAL or CORRECT"),
+    ("early", r"early", "use SHORT or BEFORE"),
+    ("whole", r"whole", "use ALL or FULL"),
+    ("way", r"ways?", "use PROCEDURE or METHOD"),
+    ("kind", r"kinds?", "use TYPE"),
+    ("big", r"big(ger|gest)?", "use LARGE"),
+    ("old", r"old(er)?", "use PREVIOUS, REMAINING or USED"),
+    ("exact", r"exact(ly)?", "use ACCURATE or CORRECT"),
+    ("wrong", r"wrong", "use INCORRECT"),
+    ("true", r"true", "use CORRECT"),
+    ("people", r"people", "use PERSONS"),
+]
+VOCABULARY_RE = [
+    (name, re.compile(rf"\b(?:{rx})\b", re.IGNORECASE), alt) for name, rx, alt in VOCABULARY
+]
+
 CONTRACTION_RE = re.compile(
     r"\b(\w+n['’]t|\w+['’](?:re|ve|ll|d|m)|"
     r"(?:it|that|there|here|what|let|he|she|who|where|how)['’]s)\b",
@@ -175,7 +238,8 @@ FUNCTION_WORDS = _words(
     "approximately usually automatically only again later earlier today "
     "standard generic virtual physical external internal single whole "
     "complete possible available necessary important visible common basic "
-    "general specific known unknown little"
+    "general specific known unknown little usual previous incorrect accurate "
+    "unsatisfactory defective permanent"
 )
 VERBS = _words(
     "is are was be has have get gets got makes sends shows goes gives keeps "
@@ -440,6 +504,13 @@ def check_two_instructions(sentence: str, words: list[str]) -> str | None:
     return None
 
 
+def check_vocabulary(sentence: str) -> list[tuple[str, str]]:
+    # Placeholders hide code, quotes and bold labels, so a name such as
+    # **Restore** or `--check` is not a word of the prose.
+    words = " ".join(w for w in sentence.split() if w.strip(".,:;!?()") not in PLACEHOLDERS)
+    return [(name, alt) for name, rx, alt in VOCABULARY_RE if rx.search(words)]
+
+
 def is_noun_like(word: str) -> bool:
     if word in PLACEHOLDERS:
         return False
@@ -506,6 +577,8 @@ def check_unit(path: str, unit: Unit) -> list[Finding]:
         for name, rx in BANNED_RE:
             if rx.search(sentence):
                 hit("banned-word", name)
+        for name, alt in check_vocabulary(sentence):
+            hit("vocabulary", f"{name}: {alt}")
         n = check_noun_cluster(sentence)
         if n:
             hit("noun-cluster", n)
