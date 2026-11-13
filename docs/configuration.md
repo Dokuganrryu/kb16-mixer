@@ -1,7 +1,7 @@
 # Configuration
 
 Read this document after the install, when you want to change the keys, the channels or the knobs.
-This document describes the settings window and the config file of the app, `config.toml`.
+This document gives the settings window and the config file of the app, `config.toml`.
 The source of the default file is `DEFAULT` in `app/src/config.rs`.
 For the definition of each term, see [glossary.md](glossary.md).
 
@@ -46,7 +46,7 @@ On the first start (when `config.toml` does not exist), the app does these steps
 2. It opens the settings window on the **Pad** tab.
 3. The status line tells you that the app is in the tray, near the clock (possibly behind the `^` arrow).
 
-The app does **not** start with Windows until you turn on **Start with Windows** on the **Pad** tab.
+The app does **not** start with Windows until you set **Start with Windows** to on, on the **Pad** tab.
 
 ## The settings window
 
@@ -60,7 +60,7 @@ The app keeps the comments and the layout of the file.
 The status line at the bottom says what changed, or why the app did not accept a change.
 
 - The window does not accept a change that makes the file incorrect. The status line then gives the reason.
-- If `config.toml` already has a mistake, the window writes nothing until you correct the file.
+- If `config.toml` has an error, the window writes nothing until you correct the file.
 - If you change the file in a text editor, the window shows the new contents when you come back to it.
 
 In the window, "app" means a program, for example "These apps" or "App in front".
@@ -103,11 +103,11 @@ The dialog sets a key to a combination, for example Ctrl+Shift+M.
 3. To add the Win key, select **Add the Win key**.
 4. Click **OK**.
 
-To set the key to nothing, click **Clear**. To keep the old setting, click **Cancel**.
+To set the key to nothing, click **Clear**. To keep the previous setting, click **Cancel**.
 
 - The dialog reads keys only from its own box, while that box has the keyboard focus. It uses no hook.
-- Windows keeps some combinations for itself (for example Win+L and Ctrl+Alt+Del, and often the Win key). The dialog cannot see these. Type them into the config file instead, for example `"win+l"`.
-- The dialog refuses keys that the pad cannot type, for example the number-pad keys and the Pause key. It then shows: "The pad cannot type that key. Letters, digits, F1 to F24, Enter, arrows and the like work."
+- Windows keeps some combinations for itself (for example Win+L and Ctrl+Alt+Del, and often the Win key). The dialog cannot see these. Type them into the config file, for example `"win+l"`.
+- The dialog rejects keys that the pad cannot type, for example the number-pad keys and the Pause key. It then shows: "The pad cannot type that key. Letters, digits, F1 to F24, Enter, arrows and the like work."
 
 ### Open dialog
 
@@ -137,25 +137,25 @@ The tab has one column for each channel.
 | **These apps** | `apps = [...]` | The programs in its list |
 | **Everything else** | `target = "other"` | All programs that no other channel takes |
 | **Microphone** | `target = "mic"` | The microphone. The tab shows no list for it. |
-| **App in front** | `target = "focused"` | The foreground program |
+| **App in front** | `target = "focused"` | The foreground program. When the desktop or the taskbar is in front, no program is in front. |
 
-The list shows each program where the app really puts it. A program that you moved with the Move key shows "(moved)".
-A moved program wins over the lists. **Remove** on a moved program undoes the move.
+The list shows each program in the channel that the app gives it. A program that you moved with the Move key shows "(moved)".
+A moved program wins over the lists. **Remove** on a moved program cancels the move.
 The lists of **Everything else** and **App in front** show only the moved programs.
 
 **Add...** opens a menu:
 
-- The programs that have a volume slider now, with their current channel, for example "(now in Media)".
+- The programs that have a volume slider at this time, with their current channel, for example "(now in Media)".
 - **Type a program name...**: a dialog for a program name, as Task Manager shows it on the **Details** tab (for example `Spotify.exe`).
 
-A program that you add to one channel goes out of the list of every other channel.
+A program that you add to one channel goes out of the list of all other channels.
 
 The window does not accept these changes:
 
 - A name that another channel has.
 - A name that the knobs read as a different target: `master`, `system`, `mic`, `focused` or `selected`. The microphone channel can have the name `Mic`.
-- A second channel of the kind **Everything else**, **Microphone** or **App in front**. Only one channel can have each of these kinds.
-- A channel with the name `Mic` that is not of the kind **Microphone**.
+- A second channel of the type **Everything else**, **Microphone** or **App in front**. Only one channel can have each of these types.
+- A channel with the name `Mic` that is not of the type **Microphone**.
 
 To add or remove a channel, edit the config file. See [Channels](#channels).
 
@@ -188,12 +188,12 @@ If no pad is connected, it shows `Pad not connected.`
 5. Right-click the tray icon.
 6. Click **Reload config file**.
 
-If the file has a mistake, the app keeps the last correct settings.
+If the file has an error, the app keeps the last correct settings.
 The tray menu then shows "Config problem" and the cause. The screen of the pad shows `Config error`.
-If the file has a mistake when the app starts, the app uses the default settings and writes the cause to `log.txt`.
+If the file has an error when the app starts, the app uses the default settings and writes the cause to `log.txt`.
 
 The file uses the TOML format. Text values are in double quotes.
-A reload sets the pad back to page 1, stops Focus, and sets each knob back to its whole channel.
+A reload sets the pad back to page 1, stops Focus, and sets each knob back to its full channel.
 
 ## General settings
 
@@ -209,9 +209,9 @@ A reload sets the pad back to page 1, stops Focus, and sets each knob back to it
 | `mixer_keys` | `true` | `true`, `false` | `false` = the keys type their keyboard-mode keys. The knobs and the lights stay in mixer mode. |
 
 The app changes a number outside its range to the nearest limit. For example, `step = 900` becomes `20`, and `oled_top = 9` becomes `6`.
-The value `nan`, `inf` or `-inf` for `step`, `brightness` or `duck` is a mistake: the app does not load the file.
-A negative number for `oled_top`, `screen_off_min` or `lights_dim_min` is a mistake, and so is an `oled_top` above 255.
-A `name` outside its rule is a mistake: the app does not load the file.
+The value `nan`, `inf` or `-inf` for `step`, `brightness` or `duck` is an error: the app does not load the file.
+A negative number for `oled_top`, `screen_off_min` or `lights_dim_min` is an error. An `oled_top` above 255 is also an error.
+A `name` outside its rule is an error: the app does not load the file.
 
 Activity is a key press, a knob turn, or audible sound from a program. A readout or a notice on the screen is not activity.
 Sound is audible when a program plays above approximately −40 dBFS, after its own volume and mute, for at least 1 second.
@@ -237,7 +237,7 @@ Values:
 | The name of a channel | That channel (case is not important) | Selects the next program in the channel |
 | `"master"` or `"system"` | The volume of the default output device | Shows the level |
 | `"mic"` | The level of the microphone | Shows the level |
-| `"focused"` | The foreground program, in any channel | Shows the level |
+| `"focused"` | The foreground program, in each channel. When the desktop or the taskbar is in front, the knob changes nothing and the screen shows `Nothing in front`. | Shows the level |
 | `"selected"` | The channel that has Focus. If no channel has Focus: the `other` channel, or else the first channel that is not the microphone. | Selects the next program in that channel |
 
 If you remove a knob line, `knob1` and `knob2` become `"master"`, and `knob3` becomes `"selected"`.
@@ -246,18 +246,18 @@ A knob press does not mute. Use a Mute key.
 
 ### One program in a channel
 
-A knob on a channel can control the whole channel or one program in it.
+A knob on a channel can control the full channel or one program in it.
 
 1. Press the knob. It selects the first program that has an audio session in the channel (in the order of the program name).
 2. Turn the knob. Only that program changes. The other programs keep their sound.
 3. Press the knob again. It selects the next program.
-4. After the last program, a press selects the whole channel again.
+4. After the last program, a press selects the full channel again.
 
 The screen shows the name and the level of the knob target after each press.
-After 8 seconds without a touch on that knob, the knob goes back to the whole channel. It also goes back when the selected program stops.
+After 8 seconds without a touch on that knob, the knob goes back to the full channel. It also goes back when the selected program stops.
 If the channel has no program, the screen shows `No app in <channel>`.
 
-A turn on the whole channel keeps the balance between its programs. For the rules, see [how-it-works.md](how-it-works.md#volume-rules).
+When you turn the knob on the full channel, the balance between its programs stays the same. For the rules, see [how-it-works.md](how-it-works.md#volume-rules).
 
 ## Keys and pages
 
@@ -276,7 +276,7 @@ The pad starts on page 1. These events set it back to page 1:
 - A reload of the config file.
 
 
-Each table has four rows, `row1` (top) to `row4` (bottom). Each row has exactly four entries, from left to right.
+Each table has four rows, `row1` (top) to `row4` (bottom). Each row has four entries, from left to right.
 Each column belongs to the channel with the same position in the list of channels.
 
 ```toml
@@ -296,9 +296,9 @@ row4 = ["mute",  "mute", "mute", "mute"]
 If you remove a row, the app uses the default row of that page.
 
 > **CAUTION:** If `[keys]` has a `"page"` key, `[keys2]` must also have one.
-> Otherwise there is no way back to page 1. The app does not load such a file.
+> Otherwise there is no procedure to go back to page 1. The app does not load such a file.
 
-If neither page has a `"page"` key, the file is correct. Page 2 is then not used.
+If the two pages have no `"page"` key, the file is correct. Page 2 is then not used.
 
 ### Mixer actions
 
@@ -330,12 +330,12 @@ row1 = ["page", "open:C:\\Tools\\obs64.exe", "open:%USERPROFILE%\\Downloads", "o
 - The app replaces environment variables such as `%USERPROFILE%`.
 - The target keeps its upper and lower case.
 - The app does not ask for administrator rights.
-- If the target program needs administrator rights, Windows shows its User Account Control (UAC) prompt. The app does not bypass that prompt. Nobody tested this on a pad yet.
+- If the target program must have administrator rights, Windows shows its User Account Control (UAC) prompt. The app does not bypass that prompt. Nobody did a test of this on a pad yet.
 - If the target does not open, the pad shows `Open failed`, and the app writes a line to `log.txt`.
 
 ### Keys that the pad types
 
-The pad sends these keys itself, as a USB keyboard. Windows receives them as normal keyboard input, so most programs and games see them.
+The pad sends these keys itself, as a USB keyboard. Windows receives them as usual keyboard input, so most programs and games see them.
 
 | Value | Key |
 |---|---|
@@ -380,7 +380,7 @@ The first channel belongs to the left key column. The second channel belongs to 
 | `apps` | see below | A list of program file names, for example `["Discord.exe", "Teams.exe"]`. Case is not important. |
 | `target` | see below | `"apps"`, `"mic"`, `"other"` or `"focused"` |
 
-Each channel needs `apps` (not empty) or `target`.
+Each channel must have `apps` (not empty) or `target`.
 
 | `target` | The channel controls |
 |---|---|
@@ -388,7 +388,7 @@ Each channel needs `apps` (not empty) or `target`.
 | `"apps"` | The programs in `apps`. With `target = "apps"`, the list can be empty. |
 | `"mic"` | The microphone. The meter shows your voice. |
 | `"other"` | All programs that no other channel names. Games usually land here. |
-| `"focused"` | The foreground program and its child processes |
+| `"focused"` | The foreground program and its child processes. When the desktop, the taskbar or a folder window (`explorer.exe`) is in front, no program is in front, and the channel gets no session. |
 
 If two channels name the same program, the first channel gets it.
 A program that you moved with the Move key stays in that channel, whatever `apps` says.
@@ -481,7 +481,7 @@ A TOML syntax error shows the line number.
 
 ## Keyboard mode
 
-When the app does not run (or after **Pause** in the tray menu), the pad uses this fixed layout:
+When the app does not run (or after **Pause** in the tray menu), the pad uses this layout:
 
 ```text
           +-----------+-----------+-----------+-----------+
@@ -542,7 +542,7 @@ These are the `pad` messages:
 
 The exit code is 0 when no line shows `FAIL`. Otherwise it is 1.
 The report gives no program names, user names, folder names, pad names or serial numbers. The only text from a device is the product string of a pad with other firmware.
-The report does not change a file. It also does not move the settings of an old version.
+The report does not change a file.
 
 In a command prompt, type `kb16-mixer.exe --check | more`. In PowerShell, type `.\kb16-mixer.exe --check | more`.
 
@@ -553,11 +553,11 @@ In a command prompt, type `kb16-mixer.exe --check | more`. In PowerShell, type `
 - One line for each audio session: the process ID, the program name, the channel and the volume.
 - One line for each channel: the name, the volume, the mute, and the peak level in 1.5 seconds. The line also tells if a program plays in the channel.
 
-> **CAUTION:** `selftest.txt` names the programs that run on your PC. Do not paste it into a bug report. Use the `--check` report instead.
+> **CAUTION:** `selftest.txt` holds the names of the programs that run on your PC. Do not paste it into a bug report. Use the `--check` report.
 
 ### Environment variables
 
 | Variable | Effect |
 |---|---|
-| `KB16_MIXER_DIR=<folder>` | Replaces the settings folder, for example for a portable copy or a test. With it set, the app never writes **Start with Windows**, and the menu item is not available. |
+| `KB16_MIXER_DIR=<folder>` | Replaces the settings folder, for example for a portable copy or a test. With it set, the app does not write **Start with Windows**, and the menu item is not available. |
 | `KB16_MIXER_DPI=<number>` | Only for developers: lays the settings window out for a different display scale. |
