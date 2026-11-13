@@ -1,15 +1,17 @@
 //! Draws the pad's screens with the firmware's own drawing code and writes them, four times
-//! enlarged, to docs/images/oled-*.png.
+//! enlarged, as PNG files: the mixer and the readouts in each screen style, the logo and a
+//! notice. They go to the folder given as the argument, or to `kb16-oled` in the system's
+//! temporary folder.
 //!
-//! Run from anywhere:  cargo run --manifest-path pad-core/Cargo.toml --example render_oled
+//! Run from anywhere:  cargo run --manifest-path pad-core/Cargo.toml --example render_oled [folder]
 //!
-//! Each picture is the whole 128x32 frame buffer as the firmware sends it to the panel, with
-//! the default 3-pixel top offset (the case hides the top rows).
+//! Each picture is the whole 128x32 frame buffer as the firmware sends it to the panel, at
+//! rest, with the default 3-pixel top offset (the case hides the top rows).
 
 use kb16_mixer_protocol::{LOGO_NAME_LEN, NOTICE};
 use pad_core::oled::{Fb, H, Input, SPLASH_MS, Screen, W};
-use pad_core::state::{DEFAULT_OLED_TOP, Mixer, Popup};
-use std::path::Path;
+use pad_core::state::{DEFAULT_OLED_TOP, Mixer, Popup, STYLE_CLASSIC, STYLE_LEAN, STYLE_NUMBERS};
+use std::path::PathBuf;
 
 const SCALE: usize = 4;
 /// A time well after the boot splash, when the logo has wiped in and its streak has passed.
@@ -37,8 +39,8 @@ fn mixer(second_page: bool) -> Mixer {
     }
 }
 
-fn input(alive: bool, mixer: Mixer, popup: Option<Popup<u64>>) -> Input<u64> {
-    Input { alive, mixer, popup, idle: 0, name: name::<LOGO_NAME_LEN>("KB16"), meters: [200, 120, 0, 60], style: 0 }
+fn input(style: u8, alive: bool, mixer: Mixer, popup: Option<Popup<u64>>) -> Input<u64> {
+    Input { alive, mixer, popup, idle: 0, name: name::<LOGO_NAME_LEN>("KB16"), meters: [200, 120, 0, 60], style }
 }
 
 fn draw(input: &Input<u64>) -> Fb {
@@ -53,16 +55,23 @@ fn popup(volume: u8, muted: bool, text: &str) -> Popup<u64> {
 }
 
 fn main() -> std::io::Result<()> {
-    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/images");
+    let out = std::env::args_os().nth(1).map_or_else(|| std::env::temp_dir().join("kb16-oled"), PathBuf::from);
     std::fs::create_dir_all(&out)?;
-    let screens = [
-        ("oled-logo", input(false, mixer(false), None)),
-        ("oled-mixer", input(true, mixer(false), None)),
-        ("oled-popup", input(true, mixer(false), Some(popup(64, false, "Music")))),
-        ("oled-muted", input(true, mixer(false), Some(popup(64, true, "Music")))),
-        ("oled-notice", input(true, mixer(false), Some(popup(NOTICE, false, "Config loaded")))),
-        ("oled-page2", input(true, mixer(true), None)),
+    let mut screens = vec![
+        ("oled-logo".to_string(), input(STYLE_CLASSIC, false, mixer(false), None)),
+        (
+            "oled-notice".to_string(),
+            input(STYLE_CLASSIC, true, mixer(false), Some(popup(NOTICE, false, "Config loaded"))),
+        ),
     ];
+    for (style, label) in [(STYLE_CLASSIC, "classic"), (STYLE_LEAN, "lean"), (STYLE_NUMBERS, "numbers")] {
+        screens.extend([
+            (format!("{label}-mixer"), input(style, true, mixer(false), None)),
+            (format!("{label}-readout"), input(style, true, mixer(false), Some(popup(64, false, "Music")))),
+            (format!("{label}-muted"), input(style, true, mixer(false), Some(popup(64, true, "Music")))),
+            (format!("{label}-page2"), input(style, true, mixer(true), None)),
+        ]);
+    }
     for (file, input) in &screens {
         let path = out.join(format!("{file}.png"));
         std::fs::write(&path, png(&draw(input)))?;
