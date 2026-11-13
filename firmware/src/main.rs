@@ -31,8 +31,7 @@ use embassy_stm32::{Config, bind_interrupts, dma, pac};
 use embassy_time::{Duration, Timer, with_timeout};
 use embassy_usb::Builder;
 use embassy_usb::class::hid::{self, HidBootProtocol, HidReaderWriter, HidSubclass, HidWriter};
-use kb16_mixer_protocol::PadMsg;
-use pad_core::route::{Action, Event, Router};
+use pad_core::route::{Action, Event, OwedUps, Router};
 use static_cell::StaticCell;
 
 bind_interrupts!(struct Irqs {
@@ -224,18 +223,18 @@ async fn input(
 ) {
     let mut router = Router::new();
     // Reports the PC is owed because the bus did not take them (not ready, suspended): the
-    // keyboard state, a media key's release, and the releases of keys the PC app handles. Until
-    // they get through, the PC would think those keys are still held.
+    // keyboard state, a media key's release, and the key and knob releases for the PC app.
+    // Until they get through, the PC would think those keys are still held.
     let mut kbd_owed = false;
     let mut media_owed = false;
-    let mut ups_owed = 0u16;
+    let mut ups_owed = OwedUps::new();
     loop {
         if LET_GO.swap(false, Ordering::Relaxed) {
             router.keyboard.clear();
             kbd_owed = true;
             media_owed = true;
             // The bus went away: the PC app saw the pad go and let go of its keys itself.
-            ups_owed = 0;
+            ups_owed.clear();
         }
         if !state::suspended() {
             if kbd_owed {
@@ -244,10 +243,9 @@ async fn input(
             if media_owed {
                 media_owed = !put(&mut media, &[0, 0]).await;
             }
-            for i in 0..16u8 {
-                if ups_owed & 1 << i != 0 && put(&mut raw, &PadMsg::KeyUp { row: i / 4, col: i % 4 }.encode()).await {
-                    ups_owed &= !(1 << i);
-                }
+            for msg in ups_owed.pending() {
+                let delivered = put(&mut raw, &msg.encode()).await;
+                ups_owed.sent(msg, delivered);
             }
         }
         let Ok(ev) = with_timeout(RETRY, keys::EVENTS.receive()).await else { continue };
@@ -263,16 +261,8 @@ async fn input(
         match router.route(ev, alive, mixer_keys, &keymap, now) {
             Action::Nothing => {}
             Action::Host(msg) => {
-                put(&mut raw, &msg.encode()).await;
-            }
-            Action::HostDown { row, col } => {
-                ups_owed &= !(1 << (row * 4 + col));
-                put(&mut raw, &PadMsg::KeyDown { row, col }.encode()).await;
-            }
-            Action::HostUp { row, col } => {
-                if !put(&mut raw, &PadMsg::KeyUp { row, col }.encode()).await {
-                    ups_owed |= 1 << (row * 4 + col);
-                }
+                let delivered = put(&mut raw, &msg.encode()).await;
+                ups_owed.sent(msg, delivered);
             }
             Action::Keyboard => kbd_owed = !put(&mut kbd, &router.keyboard.report(0)).await,
             Action::TapKey(code) => {

@@ -126,19 +126,8 @@ impl Keyboard {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Action {
     Nothing,
-    /// A knob turn or press for the PC app.
+    /// Send this message to the PC app, then tell `OwedUps::sent` whether the bus took it.
     Host(PadMsg),
-    /// A key that the PC app handles went down: send `PadMsg::KeyDown`. A release of the same
-    /// key that is still owed from before is not owed any more.
-    HostDown {
-        row: u8,
-        col: u8,
-    },
-    /// Send `PadMsg::KeyUp`; if the bus does not take it, it is owed until it does.
-    HostUp {
-        row: u8,
-        col: u8,
-    },
     /// The held keys changed: send `Keyboard::report(0)`.
     Keyboard,
     /// Type this usage on top of the held keys, then send the report without it.
@@ -199,7 +188,7 @@ impl<T: Time> Router<T> {
                 };
                 self.down[i as usize] = Some((action, now));
                 match action {
-                    Key::Host => Action::HostDown { row, col },
+                    Key::Host => Action::Host(PadMsg::KeyDown { row, col }),
                     Key::Keyboard { code, mods } => {
                         self.keyboard.press(i, code, mods);
                         Action::Keyboard
@@ -212,7 +201,7 @@ impl<T: Time> Router<T> {
                 let i = row * 4 + col;
                 let Some((action, since)) = self.down[i as usize].take() else { return Action::Nothing };
                 match action {
-                    Key::Host => Action::HostUp { row, col },
+                    Key::Host => Action::Host(PadMsg::KeyUp { row, col }),
                     Key::Keyboard { .. } => {
                         self.keyboard.release(i);
                         Action::Keyboard
@@ -225,5 +214,56 @@ impl<T: Time> Router<T> {
                 }
             }
         }
+    }
+}
+
+/// The releases (`KeyUp`, `KnobUp`) that the bus did not take, so the PC app still has them
+/// to come. Until one gets through, the app thinks the key or knob is held: a knob tap turns
+/// into a hold, a held key repeats its action.
+///
+/// Presses are not owed: a press sent late would act at a time the user did not choose.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub struct OwedUps {
+    /// Bit `row * 4 + col` for a matrix key, bit `16 + knob` for a knob.
+    bits: u32,
+}
+
+const KNOB_BIT: u32 = 16;
+const KNOBS: u8 = 3;
+
+impl OwedUps {
+    pub const fn new() -> OwedUps {
+        OwedUps { bits: 0 }
+    }
+
+    /// Records what became of `msg`. `delivered`: the bus took it.
+    pub fn sent(&mut self, msg: PadMsg, delivered: bool) {
+        let (bit, release) = match msg {
+            PadMsg::KeyDown { row, col } if row < 4 && col < 4 => (row * 4 + col, false),
+            PadMsg::KeyUp { row, col } if row < 4 && col < 4 => (row * 4 + col, true),
+            PadMsg::Press { knob } if knob < KNOBS => (KNOB_BIT as u8 + knob, false),
+            PadMsg::KnobUp { knob } if knob < KNOBS => (KNOB_BIT as u8 + knob, true),
+            _ => return,
+        };
+        // A new press, delivered or not, comes after the old release, so that release is moot.
+        if release && !delivered {
+            self.bits |= 1 << bit;
+        } else {
+            self.bits &= !(1 << bit);
+        }
+    }
+
+    /// Lets go of everything, as when the bus goes away: the PC app then lets go itself.
+    pub fn clear(&mut self) {
+        self.bits = 0;
+    }
+
+    /// The owed releases, matrix keys first, then knobs.
+    pub fn pending(&self) -> impl Iterator<Item = PadMsg> + use<> {
+        let bits = self.bits;
+        (0..KNOB_BIT as u8 + KNOBS).filter(move |&i| bits & 1 << i != 0).map(|i| match i.checked_sub(KNOB_BIT as u8) {
+            Some(knob) => PadMsg::KnobUp { knob },
+            None => PadMsg::KeyUp { row: i / 4, col: i % 4 },
+        })
     }
 }

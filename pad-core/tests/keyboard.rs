@@ -1,7 +1,7 @@
 //! The keyboard report and the routing of key presses and knob turns (`pad_core::route`).
 
 use kb16_mixer_protocol::{Key, PadMsg};
-use pad_core::route::{Action, Event, HOLD_MS, KEYMAP, Keyboard, Router};
+use pad_core::route::{Action, Event, HOLD_MS, KEYMAP, Keyboard, OwedUps, Router};
 
 const CTRL: u8 = 0x01;
 const SHIFT: u8 = 0x02;
@@ -166,8 +166,8 @@ fn with_the_app_knobs_and_host_keys_go_to_the_app() {
     assert_eq!(r.route(key(1, 4, true), true, true, &HOST, 0), Action::Host(PadMsg::Press { knob: 1 }));
     assert_eq!(r.route(key(1, 4, false), true, true, &HOST, 0), Action::Host(PadMsg::KnobUp { knob: 1 }));
     assert_eq!(r.route(key(1, 4, false), false, true, &HOST, 0), Action::Nothing, "no app: press only");
-    assert_eq!(r.route(key(2, 3, true), true, true, &HOST, 0), Action::HostDown { row: 2, col: 3 });
-    assert_eq!(r.route(key(2, 3, false), true, true, &HOST, 0), Action::HostUp { row: 2, col: 3 });
+    assert_eq!(r.route(key(2, 3, true), true, true, &HOST, 0), Action::Host(PadMsg::KeyDown { row: 2, col: 3 }));
+    assert_eq!(r.route(key(2, 3, false), true, true, &HOST, 0), Action::Host(PadMsg::KeyUp { row: 2, col: 3 }));
 }
 
 #[test]
@@ -215,8 +215,8 @@ fn a_release_does_what_the_press_did_whatever_changed_since() {
     assert_eq!(r.route(key(1, 1, false), false, true, &HOST, 10), Action::Keyboard);
     assert_eq!(r.keyboard.report(0), report(0, &[]));
     // A host key that the app took is released to the app, even with the app gone.
-    assert_eq!(r.route(key(0, 0, true), true, true, &HOST, 20), Action::HostDown { row: 0, col: 0 });
-    assert_eq!(r.route(key(0, 0, false), false, true, &HOST, 30), Action::HostUp { row: 0, col: 0 });
+    assert_eq!(r.route(key(0, 0, true), true, true, &HOST, 20), Action::Host(PadMsg::KeyDown { row: 0, col: 0 }));
+    assert_eq!(r.route(key(0, 0, false), false, true, &HOST, 30), Action::Host(PadMsg::KeyUp { row: 0, col: 0 }));
     // A second release is nothing.
     assert_eq!(r.route(key(0, 0, false), false, true, &HOST, 40), Action::Nothing);
 }
@@ -261,4 +261,47 @@ fn a_nothing_key_and_a_key_outside_the_matrix_do_nothing() {
         assert_eq!(r.route(key(row, col, false), false, true, &HOST, 0), Action::Nothing);
     }
     assert_eq!(r.keyboard.report(0), report(0, &[]));
+}
+
+// --- Releases owed to the app ---------------------------------------------------------------------
+
+#[test]
+fn a_knob_release_the_bus_did_not_take_is_owed_until_it_gets_through() {
+    let mut owed = OwedUps::new();
+    owed.sent(PadMsg::Press { knob: 1 }, true);
+    owed.sent(PadMsg::KnobUp { knob: 1 }, false);
+    // Lost: the app would see the knob held and turn a tap into a hold.
+    assert_eq!(owed.pending().collect::<Vec<_>>(), [PadMsg::KnobUp { knob: 1 }]);
+    owed.sent(PadMsg::KnobUp { knob: 1 }, true);
+    assert_eq!(owed.pending().count(), 0);
+}
+
+#[test]
+fn key_and_knob_releases_are_owed_alike_and_a_new_press_cancels_one() {
+    let mut owed = OwedUps::new();
+    owed.sent(PadMsg::KeyUp { row: 3, col: 3 }, false);
+    owed.sent(PadMsg::KnobUp { knob: 0 }, false);
+    owed.sent(PadMsg::KnobUp { knob: 2 }, false);
+    owed.sent(PadMsg::Turn { knob: 2, delta: 1 }, false);
+    assert_eq!(
+        owed.pending().collect::<Vec<_>>(),
+        [PadMsg::KeyUp { row: 3, col: 3 }, PadMsg::KnobUp { knob: 0 }, PadMsg::KnobUp { knob: 2 }]
+    );
+    // A new press of the same key or knob comes first: its old release is not owed any more,
+    // even when the press itself did not get through.
+    owed.sent(PadMsg::Press { knob: 0 }, false);
+    owed.sent(PadMsg::KeyDown { row: 3, col: 3 }, true);
+    assert_eq!(owed.pending().collect::<Vec<_>>(), [PadMsg::KnobUp { knob: 2 }]);
+    owed.clear();
+    assert_eq!(owed.pending().count(), 0);
+}
+
+#[test]
+fn messages_outside_the_matrix_owe_nothing() {
+    let mut owed = OwedUps::new();
+    owed.sent(PadMsg::KeyUp { row: 4, col: 0 }, false);
+    owed.sent(PadMsg::KeyUp { row: 0, col: 4 }, false);
+    owed.sent(PadMsg::KnobUp { knob: 3 }, false);
+    owed.sent(PadMsg::KnobUp { knob: 255 }, false);
+    assert_eq!(owed.pending().count(), 0);
 }
