@@ -13,6 +13,7 @@ If your problem is not here, open an issue. Paste the output of `kb16-mixer.exe 
 - [Messages of flash.ps1](#messages-of-flashps1)
 - [The bootloader and dfu-util](#the-bootloader-and-dfu-util)
 - [The pad after the flash](#the-pad-after-the-flash)
+- [Knobs, lights and sound](#knobs-lights-and-sound)
 - [Windows warnings](#windows-warnings)
 
 ## Lines of --check
@@ -74,6 +75,12 @@ If your problem is not here, open an issue. Paste the output of `kb16-mixer.exe 
 | Cause | Fix |
 |---|---|
 | Windows has no active speaker or headset, or no default device. | Open **Settings > System > Sound**. Select an output device. |
+
+### audio: `WARN  ... The output device chosen in the settings is not active; the Windows default is used.`
+
+| Cause | Fix |
+|---|---|
+| `[audio] output` gives a device that is disconnected or turned off. The app uses the Windows default until the device is active again. | Connect the device. Or set `[audio] output` to `"default"`. See [Audio output](configuration.md#audio-output). |
 
 ### audio: `FAIL  Core Audio does not answer (error 0x...).`
 
@@ -152,6 +159,42 @@ Other users of this pad report these errors. This project did not see them.
 | Cause | Fix |
 |---|---|
 | The target program needs administrator rights. | This is correct. See [faq.md](faq.md#why-does-an-open-key-ask-for-administrator-rights). |
+
+## Knobs, lights and sound
+
+### A knob press mutes the sound
+
+| Cause | Fix |
+|---|---|
+| A knob tap mutes or unmutes the knob target. This is the default (`tap = "mute"`). | Tap the knob again to unmute. To change the tap, set `tap` in `[knob_press]`, for example to `"pick"` or `"none"`. See [Knob presses](configuration.md#knob-presses). |
+
+### A knob hold does not select a program. Each press mutes.
+
+| Cause | Fix |
+|---|---|
+| The pad has the firmware of the draft release 0.1.0. That firmware does not send the knob release. Thus the app uses each press as a tap. | Flash firmware that is newer than the draft release 0.1.0. At this time, you must build it from source. See [build-from-source.md](build-from-source.md). |
+| `hold` in `[knob_press]` is not `"pick"`. | Set `hold = "pick"`. See [Knob presses](configuration.md#knob-presses). |
+| The knob turned before the hold time (350 ms). A turn cancels the press. | Hold the knob without a turn until the screen changes. Then turn it. |
+
+### The master knob changes a different device
+
+| Cause | Fix |
+|---|---|
+| With `[audio] output = "default"`, the knob changes the Windows default output device. That device is not the device that you hear. | Set the correct default device in **Settings > System > Sound**. The app follows the change at once. |
+| `[audio] output` gives one device. | Set `[audio] output` to `"default"`, or to the ID of the correct device. See [Audio output](configuration.md#audio-output). |
+
+### The key lights go off
+
+| Cause | Fix |
+|---|---|
+| The lights go off after three times `lights_dim_min` without activity (at most 240 minutes). | Push a key, turn a knob or play sound. To keep the lights on, increase `lights_dim_min`, or set it to 0 (no timer). See [General settings](configuration.md#general-settings). |
+
+### The dimmed key lights are too bright or too dark
+
+| Cause | Fix |
+|---|---|
+| The default dim level is 6 % of the usual light. | Set `[lights] idle_percent` to a different value from 1 to 100. See [Key lights](configuration.md#key-lights). |
+| The pad has the firmware of the draft release 0.1.0. That firmware ignores `idle_percent`. | Flash newer firmware. See [build-from-source.md](build-from-source.md). |
 
 ## Windows warnings
 

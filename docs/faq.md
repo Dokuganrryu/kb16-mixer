@@ -14,6 +14,8 @@ This document answers the questions of pad owners before and after the install: 
 - [How do I uninstall the app?](#how-do-i-uninstall-the-app)
 - [How do I go back to the stock firmware?](#how-do-i-go-back-to-the-stock-firmware)
 - [Can I change the volume of one browser tab?](#can-i-change-the-volume-of-one-browser-tab)
+- [Which output device does the app control?](#which-output-device-does-the-app-control)
+- [Why does a knob press mute?](#why-does-a-knob-press-mute)
 - [Why can `sha256sum -c SHA256SUMS` not find two files?](#why-can-sha256sum--c-sha256sums-not-find-two-files)
 - [How do I find the version?](#how-do-i-find-the-version)
 - [Does it work with other pads?](#does-it-work-with-other-pads)
@@ -112,6 +114,21 @@ This project does not include the stock firmware. Make the backup before the fir
 ## Can I change the volume of one browser tab?
 
 No. Windows sets the volume for each process. All tabs of one browser share one slider.
+
+## Which output device does the app control?
+
+By default, the app uses the Windows default output device. When you change the default device in Windows, the app follows it at once.
+The `master` knob and the mute rule use that device. The programs on all active output devices stay on their knobs.
+
+You can also select one device in `[audio] output`. The app then uses only that device. When the device is disconnected, the app uses the Windows default until the device comes back.
+See [Audio output](configuration.md#audio-output). Nobody did a test of this on a pad.
+
+## Why does a knob press mute?
+
+By default, a knob tap mutes or unmutes the knob target. A knob hold (350 ms) selects one program in the channel.
+You can change the two actions and add a double tap in `[knob_press]`. See [Knob presses](configuration.md#knob-presses).
+
+For the hold, the pad must have firmware that is newer than the draft release 0.1.0. With the draft firmware, each knob press is a tap.
 
 ## Why can `sha256sum -c SHA256SUMS` not find two files?
 
