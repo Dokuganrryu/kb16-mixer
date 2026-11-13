@@ -17,9 +17,10 @@ It is not a driver, and it does not route audio. The app uses no keyboard hooks 
 ## What it does
 
 - A knob turn changes the volume of a **channel**: a named list of programs, for example "Chat" or "Media".
-- A knob press selects one program in the channel. The next turns change only that program.
+- A knob tap mutes or unmutes what the knob turns. A knob hold selects one program in the channel. The next turns change only that program.
 - A key mutes a channel. A key turns the other channels down (Focus). While you hold a key, the microphone mute changes (the **Talk** key).
 - The key lights show the live sound level of each channel. The screen shows names, levels and volumes.
+- The app follows the Windows default output device when it changes. You can also select one output device.
 - Other keys type F13–F24, media keys or key combinations, as a usual USB keyboard.
 - A second page of keys is a number pad. A key can also open a program, a file, a folder or a web address.
 - Without the app, the pad is a usual keyboard. The knobs send media keys and page keys.
@@ -27,6 +28,7 @@ It is not a driver, and it does not route audio. The app uses no keyboard hooks 
 ## What the pad shows
 
 The screen has 128 x 32 pixels. The firmware code drew these pictures (`pad-core/examples/render_oled.rs`), at four times the size.
+The pictures show the screens at rest. They do not show the motion between the screens.
 
 | Screen | When the pad shows it |
 |---|---|
@@ -101,7 +103,8 @@ This is page 2 (the keypad page) with the default settings:
 | Control | Action |
 |---|---|
 | Knob, turn | Changes the volume of the knob target. One detent is 2 % (setting `step`). |
-| Knob, press | Selects the next knob target: the full channel, then each program that plays in the channel, then the full channel again. After 8 seconds without a touch, the knob goes back to the full channel. |
+| Knob, tap | Mutes or unmutes the knob target. |
+| Knob, hold (350 ms) | Selects the next knob target: the full channel, then each program that plays in the channel, then the full channel again. After 8 seconds without a touch, the knob goes back to the full channel. |
 | Mute | Mutes or unmutes the channel of its column. A muted column shows amber lights. |
 | Focus, tap | Turns all other channels down (to 25 % of their level, setting `duck`). Tap again to stop. |
 | Focus, hold | The same as a tap, but Focus stops when you release the key. |
@@ -112,7 +115,9 @@ This is page 2 (the keypad page) with the default settings:
 | Move, tap | Shows the channel of the foreground program on the screen. |
 | F13–F24, media keys, shortcuts, digits | The pad types these keys itself. |
 
-A knob press does not mute. Use the Mute keys.
+You can change the knob tap, hold and double tap in `[knob_press]`. A Mute key or an `open:` key can also have a hold and a double tap. See [Knob presses](docs/configuration.md#knob-presses).
+
+For a knob hold, the pad must have firmware that is newer than the draft release 0.1.0. With the firmware of the draft release, each knob press is a tap.
 
 When the app does not run, the keys type `1`–`0`, arrows, Enter and Backspace. Knob 1 sends Next, Previous and Play/Pause. Knob 2 sends Page Up, Page Down and Home. Knob 3 sends Volume up, Volume down and Mute. See [Keyboard mode](docs/configuration.md#keyboard-mode).
 
@@ -153,7 +158,10 @@ The project did its tests on one pad (KB16-01 rev2, Windows 11). This table show
 | Knob volume for each channel, the Mute row, key lights and screen (an earlier build, before 0.1.0) | VERIFIED |  |
 | Recovery with the top-left key at plug-in (an earlier build, before 0.1.0) | VERIFIED |  |
 | Two key pages | NOT YET VERIFIED | yes |
-| Knob press to select one program in a channel | NOT YET VERIFIED | yes |
+| Knob hold to select one program in a channel | NOT YET VERIFIED | yes |
+| Knob tap to mute, knob double tap, and hold and double tap on keys | NOT YET VERIFIED | yes |
+| The app follows the Windows default output device, or uses a chosen device | NOT YET VERIFIED | yes (the logic only) |
+| Light and screen motion, the idle dim and off of the lights, and the new channel tints | NOT YET VERIFIED | yes (the logic only) |
 | Volume balance (trim) rules, and Focus with several audio sessions of one program | NOT YET VERIFIED | yes |
 | The feel of Focus, Talk and Move | NOT YET VERIFIED | yes (the logic only) |
 | Idle rule (screen off and lights dim only after no sound and no touch) | NOT YET VERIFIED | yes |
