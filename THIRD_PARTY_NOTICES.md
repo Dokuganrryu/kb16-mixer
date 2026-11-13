@@ -173,7 +173,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 ### Open Sans (firmware)
 
-The logo and big font bitmaps in `firmware/src/assets.rs` are rendered from `firmware/assets/fonts/OpenSans-ExtraBold.ttf` and `OpenSans-SemiBold.ttf`.
+The logo and big font bitmaps in `pad-core/src/assets.rs` are rendered from `firmware/assets/fonts/OpenSans-ExtraBold.ttf` and `OpenSans-SemiBold.ttf`.
 
 ```text
 Copyright 2020 The Open Sans Project Authors (https://github.com/googlefonts/opensans)
@@ -268,7 +268,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ### X11 misc-fixed 5x7 (firmware)
 
-`firmware/src/font.rs` is generated from `firmware/assets/fonts/5x7.bdf`, the X11 misc-fixed 5x7 font (via https://github.com/embedded-graphics/embedded-graphics).
+`pad-core/src/font.rs` is generated from `firmware/assets/fonts/5x7.bdf`, the X11 misc-fixed 5x7 font (via https://github.com/embedded-graphics/embedded-graphics).
 It is in the public domain: its COPYRIGHT property says "Public domain font. Share and enjoy."
 
 ## Licence texts
