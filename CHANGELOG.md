@@ -5,7 +5,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The
 
 ## [Unreleased]
 
-This section lists the work of the quality rounds after the first two independent reviews.
+## [0.1.0] - 2026-11-13
+
+This is the first public version. It is a pre-release.
+
+The sections "Added", "Changed", "Removed" and "Fixed" list the work of the quality rounds after the first two independent reviews. The other sections list the parts of the first version.
 
 ### Added
 
@@ -13,7 +17,7 @@ This section lists the work of the quality rounds after the first two independen
 - The `pad-core` crate holds the firmware logic that touches no hardware register. Its tests run on the PC and in CI. It holds the route of each key and knob, the keyboard report, and the bootloader marks and their order. It also holds the order of the flash steps (behind a `Controller` trait) and the write limit of the name page.
 - A flash guard in the firmware. The firmware writes flash only in the name page and in the crash log. It also reads the error flags of the flash controller after each write (PGERR and WRPRTERR).
 - An end-to-end audio test for the app: `cargo test --test audio_e2e -- --ignored`. A Windows PC with an audio output device is necessary. CI does not run it.
-- A release workflow. For a version tag, it checks the versions and the changelog, and builds one zip file, `SHA256SUMS` and a build attestation. It makes only a draft pre-release. It does not publish a release. A manual dry run passed. At this time, nobody ran it for a tag.
+- A release workflow. For a version tag, it checks the versions and the changelog, and builds one zip file, `SHA256SUMS` and a build attestation. It makes only a draft pre-release. It does not publish a release. A manual dry run passed. This release is the first run for a tag.
 - `scripts/package-release.py` makes the release zip. It rejects a bad firmware image or exe. The zip is reproducible.
 - `scripts/check-privacy.py` finds e-mail addresses, user paths, account SIDs and tokens in the repository, and other addresses than GitHub noreply addresses in the commits. The check accepts the bot form that Dependabot uses.
 - `scripts/check-links.py` checks the relative links and the anchors in the Markdown files.
@@ -66,6 +70,7 @@ This section lists the work of the quality rounds after the first two independen
 - `flash.ps1` also looks for `dfu-util` in the `tools` folder of the repository root, as `flash.sh` does.
 - The keyboard: a key release frees only what that key pressed. Before, key A had `ctrl+c` and key B had `c`. A tap of B while you held A released Ctrl, and `c` repeated. A key with modifiers only holds its modifiers. The app does not send such a key, thus this change shows only with a different host program.
 - A `focused` channel or knob: when the desktop or the taskbar is in front, no program is in front. Before, the channel got all programs that Explorer started, and a knob turn set all of them to one level.
+- When the desktop is in front, a focused channel or knob treats it as no program in front. It does the same when the front program is not in the program list.
 - If the app cannot read the level of a session when Focus starts, it does not turn that session down. Before, it kept 100 % as the level and later set the program to 100 %.
 - The app writes `state.toml` to the disk before it renames the new file over the previous file.
 - `THIRD_PARTY_NOTICES.md` names `pad-core/src/assets.rs` and `pad-core/src/font.rs`, the files that moved there.
@@ -73,9 +78,6 @@ This section lists the work of the quality rounds after the first two independen
 - `nan`, `inf` and `-inf` for `step`, `brightness` or `duck` in `config.toml` are errors. Before, `nan` went through the range check.
 - `--settings` accepts only the full tab names `keys`, `channels` and `pad`, in upper case or lower case. Before, `--settingsx` also opened the window.
 
-## [0.1.0] - planned
-
-This is the first public version. At this time, nobody released it. Until the release, build from source.
 
 ### Firmware
 
@@ -118,7 +120,7 @@ This is the first public version. At this time, nobody released it. Until the re
 
 ### Tests
 
-For the full list of hardware tests, see [docs/testing.md](docs/testing.md#verified-on-the-pad).
+For the full list of hardware tests, see [docs/testing.md](https://github.com/Dokuganrryu/kb16-mixer/blob/v0.1.0/docs/testing.md#verified-on-the-pad).
 
-[Unreleased]: https://github.com/Dokuganrryu/kb16-mixer/commits/main
+[Unreleased]: https://github.com/Dokuganrryu/kb16-mixer/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Dokuganrryu/kb16-mixer/releases/tag/v0.1.0
