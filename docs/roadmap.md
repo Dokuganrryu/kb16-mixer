@@ -15,7 +15,7 @@ The order and the content can change.
 - **A new look for the settings window.** The window stays a plain Win32 window, with a new style: dark and light themes, smooth rounded controls and short animations. See [design/settings-ui.md](design/settings-ui.md).
   The owner measured a GPU user-interface framework for the window and rejected it.
   With that framework, the app file was approximately 15 MB. It used approximately 95 MB of memory. The window opened after approximately 10 seconds.
-  Nobody examined these parts visually yet: the open dropdown lists in the dark theme, the **Add** menu, and Windows 10. The **Add** menu stays the light menu of Windows.
+  At this time, nobody examined these parts visually: the open dropdown lists in the dark theme, the **Add** menu, and Windows 10. The **Add** menu stays the light menu of Windows.
 
 ## Not planned
 

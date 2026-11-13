@@ -6,7 +6,7 @@ KB16 Mixer is firmware and a small Windows tray app. They make the **DOIO KB16-0
 
 It is not a driver, and it does not route audio. The app uses no keyboard hooks and injects no input. It moves only the sliders of the Windows volume mixer.
 
-**Status: pre-release.** The first release will be 0.1.0. It has not published it yet. The author did tests on one pad with Windows 11. Not tested: Windows 10, other units, the Windows flasher on the pad, a return to the stock firmware. See [Status](#status).
+**Status: pre-release.** The first release will be 0.1.0. At this time, it has not published it. The author did tests on one pad with Windows 11. Not tested: Windows 10, other units, the Windows flasher on the pad, a return to the stock firmware. See [Status](#status).
 
 > **Unofficial project.** It has no connection with DOIO, and DOIO does not endorse it. You flash firmware at your own risk. A flash can void the warranty of the pad.
 
@@ -49,7 +49,7 @@ The full check, with the steps, is in [docs/install.md](docs/install.md#2-examin
 
 ## Quick start
 
-The project has not published the first release yet. Until then, [build the files from source](docs/build-from-source.md).
+At this time, the project has not published the first release. Until then, [build the files from source](docs/build-from-source.md).
 
 1. Download the release zip. Compare its SHA-256 value with `SHA256SUMS`. See [Get the files](docs/install.md#1-get-the-files).
 2. Do the checks of your pad. See [Examine your pad](docs/install.md#2-examine-your-pad).

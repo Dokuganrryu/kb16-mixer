@@ -13,7 +13,7 @@ This section lists the work of the quality rounds after the first two independen
 - The `pad-core` crate holds the firmware logic that touches no hardware register. Its tests run on the PC and in CI. It holds the route of each key and knob, the keyboard report, and the bootloader marks and their order. It also holds the order of the flash steps (behind a `Controller` trait) and the write limit of the name page.
 - A flash guard in the firmware. The firmware writes flash only in the name page and in the crash log. It also reads the error flags of the flash controller after each write (PGERR and WRPRTERR).
 - An end-to-end audio test for the app: `cargo test --test audio_e2e -- --ignored`. A Windows PC with an audio output device is necessary. CI does not run it.
-- A release workflow. For a version tag, it checks the versions and the changelog, and builds one zip file, `SHA256SUMS` and a build attestation. It makes only a draft pre-release. It does not publish a release. A manual dry run passed. Nobody ran it for a tag yet.
+- A release workflow. For a version tag, it checks the versions and the changelog, and builds one zip file, `SHA256SUMS` and a build attestation. It makes only a draft pre-release. It does not publish a release. A manual dry run passed. At this time, nobody ran it for a tag.
 - `scripts/package-release.py` makes the release zip. It rejects a bad firmware image or exe. The zip is reproducible.
 - `scripts/check-privacy.py` finds e-mail addresses, user paths, account SIDs and tokens in the repository, and other addresses than GitHub noreply addresses in the commits. The check accepts the bot form that Dependabot uses.
 - `scripts/check-links.py` checks the relative links and the anchors in the Markdown files.
@@ -22,7 +22,7 @@ This section lists the work of the quality rounds after the first two independen
 - Dependabot opens one grouped update pull request each week for the GitHub Actions. It does not update the crates: `cargo deny` reports advisories, and a maintainer updates the crates by hand.
 - `scripts/flash.ps1`, a flash script for Windows PowerShell. It writes only to the bootloader (USB `1EAF:0003`) and only a valid image. It can make a backup first.
 - `scripts/flash.sh` checks the image as `flash.ps1` does.
-- `scripts/test_flash_scripts.py` runs the two flashers with a fake `dfu-util` and a stub app. It has a test for each refusal. CI runs the `flash.ps1` tests on Windows. No test runs a flasher on a pad.
+- `scripts/test_flash_scripts.py` runs the two flashers with a fake `dfu-util` and a stub app. Each stop with `REFUSED` has a test. CI runs the `flash.ps1` tests on Windows. No test runs a flasher on a pad.
 - `scripts/ste-lint.py`, a checker for the mechanical rules of Simplified Technical English in the documents. Its `vocabulary` rule finds words from a short table of words that the STE dictionary does not approve.
 - New documents in `docs/`:
   - `install.md`, `troubleshooting.md` and `faq.md` for users.
@@ -50,7 +50,7 @@ This section lists the work of the quality rounds after the first two independen
 - Each `unsafe` block in the app and in the firmware has a `SAFETY` comment. Clippy rejects a block without one.
 - The documents follow the rules of Simplified Technical English more strictly.
 - `SECURITY.md` gives the threat model. It says that the bootloader marker `BOOT` does not change and is not a secret.
-- The documents say that an `open:` target with administrator rights shows the User Account Control (UAC) prompt of Windows. Nobody did a test of this.
+- The documents tell that an `open:` target with administrator rights shows the User Account Control (UAC) prompt of Windows. Nobody did a test of this.
 - `deny.toml` and `scripts/about.toml` accept only the licences that the dependencies use: MIT, Apache-2.0 and Unicode-3.0.
 - The `protocol` crate forbids unsafe code.
 - The settings window test shows `SKIPPED` when Windows cannot make a window. When `CI` has a value, it gives an error in that case.
@@ -75,7 +75,7 @@ This section lists the work of the quality rounds after the first two independen
 
 ## [0.1.0] - planned
 
-This is the first public version. Nobody released it yet. Until the release, build from source.
+This is the first public version. At this time, nobody released it. Until the release, build from source.
 
 ### Firmware
 
@@ -100,7 +100,7 @@ This is the first public version. Nobody released it yet. Until the release, bui
 - The app tracks each audio session separately. Focus gives each session its previous level back, also for programs that closed while Focus was on.
 - The app handles key presses and releases in the order of arrival.
 - Key actions: **Mute**, **Focus**, **Talk**, **Move**, **Switch page** and `open:<target>`. The pad types all other keys.
-- A settings window with the tabs Keys, Channels and Pad, with a shortcut dialog and an open dialog. A text box applies its value when you press Enter or leave the box.
+- A settings window with the tabs Keys, Channels and Pad, with a shortcut dialog and an open dialog. A text box uses its value when you press Enter or go to a different control.
 - `config.toml`. If the file has an error, the app keeps the last correct settings.
 - The versions of the app and the firmware in the tray menu and on the Pad tab.
 - The first start opens the settings window. The app does not start with Windows until you select that option.

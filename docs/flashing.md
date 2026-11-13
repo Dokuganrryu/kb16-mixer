@@ -98,7 +98,7 @@ To make sure that the new firmware runs, see [install.md](install.md#7-restart-t
 
 ## Recovery
 
-This firmware does not write the bootloader region. Thus the bootloader stays available for a new image, if nothing else damages it. A flash guard lets the firmware write only its two reserved pages. See [hardware.md](hardware.md#flash-guard). This is not a guarantee: see [A firmware that does not start at all](#a-firmware-that-does-not-start-at-all) and the [Status table](../README.md#status).
+This firmware does not write the bootloader region. Thus the bootloader stays available for a new image, if nothing else causes damage to it. A flash guard lets the firmware write only its two reserved pages. See [hardware.md](hardware.md#flash-guard). This is not a guarantee: see [A firmware that does not start at all](#a-firmware-that-does-not-start-at-all) and the [Status table](../README.md#status).
 
 There are three procedures that put the pad into the bootloader while the firmware of this project runs:
 

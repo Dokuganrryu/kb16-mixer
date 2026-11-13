@@ -239,7 +239,7 @@ The bootloader is a small program in the pad. It stays in the pad, and it can wr
 **If you do not see it:** the stock firmware possibly does not have this procedure. For the other procedures, see [stock-firmware.md](stock-firmware.md#put-the-pad-into-the-bootloader-from-the-stock-firmware).
 This procedure worked on the author's pad with a community firmware in it. Nobody did a test of it with the DOIO factory firmware.
 
-To leave the bootloader without a change, disconnect the pad and connect it again.
+To go out of the bootloader without a change, disconnect the pad. Then connect it again.
 
 ## 4. Install the bootloader driver (one time only)
 

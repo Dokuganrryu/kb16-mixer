@@ -88,7 +88,7 @@ python -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py script
 
 `test_flash_scripts.py` runs copies of `flash.sh` and `flash.ps1` with a fake `dfu-util` and a stub app. It does not use the pad or the installed app. It has a test for each refusal of the two flashers. No test runs a flasher on a pad.
 
-The `flash.ps1` tests run only on Windows. The `docs` job on Linux skips them. The `app` job on Windows runs them with `KB16_REQUIRE_PS1_TESTS=1`, so there a skip is an error.
+The `flash.ps1` tests run only on Windows. The `docs` job on Linux does not run them. The `app` job on Windows runs them with `KB16_REQUIRE_PS1_TESTS=1`, so there a skip is an error.
 
 For each problem, `check-privacy.py` shows the file, the line and the rule. It does not show the value that it found.
 

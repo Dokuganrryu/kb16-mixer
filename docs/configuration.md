@@ -54,7 +54,7 @@ To open the window, click the tray icon. You can also use the **Settings...** it
 The window has three tabs: **Keys**, **Channels** and **Pad**.
 
 A change in a list, a slider, a switch or a button applies immediately and goes into `config.toml`.
-The text boxes are the channel names and the name on the screen. A text box applies when you press Enter, leave the box, or close the window.
+The text boxes are the channel names and the name on the screen. A text box uses its value when you press Enter, go to a different control, or close the window.
 While you type, the status line tells you if the name is not correct.
 The app keeps the comments and the layout of the file.
 The status line at the bottom says what changed, or why the app did not accept a change.
@@ -91,7 +91,7 @@ A key can have an action from the config file that is not in the list, for examp
 
 The knob lists contain the channel names, **Master volume**, **Microphone**, **App in front** and **Focused channel**.
 
-The window does not accept a key change that leaves a **Switch page** key on page 1 and none on page 2.
+The window does not accept a key change that keeps a **Switch page** key on page 1 and none on page 2.
 Put the **Switch page** key on page 2 first.
 
 ### Shortcut dialog
@@ -330,7 +330,7 @@ row1 = ["page", "open:C:\\Tools\\obs64.exe", "open:%USERPROFILE%\\Downloads", "o
 - The app replaces environment variables such as `%USERPROFILE%`.
 - The target keeps its upper and lower case.
 - The app does not ask for administrator rights.
-- If the target program must have administrator rights, Windows shows its User Account Control (UAC) prompt. The app does not bypass that prompt. Nobody did a test of this on a pad yet.
+- If the target program must have administrator rights, Windows shows its User Account Control (UAC) prompt. The app does not bypass that prompt. At this time, nobody did a test of this on a pad.
 - If the target does not open, the pad shows `Open failed`, and the app writes a line to `log.txt`.
 
 ### Keys that the pad types

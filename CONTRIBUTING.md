@@ -90,7 +90,7 @@ python scripts/ste-lint.py --summary     # counts for each rule and each file
 ```
 
 The exit code is 1 when the checker finds a problem.
-The checker is a heuristic helper. It is not a certified STE checker. It can miss a problem, and it can show a problem where there is none.
+The checker is a heuristic helper. It is not a certified STE checker. It does not find all problems, and it can show a problem where there is none.
 
 The `vocabulary` rule knows only a short table of words that the dictionary does not approve. Each message gives the approved alternative. A word that is not in the table can also be incorrect.
 A person must read the text.
@@ -109,7 +109,7 @@ If the checker shows an incorrect problem, rewrite the sentence. Add an exceptio
 The interrupt check exists because of a failure that occurred on the pad.
 Without the `rt` feature of embassy-stm32, all interrupts go to `DefaultHandler`, also with `default-features = false`.
 The build of such an image shows no error. On the pad, the image stops at the first timer interrupt, with no lights.
-The check finds this problem before the image gets to a pad.
+The check finds this problem before somebody writes the image to a pad.
 
 Do not remove or weaken the check. If you add an interrupt that the firmware uses, add it to the check.
 If you move the name page or the crash log, change `firmware/memory.x` and the size check together.
@@ -210,7 +210,7 @@ To keep your address private, set `git config user.email` to the noreply address
 
 ## Commits and pull requests
 
-- Make small commits. Each commit has one purpose.
+- Make small commits. Make one commit for each change.
 - Write the subject line of a commit in the imperative, for example "Add a test for the trim rule".
 - Make one pull request for each change.
 - In the pull request, say which tests you did on hardware, and which tests you did not do. For example: "Flashed on a KB16-01 rev2, Windows 11. Tests done: knob turns and mute keys. Not tested: Focus, Move."

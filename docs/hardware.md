@@ -30,7 +30,7 @@ The QMK board definition gives both revisions the same USB ID, `D010:1601`. Thus
 | rev1 | ATmega32U4 | Atmel DFU | No |
 | rev2 | APM32F103CBT6 | stm32duino, USB ID `1EAF:0003` | Yes |
 
-The bootloader tells the two revisions apart. See [install.md](install.md#2-examine-your-pad).
+Only the bootloader shows which revision the pad is. See [install.md](install.md#2-examine-your-pad).
 
 ## Layout
 

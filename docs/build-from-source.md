@@ -49,7 +49,7 @@ A pad is not necessary for a build. A pad is necessary only to flash.
 
 In the repository folder, the first `cargo` or `rustc` command installs Rust 1.99.1 with the firmware target, `llvm-tools`, `rustfmt` and `clippy`. The file `rust-toolchain.toml` tells `rustup` to do this. Thus steps 5 and 6 are necessary only outside the repository.
 
-### Check the setup
+### Examine the setup
 
 Run these commands. Each one must show a version or a list, and no error:
 
@@ -78,7 +78,7 @@ python --version
 
 **You see:** `<n> bytes, vectors OK` and `wrote .../firmware/target/kb16-mixer-firmware.bin`.
 
-The script checks the image before it writes it. It shows `IMAGE REJECTED` and writes no image if:
+The script examines the image before it writes it. It shows `IMAGE REJECTED` and writes no image if:
 
 - the stack pointer is not in RAM.
 - the reset vector is not in the firmware region (above `0x08002000`).
@@ -148,7 +148,7 @@ The script writes `THIRD_PARTY_NOTICES.md`. It stops with exit code 1 if a depen
 
 ## What was run for this document
 
-- The version commands in [Check the setup](#check-the-setup) were run on the author's PC: Rust 1.99.1, Python 3.14.7, `cargo-about` 0.9.3, targets `thumbv7m-none-eabi` and `x86_64-pc-windows-msvc`.
+- The author ran the commands of [Examine the setup](#examine-the-setup) with these versions: Rust 1.99.1, Python 3.14.7, `cargo-about` 0.9.3, targets `thumbv7m-none-eabi` and `x86_64-pc-windows-msvc`.
 - The dry run of `flash.ps1` was run against the image in `firmware/target/`, with a simulated `dfu-util`.
 - The two build scripts and the tests were not run for this document. CI runs them.
 - Nobody did the setup again on a new PC (Git, Build Tools, rustup, Python) for this document.

@@ -91,7 +91,7 @@ A key that types (a `Keyboard` or `Media` key) goes from the pad directly to Win
 A mixer key (`mute`, `focus`, `talk`, `move`, `page`, `open:`) goes to the app as a raw HID message.
 
 The firmware keeps only the key table of the current page. When the page changes, the app sends the key table of the new page.
-The firmware remembers the action of each key at the time of the press. The release then always matches the press, also if the page changed in between.
+The firmware keeps the action of each key from the time of the press. The release then always matches the press, also if the page changed in between.
 
 The firmware does not lose a key release:
 
@@ -101,7 +101,7 @@ The firmware does not lose a key release:
 - The keyboard report holds six key codes. While you hold six keys, a seventh key waits (also its modifiers) until an earlier key is up.
 - When the PC suspends, resets or switches off the USB bus, the firmware releases all typed keys. It sends that state when the bus is back.
 
-Thus a lost release cannot leave a key (for example Ctrl or Shift) held on the PC.
+Thus a lost release cannot keep a key (for example Ctrl or Shift) held on the PC.
 The queue holds at most 8 knob detents for each knob.
 
 When the PC suspends the USB bus (the PC sleeps or is off), the lights and the screen go off.
@@ -210,7 +210,7 @@ Thus the fast rate continues for 3 seconds after the last meter falls below −3
 Otherwise the worker looks for a change at intervals of 200 ms. An open microphone in a quiet room stays below −30 dBFS, so it does not keep the fast rate.
 
 The worker handles key presses and releases one at a time, in the order in which they arrived (`app/src/keys.rs`).
-Thus a quick release and press of **Talk** cannot leave the microphone in an incorrect state.
+Thus a quick release and press of **Talk** cannot put the microphone in an incorrect state.
 It reads the volume state of Windows again at intervals of 1.5 seconds.
 It sends the settings, names, logo name and key table on connect, after a config change, and at intervals of 30 seconds.
 
@@ -275,11 +275,11 @@ In a channel that you did not set on the pad, the app follows the level of the p
 - The app tracks each audio session separately. A program can have more than one session (for example, one for each output device), and each session keeps its own initial level.
 - Focus also turns down a session that starts while Focus is on.
 - If a program closes while Focus is on, the app keeps its initial level. When the program starts again, it gets that level back.
-- A session that leaves a turned-down channel gets its initial level back.
+- A session that goes out of a turned-down channel gets its initial level back.
 - While Focus turns a channel down, the app learns nothing from Windows for that channel.
 - Focus does not turn down the microphone channel.
 - The app writes the initial levels to `state.toml` at once. If the app stops while Focus is on, it sets those levels again at the next start.
-- The app writes a side file to the disk (`sync_all`). When the side file is on the disk, the app renames it over `state.toml`. Thus a crash or a power cut leaves the previous file or the new file, not a part of a file. The app does not wait until the rename itself is on the disk. Nobody did a test with a power cut.
+- The app writes a side file to the disk (`sync_all`). When the side file is on the disk, the app renames it over `state.toml`. After a crash or a power cut, the disk has the previous file or the new file, not a part of a file. The app does not wait until the rename itself is on the disk. Nobody did a test with a power cut.
 
 ## Channels and programs
 
@@ -296,7 +296,7 @@ The settings window shows the programs of each channel with the same rule.
 
 An audio session is what Windows shows as one slider in the volume mixer. Windows makes one session for each process that plays sound.
 Thus all tabs of one browser share one slider, and the app cannot change two tabs separately.
-The app skips the "System Sounds" session.
+The app ignores the "System Sounds" session.
 
 ## What the app touches in Windows
 
@@ -318,7 +318,7 @@ The app skips the "System Sounds" session.
 
 An `open:` key does not ask for administrator rights (no elevation), and passes no arguments. The app does not keep a handle to the process that it starts.
 
-If the target program must have administrator rights, Windows shows its User Account Control (UAC) prompt. The app does not bypass that prompt. Nobody did a test of this on a pad yet.
+If the target program must have administrator rights, Windows shows its User Account Control (UAC) prompt. The app does not bypass that prompt. At this time, nobody did a test of this on a pad.
 
 If the target is a file that exists, and you give its full path, the program starts in the folder of that file. Otherwise Windows selects the folder.
 If the program does not start, the pad shows `Open failed`, and the app writes a line to `log.txt`.

@@ -85,7 +85,7 @@ A large readout or a notice on the screen.
 
 `Popup::notice()` in the protocol crate makes a notice: `knob` 0, `volume` 255, `muted` 0.
 The app sends all its text messages (for example `Config error`, `MIXER`, `KEYS`, `Open failed`) as notices.
-The pad shows a popup for 1.3 seconds. A popup does not count as activity for the idle timers.
+The pad shows a popup for 1.3 seconds. For the idle timers, a popup is not activity.
 
 ### `0x20` SETTINGS
 
