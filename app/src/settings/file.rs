@@ -106,6 +106,10 @@ pub fn set_idle_percent(doc: &mut DocumentMut, percent: i64) {
     put_in(table(doc, "lights"), "idle_percent", percent.into());
 }
 
+pub fn set_screen_style(doc: &mut DocumentMut, style: &str) {
+    put_in(table(doc, "screen"), "style", style.into());
+}
+
 /// Sets `[audio] output`; a device gets its name in a comment beside the id, so the window can
 /// still name it while it is unplugged.
 pub fn set_output(doc: &mut DocumentMut, id: &str, name: Option<&str>) {
@@ -294,6 +298,7 @@ mod tests {
             set_press(d, 2, "double", "open:C:\\Tools\\obs64.exe");
             set_press(d, 0, "hold", "none");
             set_idle_percent(d, 20);
+            set_screen_style(d, "lean");
             set_output(d, "{0.0.0.00000000}.{a}", Some("USB speakers"));
             Ok(())
         });
@@ -302,6 +307,7 @@ mod tests {
         assert_eq!(cfg.knob_press[0].hold, PressAction::Nothing);
         assert_eq!(cfg.knob_press[1], config::defaults().knob_press[1], "the other knobs stay");
         assert_eq!(cfg.idle_led_percent, 20);
+        assert_eq!(cfg.screen_style, 1);
         assert_eq!(cfg.output, Output::Device("{0.0.0.00000000}.{a}".into()));
         assert!(text.contains("output = \"{0.0.0.00000000}.{a}\"  # USB speakers\n"), "{text}");
         assert_eq!(output_name(&text).as_deref(), Some("USB speakers"));
@@ -319,12 +325,14 @@ mod tests {
         let text = edited(bare, |d| {
             set_press(d, 1, "tap", "pick");
             set_idle_percent(d, 3);
+            set_screen_style(d, "numbers");
             Ok(())
         });
         let cfg = config::parse(&text).unwrap();
         assert_eq!(cfg.knob_press[1].tap, PressAction::Pick);
         assert_eq!(cfg.knob_press[1].hold, PressAction::Pick, "left out: the default");
         assert_eq!(cfg.idle_led_percent, 3);
+        assert_eq!(cfg.screen_style, 2);
         assert!(text.contains("[knob_press.knob2]\ntap = \"pick\""), "{text}");
         assert!(!text.contains("[knob_press]\n"), "no empty parent section: {text}");
         let inline = format!("knob_press = {{ knob1 = {{ tap = \"none\" }} }}\n{bare}");

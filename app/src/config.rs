@@ -106,6 +106,10 @@ row4 = ["mute",  "mute", "mute", "mute"]          # mute stays at hand on both p
 [lights]
 idle_percent = 0
 
+# SCREEN. How the pad's screen draws: "classic", "lean" or "numbers".
+[screen]
+style = "classic"
+
 # AUDIO. "default" = the Windows default output device, followed when it changes: the master
 # knob turns it, and apps on every output device stay on their knobs. Or a device id from the
 # settings window: the master knob and the apps of that device only (if it is unplugged, the
@@ -517,6 +521,17 @@ fn parse_idle_percent(doc: &DocumentMut) -> Result<u8, String> {
     }
 }
 
+/// `[screen] style` values, in the order of their numbers in the settings report.
+pub const SCREEN_STYLES: [&str; 3] = ["classic", "lean", "numbers"];
+
+/// `[screen] style`, as its number for the pad; a file without it gets Classic.
+fn parse_screen_style(doc: &DocumentMut) -> Result<u8, String> {
+    let screen = table_in(doc.get("screen"), "[screen]")?;
+    let Some(text) = text_in(screen.and_then(|s| s.get("style")), "[screen] style")? else { return Ok(0) };
+    let at = SCREEN_STYLES.iter().position(|s| s.eq_ignore_ascii_case(text.trim()));
+    at.map(|i| i as u8).ok_or_else(|| format!("[screen] style = {text:?}: \"classic\", \"lean\" or \"numbers\""))
+}
+
 fn parse_output_in(doc: &DocumentMut) -> Result<Output, String> {
     let audio = table_in(doc.get("audio"), "[audio]")?;
     text_in(audio.and_then(|a| a.get("output")), "[audio] output")?.map_or(Ok(Output::Default), parse_output)
@@ -601,6 +616,8 @@ pub struct Config {
     pub key_gestures: [[PressGrid; 2]; PAGES],
     /// Percent of the normal brightness the key lights dim to; 0 = the pad's default.
     pub idle_led_percent: u8,
+    /// How the pad's screen draws: an index into [`SCREEN_STYLES`].
+    pub screen_style: u8,
     pub output: Output,
     pub channels: Vec<ChannelCfg>,
 }
@@ -732,6 +749,7 @@ impl RawConfig {
             pages,
             knob_press: parse_knob_presses(doc)?,
             idle_led_percent: parse_idle_percent(doc)?,
+            screen_style: parse_screen_style(doc)?,
             output: parse_output_in(doc)?,
             knobs: [
                 bind("knob1", self.knobs.knob1, KnobBinding::Master)?,
@@ -1167,7 +1185,8 @@ mod tests {
             c.key_gestures,
             [[PressGrid::default(), PressGrid::default()], [PressGrid::default(), PressGrid::default()]]
         );
-        assert_eq!((c.idle_led_percent, c.output), (0, Output::Default));
+        assert_eq!((c.idle_led_percent, c.output, c.screen_style), (0, Output::Default, 0));
+        assert_eq!(defaults().screen_style, 0, "the written default is Classic");
         assert_eq!(defaults().knob_press, c.knob_press, "the written defaults say the same");
         assert_eq!(defaults().output, Output::Default);
     }
@@ -1225,6 +1244,56 @@ mod tests {
         assert_eq!(problem(&short), "[keys_hold] row2: 1 entries, a row has 4 keys");
         let typed = format!("[keys_hold]\nrow4 = [\"F13\", \"none\", \"none\", \"none\"]\n{ONE}");
         assert!(problem(&typed).contains("here only mute, open:<what> or none"));
+    }
+
+    #[test]
+    fn the_screen_style_is_read_and_checked() {
+        let with = |extra: &str| {
+            parse(&format!(
+                "{extra}
+{ONE}"
+            ))
+        };
+        for (i, name) in SCREEN_STYLES.iter().enumerate() {
+            assert_eq!(
+                with(&format!(
+                    "[screen]
+style = \"{name}\""
+                ))
+                .unwrap()
+                .screen_style,
+                i as u8
+            );
+        }
+        assert_eq!(
+            with(
+                "[screen]
+style = \" Lean \""
+            )
+            .unwrap()
+            .screen_style,
+            1,
+            "like the other names"
+        );
+        for bad in ["\"big\"", "\"\""] {
+            let e = with(&format!(
+                "[screen]
+style = {bad}"
+            ))
+            .err()
+            .expect("should be rejected");
+            assert_eq!(e, format!("[screen] style = {bad}: \"classic\", \"lean\" or \"numbers\""));
+        }
+        assert!(
+            with(
+                "[screen]
+style = 1"
+            )
+            .err()
+            .expect("should be rejected")
+            .contains("text in quotes")
+        );
+        assert!(with("screen = 3").err().is_some(), "[screen] must be a table");
     }
 
     #[test]

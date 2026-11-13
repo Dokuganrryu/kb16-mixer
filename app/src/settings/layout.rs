@@ -39,8 +39,9 @@ pub fn channel_card(i: i32) -> R {
     R::new(16 + i * 172, PAGE + 8, 164, 264)
 }
 
-pub const SCREEN_CARD: R = R::new(16, PAGE + 8, 376, 160);
-pub const SOUND_CARD: R = R::new(16, PAGE + 176, 376, 136);
+/// The two cards at the left hold seven rows between them, so their bottom margins are 4 px.
+pub const SCREEN_CARD: R = R::new(16, PAGE + 8, 376, 164);
+pub const SOUND_CARD: R = R::new(16, PAGE + 180, 376, 132);
 pub const LIGHTS_CARD: R = R::new(400, PAGE + 8, 296, 156);
 pub const SYSTEM_CARD: R = R::new(400, PAGE + 172, 296, 140);
 pub const CHIP: (i32, i32, i32) = (528, 384, 24);
@@ -144,11 +145,13 @@ pub fn build(hwnd: HWND) {
     row(hwnd, s, 36, "Name on the screen", 184);
     let name = edit(hwnd, ID_NAME, at(s.x + 204, s.y + 36, 160, 28), 10, ES_UPPERCASE);
     send(name, EM_LIMITTEXT, kb16_mixer_protocol::LOGO_NAME_LEN, 0);
-    row(hwnd, s, 68, "Screen shift", 184);
-    combo(hwnd, ID_SHIFT, s.x + 204, s.y + 68, 160);
-    row(hwnd, s, 100, "Screen off after", 184);
-    combo(hwnd, ID_SCREEN_OFF, s.x + 204, s.y + 100, 160);
-    hint(hwnd, s, 130, counted);
+    row(hwnd, s, 68, "Screen style", 184);
+    combo(hwnd, ID_SCREEN_STYLE, s.x + 204, s.y + 68, 160);
+    row(hwnd, s, 100, "Screen shift", 184);
+    combo(hwnd, ID_SHIFT, s.x + 204, s.y + 100, 160);
+    // The card has no room left for the idle hint; the Lights card's hint says it.
+    row(hwnd, s, 132, "Screen off after", 184);
+    combo(hwnd, ID_SCREEN_OFF, s.x + 204, s.y + 132, 160);
 
     let k = SOUND_CARD;
     title(hwnd, k, "Sound");
@@ -280,5 +283,13 @@ mod tests {
         assert_eq!(TAB_TRACK.w, 3 * TAB_ITEM.0 + 6, "three items, a 2 px pad and a 1 px border on each side");
         assert_eq!(PAGE_TRACK.w, 2 * PAGE_ITEM.0 + 6);
         assert!(channel_card(3).right() <= WIDTH - 16);
+    }
+
+    #[test]
+    fn the_pad_cards_fit_their_rows() {
+        assert_eq!(SCREEN_CARD.y + 132 + 28 + 4, SCREEN_CARD.bottom(), "four rows and a 4 px margin");
+        assert_eq!(SOUND_CARD.y + 100 + 28 + 4, SOUND_CARD.bottom(), "three rows and a 4 px margin");
+        assert_eq!(SOUND_CARD.y, SCREEN_CARD.bottom() + 8);
+        assert_eq!(SOUND_CARD.bottom(), SYSTEM_CARD.bottom(), "both columns end together");
     }
 }

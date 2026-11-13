@@ -136,6 +136,8 @@ pub fn fill(boxes: bool) -> Option<String> {
     fill_combo(ID_DUCK, labelled(DUCKS), nearest(DUCKS, |v| (v - cfg.duck as f64).abs()));
     let (list, at) = DEVICES.with_borrow(|d| output_choices(&cfg.output, d, output_name.as_deref()));
     fill_combo(ID_OUTPUT, list, at);
+    let styles = SCREEN_STYLES.iter().map(|(label, value)| (label.to_string(), value.to_string())).collect();
+    fill_combo(ID_SCREEN_STYLE, styles, cfg.screen_style as usize);
     fill_combo(ID_SHIFT, shift_entries(), cfg.oled_top as usize);
     fill_combo(ID_SCREEN_OFF, labelled(MINUTES), minutes_at(cfg.screen_off_min));
     fill_combo(ID_LIGHTS_DIM, labelled(MINUTES), minutes_at(cfg.lights_dim_min));

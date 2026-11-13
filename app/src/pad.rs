@@ -279,7 +279,7 @@ pub fn settings_message(colors: &[[u8; 3]], cfg: &crate::config::Config) -> Repo
         screen_off_min: minutes(cfg.screen_off_min),
         lights_dim_min: minutes(cfg.lights_dim_min),
         idle_led_percent: cfg.idle_led_percent.min(100),
-        screen_style: 0,
+        screen_style: cfg.screen_style,
     })
     .encode()
 }
@@ -366,6 +366,16 @@ mod tests {
         cfg.idle_led_percent = 30;
         let report = HostMsg::decode(&settings_message(&[[1, 2, 3]], &cfg));
         assert!(matches!(report, Some(HostMsg::Settings(s)) if s.idle_led_percent == 30));
+    }
+
+    #[test]
+    fn the_screen_style_goes_into_the_settings_report() {
+        let mut cfg = crate::config::defaults();
+        for style in 0..3 {
+            cfg.screen_style = style;
+            let report = HostMsg::decode(&settings_message(&[[1, 2, 3]], &cfg));
+            assert!(matches!(report, Some(HostMsg::Settings(s)) if s.screen_style == style));
+        }
     }
 
     #[test]

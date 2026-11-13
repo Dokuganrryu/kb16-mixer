@@ -156,6 +156,15 @@ fn the_window_applies_and_saves_each_change_as_before() {
     pick(ID_IDLE_LIGHTS, 0);
     assert!(config().contains("idle_percent = 0"), "{}", config());
 
+    // The screen style: Numbers, then Classic again.
+    assert_eq!(text_of(ID_SCREEN_STYLE), "Classic");
+    pick(ID_SCREEN_STYLE, 2);
+    assert!(config().contains("style = \"numbers\""), "{}", config());
+    assert_eq!(crate::config::parse(&config()).map(|c| c.screen_style), Ok(2));
+    assert_eq!(text_of(ID_STATUS), "Saved and applied.");
+    pick(ID_SCREEN_STYLE, 0);
+    assert!(config().contains("style = \"classic\""), "{}", config());
+
     // The output device, from a made-up device list (never the devices of this PC): picked,
     // then unplugged (shown as not connected, and kept), then the Windows default again.
     let id = "{0.0.0.00000000}.{kb16-test}";

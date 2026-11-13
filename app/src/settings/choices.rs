@@ -75,6 +75,10 @@ pub fn idle_lights_at(percent: u8) -> usize {
     nearest(IDLE_LIGHTS, |v| (real(v) - real(percent as i64)).abs())
 }
 
+/// The pad's screen styles: label shown, `[screen] style` written (in the order of
+/// `config::SCREEN_STYLES`, so a style's number is its entry).
+pub const SCREEN_STYLES: &[(&str, &str)] = &[("Classic", "classic"), ("Lean", "lean"), ("Numbers", "numbers")];
+
 pub const DEFAULT_OUTPUT: &str = "Windows default output";
 /// The name a chosen device that is not plugged in shows with, when config.toml has none.
 const UNNAMED_OUTPUT: &str = "Chosen device";
@@ -445,6 +449,7 @@ mod tests {
             ])
         );
         assert_eq!(IDLE_LIGHTS, [("Default (6%)", 0), ("3%", 3), ("10%", 10), ("20%", 20), ("30%", 30)]);
+        assert_eq!(SCREEN_STYLES, [("Classic", "classic"), ("Lean", "lean"), ("Numbers", "numbers")]);
         let devices = [
             OutputDevice { id: "{0.0.0.00000000}.{a}".into(), name: "Headphones".into() },
             OutputDevice { id: "{0.0.0.00000000}.{b}".into(), name: "Speakers".into() },
@@ -481,5 +486,8 @@ mod tests {
         assert_eq!(IDLE_LIGHTS[idle_lights_at(3)].0, "3%");
         assert_eq!(IDLE_LIGHTS[idle_lights_at(25)].0, "20%", "the first of a tie");
         assert_eq!(IDLE_LIGHTS[idle_lights_at(100)].0, "30%");
+        for (i, (_, value)) in SCREEN_STYLES.iter().enumerate() {
+            assert_eq!(config::SCREEN_STYLES[i], *value, "style {i} shows as the entry that writes it");
+        }
     }
 }

@@ -29,6 +29,7 @@ pub const ID_VERSION: i32 = 310;
 pub const ID_BRIGHTNESS_VALUE: i32 = 311;
 pub const ID_OUTPUT: i32 = 312;
 pub const ID_IDLE_LIGHTS: i32 = 313;
+pub const ID_SCREEN_STYLE: i32 = 314;
 pub const ID_STATUS: i32 = 400;
 pub const ID_CLOSE: i32 = 401;
 /// Labels nothing refers to get ids from here up.

@@ -7,6 +7,7 @@ use super::choices::*;
 use super::controls::{FILLING, checked, child, choice, set_checked, status, text_of};
 use super::file::{
     edit, put, rename_channel, set_idle_percent, set_key, set_kind, set_knob, set_number, set_output, set_press,
+    set_screen_style,
 };
 use super::fill::{fill, problem_text};
 use super::ids::*;
@@ -113,6 +114,15 @@ fn change_idle_lights() -> Outcome {
     };
     edit(|doc| {
         set_idle_percent(doc, percent);
+        Ok(())
+    })?;
+    saved()
+}
+
+fn change_screen_style() -> Outcome {
+    let Some(style) = choice(ID_SCREEN_STYLE) else { return Ok(None) };
+    edit(|doc| {
+        set_screen_style(doc, &style);
         Ok(())
     })?;
     saved()
@@ -269,6 +279,7 @@ pub fn changed(hwnd: HWND, id: i32, code: u32) {
         }
         (ID_OUTPUT, CBN_SELCHANGE) => change_output(),
         (ID_IDLE_LIGHTS, CBN_SELCHANGE) => change_idle_lights(),
+        (ID_SCREEN_STYLE, CBN_SELCHANGE) => change_screen_style(),
         // A name is applied once it is complete (Enter, or leaving the box), never letter by
         // letter: each apply reloads everything, and the pad keeps its logo name in flash.
         (ID_CH_NAME..=203 | ID_NAME, EN_SETFOCUS) => {
