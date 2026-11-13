@@ -38,7 +38,7 @@ The documents follow ASD-STE100 Simplified Technical English. STE lets a documen
 | knob target | What a knob controls: a channel, one program in a channel, the master volume, the microphone, the foreground program, or the channel that has Focus. |
 | master volume | The volume of the output device: the default output device of Windows, or the device in `[audio] output`. |
 | output device | A speaker or a headset that Windows plays sound on. By default, the app uses the default output device of Windows and follows it when it changes. |
-| meter | The live level that the pad shows for a channel, on the screen and on the key lights. |
+| meter | The live level that the pad shows for a channel: on the screen, the thick part of the rail, and on the key lights. |
 | audible | A program plays sound above approximately −40 dBFS for at least 1 second. See [how-it-works.md](how-it-works.md#idle-rule). |
 
 ## Keys and actions

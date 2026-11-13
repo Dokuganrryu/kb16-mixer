@@ -19,6 +19,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The
 
 ### Changed
 
+- The mixer screen is new: capital names, the volume as a number, and a thin rail that becomes thicker with the sound. A short mark at the left edge shows a muted microphone.
+- The readout shows the volume in large digits, or `Muted` with a hollow bar. A turn past 0 or 100 shows a short end stop.
+- The screen does not move between its states. A readout, a notice, a page change and a mute show in the frame of their message.
+- The screen fades out in 0.7 seconds after the screen-off limit, together with the key lights. It comes on again at full contrast without a fade.
+- The firmware sends only the changed columns of the screen. A new readout draws at once.
+- After a volume change, the meter lights of that channel show its volume for 1.3 seconds. On page 2, the meter lights stay dim and even.
+- The pictures in `docs/images/` show the new screens. A new picture shows a muted readout.
 - The documents say that a local build of the firmware does not give the bytes of the CI build. To examine a release, use `SHA256SUMS` and the attestation.
 
 ## [0.2.0] - 2026-11-13
