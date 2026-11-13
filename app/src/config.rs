@@ -1248,52 +1248,17 @@ mod tests {
 
     #[test]
     fn the_screen_style_is_read_and_checked() {
-        let with = |extra: &str| {
-            parse(&format!(
-                "{extra}
-{ONE}"
-            ))
-        };
+        let with = |extra: &str| parse(&format!("[screen]\n{extra}\n{ONE}"));
         for (i, name) in SCREEN_STYLES.iter().enumerate() {
-            assert_eq!(
-                with(&format!(
-                    "[screen]
-style = \"{name}\""
-                ))
-                .unwrap()
-                .screen_style,
-                i as u8
-            );
+            assert_eq!(with(&format!("style = \"{name}\"")).unwrap().screen_style, i as u8);
         }
-        assert_eq!(
-            with(
-                "[screen]
-style = \" Lean \""
-            )
-            .unwrap()
-            .screen_style,
-            1,
-            "like the other names"
-        );
+        assert_eq!(with("style = \" Lean \"").unwrap().screen_style, 1, "like the other names");
         for bad in ["\"big\"", "\"\""] {
-            let e = with(&format!(
-                "[screen]
-style = {bad}"
-            ))
-            .err()
-            .expect("should be rejected");
+            let e = with(&format!("style = {bad}")).err().expect("should be rejected");
             assert_eq!(e, format!("[screen] style = {bad}: \"classic\", \"lean\" or \"numbers\""));
         }
-        assert!(
-            with(
-                "[screen]
-style = 1"
-            )
-            .err()
-            .expect("should be rejected")
-            .contains("text in quotes")
-        );
-        assert!(with("screen = 3").err().is_some(), "[screen] must be a table");
+        assert!(with("style = 1").err().expect("should be rejected").contains("text in quotes"));
+        assert!(parse(&format!("screen = 3\n{ONE}")).err().is_some_and(|e| e.contains("not a table")));
     }
 
     #[test]
