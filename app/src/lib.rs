@@ -16,6 +16,7 @@ mod autostart;
 mod check;
 pub mod config;
 mod dialog;
+mod gesture;
 mod keys;
 mod open;
 mod pad;

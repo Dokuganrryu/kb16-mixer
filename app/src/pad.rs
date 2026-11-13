@@ -28,6 +28,10 @@ pub enum PadEvent {
     Press {
         knob: u8,
     },
+    /// The knob was let go. Firmware from before this event never sends it.
+    KnobUp {
+        knob: u8,
+    },
     Key {
         row: u8,
         col: u8,
@@ -153,6 +157,7 @@ pub fn listen(events: Sender<PadEvent>, paused: Arc<AtomicBool>) {
                     let event = match PadMsg::decode(&buf[..n]) {
                         Some(PadMsg::Turn { knob, delta }) => PadEvent::Turn { knob, delta: delta as i32 },
                         Some(PadMsg::Press { knob }) => PadEvent::Press { knob },
+                        Some(PadMsg::KnobUp { knob }) => PadEvent::KnobUp { knob },
                         Some(PadMsg::KeyDown { row, col }) => PadEvent::Key { row, col },
                         Some(PadMsg::KeyUp { row, col }) => PadEvent::KeyUp { row, col },
                         None => continue,
@@ -273,6 +278,7 @@ pub fn settings_message(colors: &[[u8; 3]], cfg: &crate::config::Config) -> Repo
         oled_top_plus_one: cfg.oled_top.min(6) + 1,
         screen_off_min: minutes(cfg.screen_off_min),
         lights_dim_min: minutes(cfg.lights_dim_min),
+        idle_led_percent: cfg.idle_led_percent.min(100),
     })
     .encode()
 }
@@ -291,11 +297,14 @@ pub fn logo_name_message(name: &str) -> Report {
     HostMsg::LogoName(printable(name, true)).encode()
 }
 
-/// Tells the pad what its 16 keys do: two reports of 8 keys each.
-pub fn key_messages(grid: &crate::config::KeyGrid) -> [Report; 2] {
+/// Tells the pad what the 16 keys of `page` do: two reports of 8 keys each.
+pub fn key_messages(cfg: &crate::config::Config, page: usize) -> [Report; 2] {
     use crate::config::KeyAction::*;
+    let grid = &cfg.pages[page];
     let key = |i: usize| match &grid[i / 4][i % 4] {
         Mute | Focus | Talk | Move | Page | Open(_) => Key::Host,
+        // A key with nothing on its tap but a hold or a double tap is the app's too.
+        Nothing if cfg.key_wants(page, i / 4, i % 4) != Default::default() => Key::Host,
         &Keyboard { code, mods } => Key::Keyboard { code, mods },
         &Media { tap, hold } => Key::Media { tap, hold },
         Nothing => Key::Nothing,
@@ -335,6 +344,27 @@ mod tests {
         assert!(wait_for_arrival(Duration::from_secs(5)));
         assert!(start.elapsed() < Duration::from_secs(1), "woken at once");
         assert!(!wait_for_arrival(Duration::from_millis(50)), "one arrival wakes one search");
+    }
+
+    #[test]
+    fn a_key_with_only_a_hold_is_reported_to_the_app() {
+        let mut cfg = crate::config::defaults();
+        cfg.pages[0][1][2] = crate::config::KeyAction::Nothing;
+        let third = |cfg: &crate::config::Config| match HostMsg::decode(&key_messages(cfg, 0)[0]) {
+            Some(HostMsg::Keys(k)) => k.keys[6],
+            _ => unreachable!(),
+        };
+        assert_eq!(third(&cfg), Key::Nothing, "no hold: the pad ignores it");
+        cfg.key_gestures[0][0][1][2] = crate::config::PressAction::Mute;
+        assert_eq!(third(&cfg), Key::Host);
+    }
+
+    #[test]
+    fn the_idle_light_level_goes_into_the_settings_report() {
+        let mut cfg = crate::config::defaults();
+        cfg.idle_led_percent = 30;
+        let report = HostMsg::decode(&settings_message(&[[1, 2, 3]], &cfg));
+        assert!(matches!(report, Some(HostMsg::Settings(s)) if s.idle_led_percent == 30));
     }
 
     #[test]

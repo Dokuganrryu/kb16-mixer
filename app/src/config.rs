@@ -25,15 +25,35 @@ screen_off_min = 10   # minutes of quiet before the pad's screen turns off (0 = 
 lights_dim_min = 10   # minutes of quiet before the key lights dim (0 = never)
 mixer_keys = true     # false = keys type 1-0/arrows as usual; lights and knobs stay the mixer
 
-# KNOBS. Turn = volume. Press to step through the apps playing in the knob's channel and
-# turn just that one (Spotify but not the browser); press on to get back to the whole
-# channel, or leave the knob alone for 8 seconds. An app keeps its place in the mix when the
-# whole channel is turned. Mute is on the bottom row of keys.
-# Each is a channel name, or "master", "mic", "focused" (whatever app is in front).
+# KNOBS. Turn = volume. Each is a channel name, or "master", "mic", "focused" (whatever app
+# is in front).
 [knobs]
 knob1 = "Chat"        # small knob, top left
 knob2 = "Media"       # small knob, top right
 knob3 = "Game"        # big knob
+
+# KNOB PRESSES: a tap, a hold (350 ms) and a double tap, for each knob.
+#   "mute"    mute / unmute what the knob turns
+#   "pick"    step through the apps playing in the knob's channel and turn just that one
+#             (Spotify but not the browser); pick on to get back to the whole channel, or
+#             leave the knob alone for 8 seconds. Hold, then turn: that app only.
+#   "open:<what>", "none"   as for the keys below
+# A tap acts at once when no double tap is set; with one set, it waits 280 ms for a second.
+# Turning a knob while it is down is a turn, never a press.
+[knob_press.knob1]
+tap = "mute"
+hold = "pick"
+double = "none"
+
+[knob_press.knob2]
+tap = "mute"
+hold = "pick"
+double = "none"
+
+[knob_press.knob3]
+tap = "mute"
+hold = "pick"
+double = "none"
 
 # KEYS: four rows of four, top row first. Each column belongs to the channel above it;
 # the lights in a column are that channel's level meter. There are two pages of keys:
@@ -71,6 +91,26 @@ row1 = ["page",  "7", "8", "9"]                   # back to the mixer page; digi
 row2 = ["0",     "4", "5", "6"]                   # digits
 row3 = ["enter", "1", "2", "3"]                   # enter; digits
 row4 = ["mute",  "mute", "mute", "mute"]          # mute stays at hand on both pages
+
+# Optional: a hold or a double tap for keys whose tap is "mute", "open:<what>" or "none".
+# [keys_hold] and [keys_double] go with [keys], [keys2_hold] and [keys2_double] with [keys2];
+# rows as above, "none" = no hold or double tap. Each can be "mute", "open:<what>" or "none".
+# A key without them acts at once, as before. Example: hold the first mute key to open the
+# Windows sound settings:
+#   [keys_hold]
+#   row4 = ["open:ms-settings:sound", "none", "none", "none"]
+
+# LIGHTS. How bright the key lights stay when they dim after lights_dim_min:
+# 1 .. 100 percent of their normal brightness, 0 = the pad's own choice.
+[lights]
+idle_percent = 0
+
+# AUDIO. "default" = the Windows default output device, followed when it changes: the master
+# knob turns it, and apps on every output device stay on their knobs. Or a device id from the
+# settings window: the master knob and the apps of that device only (if it is unplugged, the
+# Windows default until it is back).
+[audio]
+output = "default"
 
 # CHANNELS: up to 4, one per key column, left to right.
 #   name = "..."        1 to 5 characters: what the pad's screen has room for
@@ -126,7 +166,46 @@ struct RawConfig {
     #[serde(default)]
     keys2: RawKeys,
     #[serde(default)]
+    knob_press: RawKnobPresses,
+    #[serde(default)]
+    keys_hold: RawKeys,
+    #[serde(default)]
+    keys_double: RawKeys,
+    #[serde(default)]
+    keys2_hold: RawKeys,
+    #[serde(default)]
+    keys2_double: RawKeys,
+    #[serde(default)]
+    lights: RawLights,
+    #[serde(default)]
+    audio: RawAudio,
+    #[serde(default)]
     channel: Vec<RawChannel>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawKnobPresses {
+    knob1: Option<RawPress>,
+    knob2: Option<RawPress>,
+    knob3: Option<RawPress>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawPress {
+    tap: Option<String>,
+    hold: Option<String>,
+    double: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct RawLights {
+    #[serde(default)]
+    idle_percent: u32,
+}
+
+#[derive(Deserialize, Default)]
+struct RawAudio {
+    output: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -192,6 +271,53 @@ pub enum KeyAction {
 }
 
 pub type KeyGrid = [[KeyAction; 4]; 4];
+
+/// What a knob press, or a key's hold or double tap, does. The app does all of these itself;
+/// keys and media keys are typed by the pad, which only knows a plain press.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub enum PressAction {
+    #[default]
+    Nothing,
+    /// Mute or unmute what the knob turns, or the key's column.
+    Mute,
+    /// Step the knob from its whole channel through each app playing in it.
+    Pick,
+    Open(String),
+}
+
+/// One knob's press: a tap, a hold and a double tap.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct KnobPress {
+    pub tap: PressAction,
+    pub hold: PressAction,
+    pub double: PressAction,
+}
+
+impl KnobPress {
+    pub fn wants(&self) -> crate::gesture::Wants {
+        crate::gesture::Wants { hold: self.hold != PressAction::Nothing, double: self.double != PressAction::Nothing }
+    }
+}
+
+/// Tap, hold and double tap of a knob left out of [knob_press]: a tap mutes, a hold picks an
+/// app, and with no double tap a tap never waits.
+pub const DEFAULT_KNOB_PRESS: [&str; 3] = ["mute", "pick", "none"];
+
+pub type PressGrid = [[PressAction; 4]; 4];
+
+/// Holds and double taps of the 16 keys, per page: [keys_hold] / [keys_double] for [keys],
+/// [keys2_hold] / [keys2_double] for [keys2].
+pub const GESTURE_TABLES: [[&str; 2]; PAGES] = [["keys_hold", "keys_double"], ["keys2_hold", "keys2_double"]];
+
+/// Which output device the mixer works on.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub enum Output {
+    /// The Windows default output device, whichever it is at the moment.
+    #[default]
+    Default,
+    /// This device (its Core Audio endpoint id), while it is plugged in.
+    Device(String),
+}
 
 /// The mixer page ([keys]) and the keypad page ([keys2]).
 pub const PAGES: usize = 2;
@@ -327,6 +453,93 @@ pub fn parse_key(text: &str) -> Result<KeyAction, String> {
     code.map(|code| KeyAction::Keyboard { code, mods }).ok_or_else(unknown)
 }
 
+/// A knob press, or a key's hold or double tap. `knob`: "pick" is allowed (a key has no
+/// channel apps to step through).
+pub fn parse_press(text: &str, knob: bool) -> Result<PressAction, String> {
+    if text.trim().eq_ignore_ascii_case("pick") {
+        return if knob { Ok(PressAction::Pick) } else { Err(format!("{text:?}: pick works on knob presses only")) };
+    }
+    match parse_key(text)? {
+        KeyAction::Nothing => Ok(PressAction::Nothing),
+        KeyAction::Mute => Ok(PressAction::Mute),
+        KeyAction::Open(target) => Ok(PressAction::Open(target)),
+        _ => Err(format!(
+            "{text:?}: here only mute, {}open:<what> or none work (the pad types keys itself, on a plain press only)",
+            if knob { "pick, " } else { "" }
+        )),
+    }
+}
+
+fn parse_knob_presses(raw: RawKnobPresses) -> Result<[KnobPress; 3], String> {
+    let [tap, hold, double] = DEFAULT_KNOB_PRESS;
+    let mut out: [KnobPress; 3] = Default::default();
+    for (k, press) in [raw.knob1, raw.knob2, raw.knob3].into_iter().enumerate() {
+        let press = press.unwrap_or_default();
+        let at = |part: &str, text: Option<String>, default: &str| {
+            parse_press(text.as_deref().unwrap_or(default), true)
+                .map_err(|e| format!("[knob_press.knob{}] {part}: {e}", k + 1))
+        };
+        out[k] = KnobPress {
+            tap: at("tap", press.tap, tap)?,
+            hold: at("hold", press.hold, hold)?,
+            double: at("double", press.double, double)?,
+        };
+    }
+    Ok(out)
+}
+
+/// One table of key holds or double taps; a row left out holds none.
+fn parse_press_grid(raw: RawKeys, table: &str) -> Result<PressGrid, String> {
+    let mut grid = PressGrid::default();
+    for (r, row) in [raw.row1, raw.row2, raw.row3, raw.row4].into_iter().enumerate() {
+        let Some(names) = row else { continue };
+        if names.len() != 4 {
+            return Err(format!("[{table}] row{}: {} entries, a row has 4 keys", r + 1, names.len()));
+        }
+        for (c, name) in names.iter().enumerate() {
+            grid[r][c] = parse_press(name, false).map_err(|e| format!("[{table}] row{}: {e}", r + 1))?;
+        }
+    }
+    Ok(grid)
+}
+
+/// The holds and double taps of one page, refused on keys whose tap is not the app's: a key
+/// the pad types never reaches the app, and Talk, Focus, Page and Move already use the hold.
+fn parse_key_gestures(hold: RawKeys, double: RawKeys, page: usize, keys: &KeyGrid) -> Result<[PressGrid; 2], String> {
+    let grids = [parse_press_grid(hold, GESTURE_TABLES[page][0])?, parse_press_grid(double, GESTURE_TABLES[page][1])?];
+    for (g, grid) in grids.iter().enumerate() {
+        for (r, row) in grid.iter().enumerate() {
+            for (c, action) in row.iter().enumerate() {
+                if *action != PressAction::Nothing && !takes_gestures(&keys[r][c]) {
+                    return Err(format!(
+                        "[{}] row{} key {}: a hold or double tap needs a key whose tap is mute, open: or none",
+                        GESTURE_TABLES[page][g],
+                        r + 1,
+                        c + 1
+                    ));
+                }
+            }
+        }
+    }
+    Ok(grids)
+}
+
+/// A key whose tap may have a hold and a double tap besides.
+pub fn takes_gestures(tap: &KeyAction) -> bool {
+    matches!(tap, KeyAction::Mute | KeyAction::Open(_) | KeyAction::Nothing)
+}
+
+pub fn parse_output(text: &str) -> Result<Output, String> {
+    let t = text.trim();
+    if t.eq_ignore_ascii_case("default") {
+        Ok(Output::Default)
+    } else if t.starts_with('{') && t.len() > 2 {
+        Ok(Output::Device(t.to_string()))
+    } else {
+        Err(format!("[audio] output = {text:?}: \"default\" or a device id from the settings window"))
+    }
+}
+
 fn parse_grid(raw: RawKeys, page: usize) -> Result<KeyGrid, String> {
     let table = PAGE_TABLES[page];
     let rows = [raw.row1, raw.row2, raw.row3, raw.row4];
@@ -383,12 +596,27 @@ pub struct Config {
     pub screen_off_min: u8,
     pub lights_dim_min: u8,
     pub knobs: [KnobBinding; 3],
+    pub knob_press: [KnobPress; 3],
     /// [keys] then [keys2]; the pad starts on the first.
     pub pages: [KeyGrid; PAGES],
+    /// Per page: the keys' holds, then their double taps (`Nothing` = none set).
+    pub key_gestures: [[PressGrid; 2]; PAGES],
+    /// Percent of the normal brightness the key lights dim to; 0 = the pad's default.
+    pub idle_led_percent: u8,
+    pub output: Output,
     pub channels: Vec<ChannelCfg>,
 }
 
 impl Config {
+    /// Which gestures key (`row`, `col`) of `page` has an action for.
+    pub fn key_wants(&self, page: usize, row: usize, col: usize) -> crate::gesture::Wants {
+        let [hold, double] = &self.key_gestures[page];
+        crate::gesture::Wants {
+            hold: hold[row][col] != PressAction::Nothing,
+            double: double[row][col] != PressAction::Nothing,
+        }
+    }
+
     /// The channel a "selected" knob falls back to: the catch-all (games), else the first
     /// app channel.
     pub fn default_selected(&self) -> usize {
@@ -491,6 +719,7 @@ impl RawConfig {
                 },
             })
         };
+        let pages = parse_pages(self.keys, self.keys2)?;
         Ok(Config {
             name: parse_name(&self.name)?,
             step: in_range("step", self.step, 0.5, 20.0)?,
@@ -500,7 +729,14 @@ impl RawConfig {
             duck: in_range("duck", self.duck, 0.0, 1.0)?,
             screen_off_min: self.screen_off_min.min(240) as u8,
             lights_dim_min: self.lights_dim_min.min(240) as u8,
-            pages: parse_pages(self.keys, self.keys2)?,
+            key_gestures: [
+                parse_key_gestures(self.keys_hold, self.keys_double, 0, &pages[0])?,
+                parse_key_gestures(self.keys2_hold, self.keys2_double, 1, &pages[1])?,
+            ],
+            pages,
+            knob_press: parse_knob_presses(self.knob_press)?,
+            idle_led_percent: self.lights.idle_percent.min(100) as u8,
+            output: self.audio.output.as_deref().map_or(Ok(Output::Default), parse_output)?,
             knobs: [
                 bind("knob1", self.knobs.knob1, KnobBinding::Master)?,
                 bind("knob2", self.knobs.knob2, KnobBinding::Master)?,
@@ -887,6 +1123,84 @@ mod tests {
         assert!(with(["Mic", "game", "chat", "Media"]).is_empty(), "swapped, whatever the case");
         assert!(with(["Mic", "Game", "Chat", "Media"]).is_empty(), "swapped, not renamed");
         assert!(renames(&[], &defaults().channels).is_empty(), "first load");
+    }
+
+    const ONE: &str = "[[channel]]\nname = \"A\"\ntarget = \"other\"\n";
+
+    #[test]
+    fn an_old_config_gets_the_knob_press_and_device_defaults() {
+        let c = parse(ONE).unwrap();
+        let press = KnobPress { tap: PressAction::Mute, hold: PressAction::Pick, double: PressAction::Nothing };
+        assert_eq!(c.knob_press, [press.clone(), press.clone(), press]);
+        assert_eq!(
+            c.key_gestures,
+            [[PressGrid::default(), PressGrid::default()], [PressGrid::default(), PressGrid::default()]]
+        );
+        assert_eq!((c.idle_led_percent, c.output), (0, Output::Default));
+        assert_eq!(defaults().knob_press, c.knob_press, "the written defaults say the same");
+        assert_eq!(defaults().output, Output::Default);
+    }
+
+    #[test]
+    fn knob_presses_take_the_key_actions_the_app_does_itself() {
+        let text = format!(
+            "[knob_press.knob2]\ntap = \"none\"\ndouble = \"Open:C:\\\\Tools\\\\obs64.exe\"\n[knob_press.knob3]\nhold = \"MUTE\"\n{ONE}"
+        );
+        let c = parse(&text).unwrap();
+        assert_eq!(c.knob_press[1].tap, PressAction::Nothing);
+        assert_eq!(c.knob_press[1].hold, PressAction::Pick, "left out: the default");
+        assert_eq!(c.knob_press[1].double, PressAction::Open("C:\\Tools\\obs64.exe".into()));
+        assert_eq!(c.knob_press[2].hold, PressAction::Mute);
+        assert_eq!(c.knob_press[1].wants(), crate::gesture::Wants { hold: true, double: true });
+        assert_eq!(c.knob_press[0].wants(), crate::gesture::Wants { hold: true, double: false });
+
+        let e = problem(&format!("[knob_press.knob1]\nhold = \"play\"\n{ONE}"));
+        assert!(e.starts_with("[knob_press.knob1] hold: \"play\": here only mute, pick,"), "{e}");
+        assert!(problem(&format!("[knob_press.knob3]\ntap = \"F13\"\n{ONE}")).contains("the pad types keys itself"));
+        assert!(problem(&format!("[knob_press.knob3]\ntap = \"mutee\"\n{ONE}")).contains("not an action"));
+        assert!(problem(&format!("[knob_press.knob1]\ntap = 3\n{ONE}")).contains("invalid type"));
+    }
+
+    #[test]
+    fn key_holds_and_double_taps_go_only_on_keys_the_app_handles() {
+        let text = format!(
+            "[keys_hold]\nrow4 = [\"none\", \"open:ms-settings:sound\", \"none\", \"none\"]\n[keys2_double]\nrow4 = [\"mute\", \"none\", \"none\", \"none\"]\n{ONE}"
+        );
+        let c = parse(&text).unwrap();
+        assert_eq!(c.key_gestures[0][0][3][1], PressAction::Open("ms-settings:sound".into()));
+        assert_eq!(c.key_gestures[1][1][3][0], PressAction::Mute);
+        assert_eq!(c.key_wants(0, 3, 1), crate::gesture::Wants { hold: true, double: false });
+        assert_eq!(c.key_wants(1, 3, 0), crate::gesture::Wants { hold: false, double: true });
+        assert_eq!(c.key_wants(0, 3, 0), crate::gesture::Wants::default(), "rows left out hold none");
+
+        let on_play = format!("[keys_double]\nrow1 = [\"none\", \"none\", \"mute\", \"none\"]\n{ONE}");
+        assert_eq!(
+            problem(&on_play),
+            "[keys_double] row1 key 3: a hold or double tap needs a key whose tap is mute, open: or none"
+        );
+        let on_focus = format!("[keys_hold]\nrow3 = [\"none\", \"mute\", \"none\", \"none\"]\n{ONE}");
+        assert!(problem(&on_focus).contains("[keys_hold] row3 key 2"), "Focus uses the hold already");
+        let pick = format!("[keys2_hold]\nrow4 = [\"pick\", \"none\", \"none\", \"none\"]\n{ONE}");
+        assert_eq!(problem(&pick), "[keys2_hold] row4: \"pick\": pick works on knob presses only");
+        let short = format!("[keys_hold]\nrow2 = [\"none\"]\n{ONE}");
+        assert_eq!(problem(&short), "[keys_hold] row2: 1 entries, a row has 4 keys");
+        let typed = format!("[keys_hold]\nrow4 = [\"F13\", \"none\", \"none\", \"none\"]\n{ONE}");
+        assert!(problem(&typed).contains("here only mute, open:<what> or none"));
+    }
+
+    #[test]
+    fn the_idle_light_level_and_the_output_device_are_read_and_checked() {
+        let with = |extra: &str| parse(&format!("{extra}\n{ONE}"));
+        assert_eq!(with("[lights]\nidle_percent = 25").unwrap().idle_led_percent, 25);
+        assert_eq!(with("[lights]\nidle_percent = 900").unwrap().idle_led_percent, 100, "clamped like the others");
+        assert!(with("[lights]\nidle_percent = -1").is_err());
+        assert_eq!(with("[audio]\noutput = \" Default \"").unwrap().output, Output::Default);
+        let id = "{0.0.0.00000000}.{8f0e2a1c-0000-4000-8000-000000000001}";
+        assert_eq!(with(&format!("[audio]\noutput = \"{id}\"")).unwrap().output, Output::Device(id.into()));
+        for bad in ["", "speakers", "{"] {
+            let e = with(&format!("[audio]\noutput = \"{bad}\"")).err().expect("should be rejected");
+            assert_eq!(e, format!("[audio] output = \"{bad}\": \"default\" or a device id from the settings window"));
+        }
     }
 
     #[test]

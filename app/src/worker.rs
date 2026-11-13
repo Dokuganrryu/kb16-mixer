@@ -7,7 +7,8 @@
 //! bottom, with tests.
 
 use crate::audio::{self, Audible, Device, Mixer, Moved, Readout};
-use crate::config::{self, ChannelCfg, Config, KnobBinding, Saved};
+use crate::config::{self, ChannelCfg, Config, KnobBinding, PressAction, Saved};
+use crate::gesture::{Button, Gesture};
 use crate::keys::{self, Keys};
 use crate::pad::{self, Link, PadEvent, Show};
 use crate::tray::{WM_APPS_MOVED, WM_PAD_STATUS, post_ui};
@@ -55,7 +56,9 @@ pub fn run(events: Receiver<PadEvent>, shared: Shared) {
     let mut w = Worker::new(mixer, shared.notices.clone(), shared.ui);
     loop {
         let deadline = w.last_tick + frame_interval(w.playing, w.last_active.elapsed());
-        let Some(batch) = next_batch(&events, deadline) else { return };
+        // A hold or a waiting tap that falls due wakes the loop too: no timer of its own.
+        let gesture = w.gesture_deadline(&shared.cfg.read().unwrap_or_else(PoisonError::into_inner));
+        let Some(batch) = next_batch(&events, gesture.map_or(deadline, |g| g.min(deadline))) else { return };
         let cfg = shared.cfg.read().unwrap_or_else(PoisonError::into_inner);
         w.take_config(&cfg, shared.generation.load(Ordering::Relaxed));
         let shown_page = w.keys.page();
@@ -96,11 +99,12 @@ fn next_batch(events: &Receiver<PadEvent>, deadline: Instant) -> Option<Vec<PadE
     Some(batch)
 }
 
-/// What one batch asks of the knobs, added up: a fast spin becomes one change per knob.
+/// What one batch asks of the knobs: turns added up (a fast spin becomes one change per knob),
+/// and the press gestures in the order they fired.
 #[derive(Default)]
 struct Input {
     turns: [i32; 3],
-    presses: [usize; 3],
+    gestures: Vec<(usize, Gesture)>,
     /// The app is closing; answered once the state is saved.
     closing: Option<Sender<()>>,
 }
@@ -111,6 +115,7 @@ struct Worker {
     keys: Keys,
     /// What each knob is aimed at: its channel, or for a few seconds one app in it.
     aims: [trim::Aim; 3],
+    knob_buttons: KnobButtons,
     saved: Saved,
     /// When `saved` is to be written next; None when the file holds it.
     save_at: Option<Instant>,
@@ -141,6 +146,7 @@ impl Worker {
             link: Link::new(),
             keys: Keys::default(),
             aims: Default::default(),
+            knob_buttons: KnobButtons::default(),
             saved: config::load_state(),
             save_at: None,
             seen_generation: u64::MAX,
@@ -205,6 +211,7 @@ impl Worker {
         }
         mixer.trims = self.saved.trims.clone();
         self.aims = Default::default();
+        self.knob_buttons.let_go();
         self.keys.reload();
         self.meta_sent = None;
     }
@@ -228,8 +235,16 @@ impl Worker {
             match e {
                 // Input still on its way when Pause was chosen belongs to no one.
                 ref e if is_paused && is_touch(e) => {}
-                PadEvent::Turn { knob, delta } if knob < 3 => input.turns[knob as usize] += delta,
-                PadEvent::Press { knob } if knob < 3 => input.presses[knob as usize] += 1,
+                PadEvent::Turn { knob, delta } if knob < 3 => {
+                    self.knob_buttons.turn(knob as usize, &mut input.gestures);
+                    input.turns[knob as usize] += delta;
+                }
+                PadEvent::Press { knob } if knob < 3 => {
+                    self.knob_buttons.press(knob as usize, now, cfg, &mut input.gestures);
+                }
+                PadEvent::KnobUp { knob } if knob < 3 => {
+                    self.knob_buttons.release(knob as usize, now, cfg, &mut input.gestures);
+                }
                 PadEvent::Key { row, col } => self.keys.press(row as usize, col as usize, now, cfg, &mut desk),
                 PadEvent::KeyUp { row, col } => self.keys.release(row as usize, col as usize, now, cfg, &mut desk),
                 PadEvent::Shutdown(done) => {
@@ -243,6 +258,7 @@ impl Worker {
                     } else {
                         self.link.close();
                         self.keys.let_go(&mut desk);
+                        self.knob_buttons.let_go();
                     }
                     self.resend_all();
                     post_ui(self.ui, WM_PAD_STATUS);
@@ -265,7 +281,17 @@ impl Worker {
                 _ => {}
             }
         }
+        if !is_paused {
+            self.knob_buttons.poll(now, cfg, &mut input.gestures);
+            let mut desk = Desk { mixer: &mut self.mixer, channels, popup, notices: &self.notices, ui: self.ui };
+            self.keys.poll(now, cfg, &mut desk);
+        }
         input
+    }
+
+    /// When a knob's or a key's gesture falls due, if one is under way.
+    fn gesture_deadline(&self, cfg: &Config) -> Option<Instant> {
+        self.knob_buttons.deadline(cfg).into_iter().chain(self.keys.deadline(cfg)).min()
     }
 
     /// Pause hands the pad to Windows as a plain keyboard, and unpausing hands it back: both
@@ -276,27 +302,69 @@ impl Worker {
         }
         self.was_paused = is_paused;
         self.keys.let_go(&mut Desk { mixer: &mut self.mixer, channels, popup, notices: &self.notices, ui: self.ui });
+        self.knob_buttons.let_go();
         self.resend_all();
         self.farewell = is_paused;
     }
 
+    /// The press gestures in the order they fired, then the turns.
     fn turn_knobs(&mut self, cfg: &Config, input: &Input, popup: &mut Option<Show>) {
+        for &(knob, gesture) in &input.gestures {
+            let press = &cfg.knob_press[knob];
+            let action = match gesture {
+                Gesture::Tap => &press.tap,
+                Gesture::Hold => &press.hold,
+                Gesture::Double => &press.double,
+            };
+            self.press_knob(cfg, knob, action, popup);
+        }
         for knob in 0..3 {
-            if input.turns[knob] != 0 || input.presses[knob] != 0 {
-                self.turn_knob(cfg, knob, input.turns[knob], input.presses[knob], popup);
+            if input.turns[knob] != 0 {
+                self.turn_knob(cfg, knob, input.turns[knob], popup);
             }
         }
     }
 
-    fn turn_knob(&mut self, cfg: &Config, knob: usize, turns: i32, presses: usize, popup: &mut Option<Show>) {
+    fn press_knob(&mut self, cfg: &Config, knob: usize, action: &PressAction, popup: &mut Option<Show>) {
+        let channels = &cfg.channels;
+        let mixer = &mut self.mixer;
+        let binding = cfg.knobs[knob];
+        let channel = knob_channel(binding, mixer.focus(), cfg.default_selected(), channels.len());
+        *popup = Some(match (action, channel) {
+            (PressAction::Nothing, _) => return,
+            (PressAction::Open(target), _) => return open::open(target.clone(), self.notices.clone()),
+            (PressAction::Mute, Some(c)) => level_popup(mixer.change_channel(c, None, channels)),
+            (PressAction::Pick, Some(c)) => {
+                let live = mixer.apps_in(c);
+                match self.aims[knob].step(c, &live, Instant::now()) {
+                    trim::Step::Channel => level_popup(mixer.channel_readout(c, channels)),
+                    trim::Step::App(exe) => level_popup(mixer.app_readout(c, &exe)),
+                    trim::Step::NoApps => Show::Notice(format!("No app in {}", clip(&channels[c].name, 6))),
+                }
+            }
+            // Master, mic or the app in front: mute toggles it; with no apps to pick from, a
+            // pick only shows the level (a zero step changes nothing).
+            (_, None) => {
+                let step = if *action == PressAction::Mute { None } else { Some(0.0) };
+                let readout = match binding {
+                    KnobBinding::Master => mixer.change_device(Device::Master, step),
+                    KnobBinding::Mic => {
+                        self.mic_checked = None;
+                        mixer.change_device(Device::Mic, step)
+                    }
+                    _ => mixer.change_focused(step),
+                };
+                level_popup(readout)
+            }
+        });
+    }
+
+    fn turn_knob(&mut self, cfg: &Config, knob: usize, turns: i32, popup: &mut Option<Show>) {
         let channels = &cfg.channels;
         let mixer = &mut self.mixer;
         let binding = cfg.knobs[knob];
         let delta = turns as f32 * cfg.step;
         let Some(c) = knob_channel(binding, mixer.focus(), cfg.default_selected(), channels.len()) else {
-            // Master, mic or the app in front: a press only shows the level (a zero step
-            // changes nothing); mute lives on the keys.
-            let delta = if turns != 0 { delta } else { 0.0 };
             let readout = match binding {
                 KnobBinding::Master => mixer.change_device(Device::Master, Some(delta)),
                 KnobBinding::Mic => mixer.change_device(Device::Mic, Some(delta)),
@@ -308,25 +376,15 @@ impl Worker {
             }
             return;
         };
-        // A press steps the knob from the whole channel through each app playing in it.
         let live = mixer.apps_in(c);
         let now = Instant::now();
         let aim = &mut self.aims[knob];
-        for _ in 0..presses {
-            *popup = Some(match aim.step(c, &live, now) {
-                trim::Step::Channel => level_popup(mixer.channel_readout(c, channels)),
-                trim::Step::App(exe) => level_popup(mixer.app_readout(c, &exe)),
-                trim::Step::NoApps => Show::Notice(format!("No app in {}", clip(&channels[c].name, 6))),
-            });
-        }
-        if turns != 0 {
-            let readout = match aim.app(c, &live, now).map(str::to_string) {
-                Some(exe) => mixer.change_app(c, &exe, delta, channels),
-                None => mixer.change_channel(c, Some(delta), channels),
-            };
-            *popup = Some(level_popup(readout));
-            aim.touch(now);
-        }
+        let readout = match aim.app(c, &live, now).map(str::to_string) {
+            Some(exe) => mixer.change_app(c, &exe, delta, channels),
+            None => mixer.change_channel(c, Some(delta), channels),
+        };
+        *popup = Some(level_popup(readout));
+        aim.touch(now);
     }
 
     /// Writes state.toml when `save_due` says so.
@@ -365,7 +423,7 @@ impl Worker {
         let page = self.keys.page();
         let mut popup = popup;
         if page != shown_page && self.meta_sent.is_some() {
-            for m in pad::key_messages(&cfg.pages[page]) {
+            for m in pad::key_messages(cfg, page) {
                 self.link.send(&m);
             }
             popup = Some(Show::Notice(if page == 0 { "MIXER" } else { "KEYS" }.into()));
@@ -392,7 +450,7 @@ impl Worker {
         self.link.send(&pad::settings_message(&colors, cfg));
         self.link.send(&pad::names_message(channels.iter().map(|c| c.name.as_str())));
         self.link.send(&pad::logo_name_message(&cfg.name));
-        for m in pad::key_messages(&cfg.pages[page]) {
+        for m in pad::key_messages(cfg, page) {
             self.link.send(&m);
         }
         self.meta_sent = Some(Instant::now());
@@ -434,6 +492,51 @@ impl Worker {
             self.link.send(&frame);
             self.last_frame = frame;
         }
+    }
+}
+
+/// The three knobs' push buttons: tap, hold and double tap (see `gesture.rs`).
+#[derive(Default)]
+struct KnobButtons {
+    buttons: [Button; 3],
+    /// The pad reports knob releases. Firmware from before that sends only the press, which
+    /// then counts as a press and a release at once: a tap or a double tap, never a hold.
+    ups: bool,
+}
+
+impl KnobButtons {
+    fn press(&mut self, k: usize, now: Instant, cfg: &Config, out: &mut Vec<(usize, Gesture)>) {
+        let wants = cfg.knob_press[k].wants();
+        let fire = &mut |g| out.push((k, g));
+        self.buttons[k].press(now, wants, fire);
+        if !self.ups {
+            self.buttons[k].release(now, wants, fire);
+        }
+    }
+
+    fn release(&mut self, k: usize, now: Instant, cfg: &Config, out: &mut Vec<(usize, Gesture)>) {
+        self.ups = true;
+        self.buttons[k].release(now, cfg.knob_press[k].wants(), &mut |g| out.push((k, g)));
+    }
+
+    /// A turn is a turn: it uses up a press that is down.
+    fn turn(&mut self, k: usize, out: &mut Vec<(usize, Gesture)>) {
+        self.buttons[k].interrupt(&mut |g| out.push((k, g)));
+    }
+
+    fn poll(&mut self, now: Instant, cfg: &Config, out: &mut Vec<(usize, Gesture)>) {
+        for (k, button) in self.buttons.iter_mut().enumerate() {
+            button.poll(now, cfg.knob_press[k].wants(), &mut |g| out.push((k, g)));
+        }
+    }
+
+    fn deadline(&self, cfg: &Config) -> Option<Instant> {
+        self.buttons.iter().zip(&cfg.knob_press).filter_map(|(b, p)| b.deadline(p.wants())).min()
+    }
+
+    /// Nothing counts as down or waiting any more; what the pad can send stays known.
+    fn let_go(&mut self) {
+        self.buttons = Default::default();
     }
 }
 
@@ -691,6 +794,45 @@ mod tests {
         assert_eq!(state.levels, [("Game".to_string(), 0.46)].into(), "only what was set on the pad");
         assert_eq!(state.trims, [("a.exe".to_string(), 0.123)].into(), "a trim of about 1 is no trim");
         assert_eq!(state.restore, mixer.restore);
+    }
+
+    #[test]
+    fn a_knob_hold_needs_firmware_that_reports_the_release() {
+        let (cfg, t0) = (config::defaults(), Instant::now()); // tap mute, hold pick, no double
+        let at = |ms| t0 + Duration::from_millis(ms);
+        let (mut knobs, mut out) = (KnobButtons::default(), Vec::new());
+        knobs.press(2, at(0), &cfg, &mut out);
+        assert_eq!(out, [(2, Gesture::Tap)], "older firmware: every press is a tap, at once");
+        assert_eq!(knobs.deadline(&cfg), None, "and nothing to wait for");
+
+        out.clear();
+        knobs.press(2, at(1000), &cfg, &mut out);
+        knobs.release(2, at(1100), &cfg, &mut out);
+        assert_eq!(out, [(2, Gesture::Tap)], "the first release seen comes too late for that press");
+        out.clear();
+        knobs.press(2, at(2000), &cfg, &mut out);
+        assert_eq!(knobs.deadline(&cfg), Some(at(2000) + crate::gesture::HOLD));
+        knobs.poll(at(2350), &cfg, &mut out);
+        assert_eq!(out, [(2, Gesture::Hold)], "from then on a hold is a hold");
+        knobs.release(2, at(2600), &cfg, &mut out);
+        knobs.press(1, at(3000), &cfg, &mut out);
+        knobs.release(1, at(3100), &cfg, &mut out);
+        assert_eq!(out[1..], [(1, Gesture::Tap)], "a short press on another knob is a tap");
+        knobs.let_go();
+        knobs.press(0, at(4000), &cfg, &mut out);
+        assert_eq!(out.len(), 2, "after a let-go the pad is still known to send releases");
+    }
+
+    #[test]
+    fn turning_a_held_knob_is_only_a_turn() {
+        let (cfg, t0) = (config::defaults(), Instant::now());
+        let at = |ms| t0 + Duration::from_millis(ms);
+        let (mut knobs, mut out) = (KnobButtons { ups: true, ..KnobButtons::default() }, Vec::new());
+        knobs.press(0, at(0), &cfg, &mut out);
+        knobs.turn(0, &mut out);
+        knobs.poll(at(500), &cfg, &mut out);
+        knobs.release(0, at(600), &cfg, &mut out);
+        assert!(out.is_empty(), "no mute and no pick");
     }
 
     #[test]
