@@ -1,11 +1,11 @@
 # Build from source on Windows
 
-Read this document if you want to build the firmware image and the app yourself, on Windows 10 or 11. Until the first release, users also need it.
+Read this document if you want to build the firmware image and the app yourself, on Windows 10 or 11. Until the first release, users must also read it.
 To install a release without a build, see [install.md](install.md).
 
 The author wrote the steps on Windows 11 with Rust 1.99.1, Python 3.14, the Build Tools for Visual Studio 2026 and Git for Windows.
 
-## What you need
+## What is necessary
 
 | Item | Why | How to get it |
 |---|---|---|
@@ -19,7 +19,7 @@ The author wrote the steps on Windows 11 with Rust 1.99.1, Python 3.14, the Buil
 | Pillow (Python) | Only if you change the screen fonts or bitmaps (`firmware/gen_assets.py`) | `python -m pip install pillow` |
 | `cargo-about` 0.9.3 | Only if you change a dependency: it writes `THIRD_PARTY_NOTICES.md` | `cargo install cargo-about --version 0.9.3 --locked --features cli` |
 
-You do not need a pad to build. You need a pad only to flash.
+A pad is not necessary for a build. A pad is necessary only to flash.
 
 ## Set up
 
@@ -64,7 +64,7 @@ python --version
 `rustup target list --installed` must show `thumbv7m-none-eabi` and `x86_64-pc-windows-msvc`.
 `rustup component list --installed` must show a line that starts with `llvm-tools`.
 
-`scripts/build-firmware.sh` tries `python3` first, then `python`. It uses the first one that runs a small test. If `python3` is only the Windows "app execution alias", the test fails, and the script uses `python`.
+`scripts/build-firmware.sh` tries `python3` first, then `python`. It uses the first one that runs a small test. If `python3` is only the Windows "app execution alias", the test is unsatisfactory, and the script uses `python`.
 
 ## Build the firmware
 
@@ -74,7 +74,7 @@ python --version
    sh scripts/build-firmware.sh
    ```
 
-2. Wait until the build is complete. The first build downloads the crates and takes some minutes.
+2. Wait until the build is complete. The first build downloads the crates. Some minutes are necessary.
 
 **You see:** `<n> bytes, vectors OK` and `wrote .../firmware/target/kb16-mixer-firmware.bin`.
 
@@ -101,13 +101,13 @@ The script removes the paths of your PC (which contain your user name) from the 
 
 ## Check the result
 
-1. Check the image with the dry run of the Windows flasher. It writes nothing:
+1. Examine the image with the dry run of the Windows flasher. It writes nothing:
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\scripts\flash.ps1 -DryRun
    ```
 
-   It finds `firmware\target\kb16-mixer-firmware.bin` and shows its size, its first two words and its SHA-256 value. It needs `dfu-util`. See [install.md](install.md#14-get-dfu-util).
+   It finds `firmware\target\kb16-mixer-firmware.bin` and shows its size, its first two words and its SHA-256 value. It must have `dfu-util`. See [install.md](install.md#14-get-dfu-util).
 2. Run the tests and the checks of each crate that you changed. See [CONTRIBUTING.md](../CONTRIBUTING.md) for the full list. For example, for the app:
 
    ```sh
@@ -117,7 +117,7 @@ The script removes the paths of your PC (which contain your user name) from the 
    cargo test --locked
    ```
 
-3. Try the app without a change to your real settings. Use a test folder and do not connect to the pad:
+3. Try the app without a change to your settings. Use a test folder and do not connect to the pad:
 
    ```powershell
    $env:KB16_MIXER_DIR = "$env:TEMP\kb16-test"
@@ -128,7 +128,7 @@ The script removes the paths of your PC (which contain your user name) from the 
 
 ## Flash your build
 
-- With PowerShell: `powershell -ExecutionPolicy Bypass -File .\scripts\flash.ps1`. Without `-Firmware`, it takes `firmware\target\kb16-mixer-firmware.bin`.
+- With PowerShell: `powershell -ExecutionPolicy Bypass -File .\scripts\flash.ps1`. Without `-Firmware`, it uses `firmware\target\kb16-mixer-firmware.bin`.
 - With Git Bash: `sh scripts/flash.sh`. See [flashing.md](flashing.md).
 
 Before the first flash, make a backup of the stock firmware. See [stock-firmware.md](stock-firmware.md).
@@ -137,7 +137,7 @@ Before the first flash, make a backup of the stock firmware. See [stock-firmware
 
 Do this only if you add, remove or update a dependency of the firmware or the app.
 
-1. Install `cargo-about` 0.9.3 (see [What you need](#what-you-need)).
+1. Install `cargo-about` 0.9.3 (see [What is necessary](#what-is-necessary)).
 2. Run:
 
    ```sh

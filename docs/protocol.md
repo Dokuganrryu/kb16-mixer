@@ -1,6 +1,6 @@
 # Raw HID protocol
 
-This document is for people who change the firmware or the app. It describes the messages between the firmware and the app.
+This document is for persons who change the firmware or the app. It gives the messages between the firmware and the app.
 For the definition of each term, see [glossary.md](glossary.md).
 
 **The source of truth is `protocol/src/lib.rs`.** This document is a copy in table form.
@@ -103,16 +103,16 @@ The pad shows a popup for 1.3 seconds. A popup does not count as activity for th
 | 17 | `screen_off_min` | Minutes without activity before the screen goes off. 0 = pad default (10). 255 = never. |
 | 18 | `lights_dim_min` | Minutes without activity before the lights dim. 0 = pad default (10). 255 = never. |
 
-The app sends `255` for a setting of `0` (never) in the config file. It sends at most `240` minutes, and a brightness of at least `1`.
+The app sends `255` for a setting of `0` (no timer) in the config file. It sends at most `240` minutes, and a brightness of at least `1`.
 
 ### `0x21` FRAME
 
-The live state. The app sends a frame only when it changed. It checks for a change every 33 ms when one of these is true:
+The live state. The app sends a frame only when it changed. It looks for a change at intervals of 33 ms when one of these conditions applies:
 
 - A program plays audible sound (bit 2).
 - The pad had activity in the last 3 seconds. Activity is a touch of a key or a knob, or a meter at approximately −30 dBFS or higher.
 
-Otherwise it checks every 200 ms. See [how-it-works.md](how-it-works.md#frame-rate).
+Otherwise it looks for a change at intervals of 200 ms. See [how-it-works.md](how-it-works.md#frame-rate).
 
 | Byte | Field | Contents |
 |---|---|---|
@@ -165,7 +165,7 @@ When the page changes, the app sends the two messages again, for the new page.
 | … | … | … |
 | 24–26 | key `first + 7` | `kind`, `a`, `b` |
 
-Key kinds:
+Key types:
 
 | `kind` | Name | `a` | `b` | Action of the pad |
 |---|---|---|---|---|
@@ -197,7 +197,7 @@ The pad accepts a name only if it follows these rules:
 - It has at least one letter or digit.
 - Zero bytes occur only at the end.
 
-The pad ignores any other name.
+The pad ignores all other names.
 The pad keeps the name in flash, so that it shows the name at power-up. See [hardware.md](hardware.md#name-page).
 
 ### `0x7F` BOOTLOADER
@@ -211,9 +211,9 @@ The pad keeps the name in flash, so that it shows the name at power-up. See [har
 The pad restarts into its bootloader 20 ms after this message.
 The pad ignores a `0x7F` message without the 4 marker bytes.
 
-The marker `BOOT` never changes, and anyone can read it in this document. It is not a password and not a secret.
+The marker `BOOT` does not change, and anyone can read it in this document. It is not a password and not a secret.
 It only makes sure that a random or damaged message cannot restart the pad.
-Any program on the PC that can open the raw HID interface can send this message. See [SECURITY.md](../SECURITY.md).
+Each program on the PC that can open the raw HID interface can send this message. See [SECURITY.md](../SECURITY.md).
 
 ## Pad to app
 
@@ -224,10 +224,10 @@ Any program on the PC that can open the raw HID interface can send this message.
 | 2 | Knob (0–2) | Knob (0–2) | Row (0–3) | Row (0–3) |
 | 3 | Delta, signed: +1 clockwise, −1 (`0xFF`) counterclockwise | 0 | Column (0–3) | Column (0–3) |
 
-Knob 0 is the small left knob, knob 1 is the small right knob, and knob 2 is the big knob.
+Knob 0 is the small left knob, knob 1 is the small right knob, and knob 2 is the large knob.
 One `TURN` message is one detent.
 The pad sends `PRESS` only when you push a knob down, not when you release it.
-The pad sends `KEY_DOWN` and `KEY_UP` only for keys of kind `Host`.
+The pad sends `KEY_DOWN` and `KEY_UP` only for keys of the type `Host`.
 
 ## Version
 
@@ -257,5 +257,5 @@ The major version can be 0–99. The minor and patch versions can be 0–9. A ve
 
 Change the protocol only in `protocol/src/lib.rs`.
 Add a test there for each change.
-The test `wire_layout_is_fixed` holds the exact bytes. Change it only when you intend to change the wire format.
+The test `wire_layout_is_fixed` holds the correct bytes. Change it only when you intend to change the wire format.
 Then update this document.

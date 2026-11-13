@@ -6,7 +6,7 @@ The code is in `app/src/ui/`, `app/src/settings/` and `app/src/dialog/`.
 
 ## Principles
 
-- The window uses real Win32 controls.
+- The window uses the Win32 controls of Windows.
   The app paints them, and Windows keeps their keyboard behaviour, focus, tab order and screen-reader role.
 - The app uses only GDI and DWM.
   It uses no GPU, no Direct2D, no GDI+ and no other crate.
@@ -79,7 +79,7 @@ Windows hides the ring until the user presses a key (`UISF_HIDEFOCUS`).
 
 The status line shows up to three lines.
 Longer text ends in "...", and a tooltip shows all of it.
-A select whose value does not fit also gets a tooltip.
+When the value of a select does not fit, the select also gets a tooltip.
 
 ## Motion
 
@@ -101,7 +101,7 @@ Rules:
 - Nothing moves when the window opens or when the tab changes its contents.
 
 The code is in `ui/anim.rs`.
-Each value that moves has a slot in a fixed array of 16 slots.
+Each value that moves has a slot in an array of 16 slots.
 One thread timer of 16 ms runs while one or more slots move.
 The timer stops when the last value arrives.
 
@@ -111,7 +111,7 @@ The timer stops when the last value arrives.
    The back buffer is a 32-bit DIB section.
 2. The parent paints its scene into the buffer: the background, the cards, the tracks, the frames and the focus ring.
    The scene of the settings window is in `settings/scene.rs`.
-3. A control paints its own area the same way.
+3. A control paints its own area with the same method.
    First it paints the scene of its parent under it, then itself.
    Thus the corners and the indicator always meet the correct colour, also while the indicator moves.
 4. Rounded shapes and lines have smooth edges.
@@ -125,14 +125,14 @@ The timer stops when the last value arrives.
 
 The example `app/examples/render_settings.rs` makes the window and the dialogs hidden.
 It draws them into BMP files through `WM_PRINT`.
-Nothing appears on the screen.
+Nothing shows on the screen.
 
 1. Make an empty folder for a test config.
 2. Set `KB16_MIXER_DIR` to that folder.
-   The example refuses to run without it, because the window reads and writes the config.
+   The example does not run without it, because the window reads and writes the config.
 3. Run `cargo run --example render_settings -- <output folder> all`.
 4. If the example writes a manifest file and stops, change the time of the example file (for example with `touch`), and run it again.
-   Windows keeps the old "no manifest" result until the file changes.
+   Windows keeps the previous "no manifest" result until the file changes.
 
 The second argument is one of these:
 
@@ -151,9 +151,9 @@ Where Windows cannot make a window, the test stops and writes why.
 
 1. Add the look to `ui/draw.rs`.
    Use only the tokens of `ui/theme.rs`, and the sizes through `ui::px` and `ui::radius`.
-2. Add a `Kind` in `ui/widget/mod.rs` if no kind fits.
-3. Paint the kind in `ui/widget/paint.rs`.
-4. Make the real control in `settings/controls.rs` (or in a dialog template), and give it to `widget::add`.
+2. Add a `Kind` in `ui/widget/mod.rs` if no type fits.
+3. Paint the new `Kind` in `ui/widget/paint.rs`.
+4. Make the Win32 control in `settings/controls.rs` (or in a dialog template), and give it to `widget::add`.
 5. If the control has a state that moves, use `ui::anim::go`.
    Do not start a timer of your own.
 6. Draw the window hidden at 96 and 144 dpi, in dark and light, and look at each picture.

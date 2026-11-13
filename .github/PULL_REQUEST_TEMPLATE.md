@@ -6,10 +6,10 @@
 
 <!-- Write "No" if you did not test on a pad. -->
 
-- Tested on a pad (yes or no):
+- A test on a pad (yes or no):
 - Pad, firmware version and app version:
-- What you tested:
-- What you did not test:
+- What your tests examined:
+- What your tests did not examine:
 
 ## Checklist
 
@@ -18,5 +18,5 @@
 - [ ] The change contains no personal data: no names, e-mail addresses, user names, machine names, serial numbers or paths with a user name.
 - [ ] `python scripts/check-privacy.py --history HEAD` shows no problem.
 - [ ] For a change to a dependency: I ran `python scripts/third-party-notices.py`, and the licence is permissive.
-- [ ] The app still uses no hooks, no input injection, no driver, no process access and no network.
+- [ ] The app continues to use no hooks, no input injection, no driver, no process access and no network.
 - [ ] I updated the documents and `CHANGELOG.md`.
