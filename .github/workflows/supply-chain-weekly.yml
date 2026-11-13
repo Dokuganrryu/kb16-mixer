@@ -1,0 +1,38 @@
+name: Supply chain (weekly)
+
+# A new security advisory can make an unchanged commit fail cargo deny. The CI run checks only
+# when the code changes, so this run checks main once a week too.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deny:
+    name: cargo deny for each crate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
+        with:
+          tool: cargo-deny@0.20.2
+      - name: cargo deny (advisories, bans, licences, sources)
+        run: |
+          status=0
+          for crate in protocol pad-core firmware app; do
+            echo "::group::$crate"
+            cargo deny --manifest-path "$crate/Cargo.toml" --config deny.toml check || status=1
+            echo "::endgroup::"
+          done
+          exit $status
