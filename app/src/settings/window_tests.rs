@@ -95,6 +95,18 @@ fn the_window_applies_and_saves_each_change_as_before() {
     assert!(config().contains("master"), "{}", config());
     assert_eq!(text_of(ID_STATUS), "Saved and applied.");
 
+    // Knob presses: the big knob's hold to Nothing (entry 2), the left knob's double tap to
+    // Pick app (entry 1).
+    pick(ID_PRESS + 2 * 3 + 1, 2);
+    let saved = crate::config::parse(&config()).expect("a valid config");
+    assert_eq!(saved.knob_press[2].hold, crate::config::PressAction::Nothing, "{}", config());
+    assert_eq!(text_of(ID_STATUS), "Saved and applied.");
+    assert!(scene::chip_shown());
+    pick(ID_PRESS + 2, 1);
+    let saved = crate::config::parse(&config()).expect("a valid config");
+    assert_eq!(saved.knob_press[0].double, crate::config::PressAction::Pick);
+    assert_eq!(saved.knob_press[0].tap, crate::config::PressAction::Mute, "the other parts stay");
+
     // Page 2 shows the second page's keys, and the page switch follows.
     command(ID_PAGE + 1, BN_CLICKED);
     assert_eq!(PAGE.get(), 1);
@@ -136,6 +148,28 @@ fn the_window_applies_and_saves_each_change_as_before() {
     send(hwnd, WM_HSCROLL, super::ids::TB_ENDTRACK as usize, child(ID_BRIGHTNESS).0 as isize);
     assert!(config().contains("brightness = 0.4"), "{}", config());
     assert_eq!(text_of(ID_BRIGHTNESS_VALUE), "40%");
+
+    // Idle lights: 20 % (entry 3), then the default again.
+    pick(ID_IDLE_LIGHTS, 3);
+    assert_eq!(crate::config::parse(&config()).map(|c| c.idle_led_percent), Ok(20), "{}", config());
+    assert!(scene::chip_shown());
+    pick(ID_IDLE_LIGHTS, 0);
+    assert!(config().contains("idle_percent = 0"), "{}", config());
+
+    // The output device, from a made-up device list (never the devices of this PC): picked,
+    // then unplugged (shown as not connected, and kept), then the Windows default again.
+    let id = "{0.0.0.00000000}.{kb16-test}";
+    super::DEVICES.set(vec![crate::audio::OutputDevice { id: id.into(), name: "Test speakers".into() }]);
+    super::fill::fill(false);
+    pick(ID_OUTPUT, 1);
+    assert!(config().contains(&format!("output = \"{id}\"  # Test speakers")), "{}", config());
+    assert_eq!(text_of(ID_STATUS), "Saved and applied.");
+    super::DEVICES.set(Vec::new());
+    super::fill::fill(false);
+    assert_eq!(super::controls::choice(ID_OUTPUT).as_deref(), Some(id), "the chosen device stays selected");
+    assert_eq!(text_of(ID_OUTPUT), "Test speakers (not connected)");
+    pick(ID_OUTPUT, 0);
+    assert!(config().contains("output = \"default\"\n"), "{}", config());
 
     // Start with Windows stays off for a test copy, as before.
     command(ID_AUTOSTART, BN_CLICKED);

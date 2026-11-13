@@ -72,6 +72,20 @@ thread_local! {
     /// The text box being typed in, if any: Enter applies it.
     static EDITING: Cell<Option<i32>> = const { Cell::new(None) };
     static REGISTERED: Cell<bool> = const { Cell::new(false) };
+    /// The active output devices, read when the window opens and when the output list opens,
+    /// never on a timer.
+    static DEVICES: RefCell<Vec<crate::audio::OutputDevice>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Reads the output devices again; true if they changed.
+fn read_devices() -> bool {
+    let now = crate::audio::output_devices();
+    DEVICES.with_borrow_mut(|d| {
+        *d != now && {
+            *d = now;
+            true
+        }
+    })
 }
 
 const STYLE: WINDOW_STYLE =
@@ -191,6 +205,7 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                 HIDDEN.with_borrow_mut(Vec::clear);
                 SEEN.set(None);
                 EDITING.set(None);
+                DEVICES.with_borrow_mut(Vec::clear);
                 LRESULT(0)
             }
             // The children are gone by now: the fonts they used can go too.
@@ -287,6 +302,7 @@ fn create(tab: Option<Tab>, note: Option<&str>) -> Option<HWND> {
         crate::ui::widget::on_ctrl_tab(Some((hwnd, ctrl_tab)));
         crate::ui::theme::chrome(hwnd);
         build(hwnd);
+        read_devices();
         match fill(true) {
             Some(e) => status(&problem_text(&e)),
             None => status(note.unwrap_or(STATUS_IDLE)),

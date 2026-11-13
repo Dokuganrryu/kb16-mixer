@@ -5,11 +5,13 @@ use super::apps::{add, remove};
 use super::checks::{channel_name_problem, kind_problem, page_problem};
 use super::choices::*;
 use super::controls::{FILLING, checked, child, choice, set_checked, status, text_of};
-use super::file::{edit, put, rename_channel, set_key, set_kind, set_knob, set_number};
+use super::file::{
+    edit, put, rename_channel, set_idle_percent, set_key, set_kind, set_knob, set_number, set_output, set_press,
+};
 use super::fill::{fill, problem_text};
 use super::ids::*;
 use super::scene::{hide_chip, saved_chip};
-use super::{EDITING, PAGE, window};
+use super::{DEVICES, EDITING, PAGE, read_devices, window};
 use crate::config::{self, Config};
 use crate::dialog;
 use crate::ui::widget;
@@ -40,8 +42,8 @@ fn change_key(hwnd: HWND, cfg: &Config, id: i32) -> Outcome {
                 config::KeyAction::Open(target) => target.as_str(),
                 _ => "",
             };
-            match dialog::open_target(hwnd, now) {
-                Some(target) => format!("open:{target}"),
+            match ask_open(hwnd, now) {
+                Some(text) => text,
                 None => return Ok(None),
             }
         }
@@ -58,6 +60,62 @@ fn change_key(hwnd: HWND, cfg: &Config, id: i32) -> Outcome {
     let (list, at) = key_choices(&action, &text);
     let column = cfg.channels.get(c).map_or(format!("column {}", c + 1), |ch| format!("{} column", ch.name));
     Ok(Some(format!("Page {}, row {}, {column}: {}. Saved and applied.", page + 1, r + 1, list[at].0)))
+}
+
+/// The Open dialog, prefilled with `now`: the config text of the target picked, if any.
+fn ask_open(hwnd: HWND, now: &str) -> Option<String> {
+    dialog::open_target(hwnd, now).map(|target| format!("open:{target}"))
+}
+
+fn change_press(hwnd: HWND, cfg: &Config, id: i32) -> Outcome {
+    let (knob, part) = (((id - ID_PRESS) / 3) as usize, ((id - ID_PRESS) % 3) as usize);
+    let Some(picked) = choice(id) else { return Ok(None) };
+    let press = &cfg.knob_press[knob];
+    let current = [&press.tap, &press.hold, &press.double][part];
+    let text = if picked == ASK_OPEN {
+        let now = match current {
+            config::PressAction::Open(target) => target.as_str(),
+            _ => "",
+        };
+        match ask_open(hwnd, now) {
+            Some(text) => text,
+            None => return Ok(None),
+        }
+    } else {
+        picked
+    };
+    config::parse_press(&text, true)?;
+    edit(|doc| {
+        set_press(doc, knob, PRESS_PARTS[part], &text);
+        Ok(())
+    })?;
+    saved()
+}
+
+/// The output device: the Windows default, or a device saved with its name beside it.
+fn change_output() -> Outcome {
+    let Some(picked) = choice(ID_OUTPUT) else { return Ok(None) };
+    let name = DEVICES.with_borrow(|d| d.iter().find(|d| d.id == picked).map(|d| d.name.clone()));
+    // A device that is not connected stays as it is: picking it again changes nothing.
+    if picked != "default" && name.is_none() {
+        return Ok(None);
+    }
+    edit(|doc| {
+        set_output(doc, &picked, name.as_deref());
+        Ok(())
+    })?;
+    saved()
+}
+
+fn change_idle_lights() -> Outcome {
+    let Some(percent) = choice(ID_IDLE_LIGHTS).and_then(|l| super::choices::picked(IDLE_LIGHTS, &l)) else {
+        return Ok(None);
+    };
+    edit(|doc| {
+        set_idle_percent(doc, percent);
+        Ok(())
+    })?;
+    saved()
 }
 
 fn rename(cfg: &Config, i: usize) -> Outcome {
@@ -201,6 +259,16 @@ pub fn changed(hwnd: HWND, id: i32, code: u32) {
             .and_then(|()| saved()),
             None => Ok(None),
         },
+        (ID_PRESS..=138, CBN_SELCHANGE) => change_press(hwnd, &cfg, id),
+        // The device list is read again as it opens, so a device plugged in since shows.
+        (ID_OUTPUT, CBN_DROPDOWN) => {
+            if read_devices() {
+                fill(false);
+            }
+            return;
+        }
+        (ID_OUTPUT, CBN_SELCHANGE) => change_output(),
+        (ID_IDLE_LIGHTS, CBN_SELCHANGE) => change_idle_lights(),
         // A name is applied once it is complete (Enter, or leaving the box), never letter by
         // letter: each apply reloads everything, and the pad keeps its logo name in flash.
         (ID_CH_NAME..=203 | ID_NAME, EN_SETFOCUS) => {
@@ -302,6 +370,7 @@ mod tests {
         assert_eq!(number_setting(ID_STEP, "Never"), None, "an entry of another list changes nothing");
         assert_eq!(number_setting(ID_SHIFT, "3 px down"), None);
         assert_eq!(slider_brightness(40), 0.4);
+        assert_eq!(ID_PRESS + 8, 138, "the last press select ends its range in `changed`");
         assert_eq!(slider_brightness(0), 0.1, "the lights never go fully dark from the slider");
         assert_eq!(slider_brightness(250), 1.0);
     }

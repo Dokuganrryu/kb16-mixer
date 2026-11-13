@@ -2,7 +2,7 @@
 //! which of them the open tab shows. The cards and frames around them are painted by `scene`.
 
 use super::checks::CHANNEL_NAME_LEN;
-use super::choices::{BRIGHTNESS_PERCENT, KNOB_NAMES, ROW_NAMES};
+use super::choices::{BRIGHTNESS_PERCENT, KNOB_COLUMNS, KNOB_NAMES, ROW_NAMES};
 use super::controls::*;
 use super::ids::*;
 use super::{HIDDEN, STATUS_IDLE, TAB, TABS, Tab};
@@ -24,21 +24,25 @@ pub const FOOTER: i32 = 368;
 
 pub const TAB_TRACK: R = R::new(16, 8, 270, 32);
 pub const TAB_ITEM: (i32, i32) = (88, 26);
-pub const PAGE_TRACK: R = R::new(16, PAGE + 8, 182, 28);
-pub const PAGE_ITEM: (i32, i32) = (88, 22);
-pub const KEY_CARD: R = R::new(16, PAGE + 44, 680, 160);
+/// The page switch of the Keys tab sits in the header beside the tab strip, which leaves the
+/// page room for the key grid and the knob grid.
+pub const PAGE_TRACK: R = R::new(TAB_TRACK.x + TAB_TRACK.w + 8, 10, 134, 28);
+pub const PAGE_ITEM: (i32, i32) = (64, 22);
+pub const KEY_CARD: R = R::new(16, PAGE + 8, 680, 160);
 const KEY_COL: i32 = 112;
 const KEY_PITCH: i32 = 140;
+/// The knob grid under the key grid: a title row, then one row per knob, in the same columns.
+const KNOB_GRID: i32 = PAGE + 200;
 
 /// Channel card `i`.
 pub fn channel_card(i: i32) -> R {
     R::new(16 + i * 172, PAGE + 8, 164, 264)
 }
 
-pub const SCREEN_CARD: R = R::new(16, PAGE + 8, 376, 192);
-pub const KNOBS_CARD: R = R::new(16, PAGE + 208, 376, 104);
-pub const LIGHTS_CARD: R = R::new(400, PAGE + 8, 296, 144);
-pub const SYSTEM_CARD: R = R::new(400, PAGE + 160, 296, 152);
+pub const SCREEN_CARD: R = R::new(16, PAGE + 8, 376, 160);
+pub const SOUND_CARD: R = R::new(16, PAGE + 176, 376, 136);
+pub const LIGHTS_CARD: R = R::new(400, PAGE + 8, 296, 156);
+pub const SYSTEM_CARD: R = R::new(400, PAGE + 172, 296, 140);
 pub const CHIP: (i32, i32, i32) = (528, 384, 24);
 
 const fn look(font: Font, color: Tok, align: Align, wrap: bool) -> Label {
@@ -86,8 +90,6 @@ pub fn build(hwnd: HWND) {
         let r = at(PAGE_TRACK.x + 3 + p * PAGE_ITEM.0, PAGE_TRACK.y + 3, PAGE_ITEM.0, PAGE_ITEM.1);
         segment(hwnd, &format!("Page {}", p + 1), r, ID_PAGE + p, p == 0);
     }
-    let first = "The pad starts on page 1. A Switch page key flips to the other page.";
-    label(hwnd, -1, first, at(204, PAGE + 14, 492, 16), Label { wrap: false, ..HINT });
     let k = KEY_CARD;
     for c in 0..4 {
         text(hwnd, ID_COLUMN + c, "", R::new(k.x + KEY_COL + c * KEY_PITCH, k.y + 8, 132, 16), COLUMN);
@@ -99,15 +101,19 @@ pub fn build(hwnd: HWND) {
         }
     }
     let typing =
-        "Keys that type (media keys, F13 to F24, shortcuts) are typed by the pad itself as normal keyboard input.";
-    text(hwnd, -1, typing, R::new(16, PAGE + 212, 680, 16), HINT);
-    for i in 0..3 {
-        let x = 16 + i * 228;
-        text(hwnd, -1, KNOB_NAMES[i as usize], R::new(x, PAGE + 240, 216, 16), TITLE);
-        combo(hwnd, ID_KNOB + i, x, PAGE + 260, 216);
+        "The pad starts on page 1. Keys that type (media keys, F13 to F24, shortcuts) are typed by the pad itself.";
+    text(hwnd, -1, typing, R::new(16, PAGE + 176, 680, 16), HINT);
+    for (c, head) in KNOB_COLUMNS.iter().enumerate() {
+        text(hwnd, -1, head, R::new(k.x + KEY_COL + c as i32 * KEY_PITCH, KNOB_GRID, 132, 16), TITLE);
     }
-    let knobs = "Press a knob to pick one app in its channel. It goes back to the whole channel after 8 seconds.";
-    text(hwnd, -1, knobs, R::new(16, PAGE + 296, 680, 16), HINT);
+    for i in 0..3 {
+        let y = KNOB_GRID + 20 + i * 32;
+        text(hwnd, -1, KNOB_NAMES[i as usize], R::new(k.x + 12, y, 96, 28), ROW);
+        combo(hwnd, ID_KNOB + i, k.x + KEY_COL, y, 132);
+        for p in 0..3 {
+            combo(hwnd, ID_PRESS + i * 3 + p, k.x + KEY_COL + (p + 1) * KEY_PITCH, y, 132);
+        }
+    }
 
     // ---- Channels
     on(Tab::Channels);
@@ -138,20 +144,22 @@ pub fn build(hwnd: HWND) {
     row(hwnd, s, 36, "Name on the screen", 184);
     let name = edit(hwnd, ID_NAME, at(s.x + 204, s.y + 36, 160, 28), 10, ES_UPPERCASE);
     send(name, EM_LIMITTEXT, kb16_mixer_protocol::LOGO_NAME_LEN, 0);
-    hint(hwnd, s, 66, "1 to 10 letters, digits or spaces");
-    row(hwnd, s, 86, "Screen shift", 184);
-    combo(hwnd, ID_SHIFT, s.x + 204, s.y + 86, 160);
-    hint(hwnd, s, 116, "Moves the picture down if its top is cut off.");
-    row(hwnd, s, 136, "Screen off after", 184);
-    combo(hwnd, ID_SCREEN_OFF, s.x + 204, s.y + 136, 160);
-    hint(hwnd, s, 166, counted);
+    row(hwnd, s, 68, "Screen shift", 184);
+    combo(hwnd, ID_SHIFT, s.x + 204, s.y + 68, 160);
+    row(hwnd, s, 100, "Screen off after", 184);
+    combo(hwnd, ID_SCREEN_OFF, s.x + 204, s.y + 100, 160);
+    hint(hwnd, s, 130, counted);
 
-    let k = KNOBS_CARD;
-    title(hwnd, k, "Knobs");
+    let k = SOUND_CARD;
+    title(hwnd, k, "Sound");
     row(hwnd, k, 36, "Knob step", 184);
     combo(hwnd, ID_STEP, k.x + 204, k.y + 36, 160);
     row(hwnd, k, 68, "Focus turns the others down to", 184);
     combo(hwnd, ID_DUCK, k.x + 204, k.y + 68, 160);
+    // Device names are long, and the row's label is short: the box takes the room.
+    row(hwnd, k, 100, "Output device", 104);
+    combo(hwnd, ID_OUTPUT, k.x + 124, k.y + 100, 240);
+    send(child(ID_OUTPUT), CB_SETDROPPEDWIDTH, scale(320) as usize, 0);
 
     let l = LIGHTS_CARD;
     title(hwnd, l, "Lights");
@@ -162,16 +170,18 @@ pub fn build(hwnd: HWND) {
     send(bar, TBM_SETRANGE, 1, (BRIGHTNESS_PERCENT.1 << 16) | BRIGHTNESS_PERCENT.0);
     crate::ui::widget::add(bar, crate::ui::widget::Kind::Slider, None);
     text(hwnd, ID_BRIGHTNESS_VALUE, "", R::new(l.x + 248, l.y + 36, 36, 28), VALUE);
-    row(hwnd, l, 76, "Dim lights after", 112);
-    combo(hwnd, ID_LIGHTS_DIM, l.x + 132, l.y + 76, 152);
-    hint(hwnd, l, 106, counted);
+    row(hwnd, l, 68, "Dim lights after", 112);
+    combo(hwnd, ID_LIGHTS_DIM, l.x + 132, l.y + 68, 152);
+    row(hwnd, l, 100, "Dim lights to", 112);
+    combo(hwnd, ID_IDLE_LIGHTS, l.x + 132, l.y + 100, 152);
+    hint(hwnd, l, 130, counted);
 
     let y = SYSTEM_CARD;
     title(hwnd, y, "System");
     toggle(hwnd, "Start with Windows", y.x + 12, y.y + 36, ID_AUTOSTART);
-    button(hwnd, "Open config file", y.x + 12, y.y + 76, 120, ID_OPEN_FILE);
-    button(hwnd, "Open settings folder", y.x + 140, y.y + 76, 144, ID_OPEN_FOLDER);
-    text(hwnd, ID_VERSION, "", R::new(y.x + 12, y.y + 116, 272, 32), HINT);
+    button(hwnd, "Open config file", y.x + 12, y.y + 72, 120, ID_OPEN_FILE);
+    button(hwnd, "Open settings folder", y.x + 140, y.y + 72, 144, ID_OPEN_FOLDER);
+    text(hwnd, ID_VERSION, "", R::new(y.x + 12, y.y + 108, 272, 16), HINT);
 
     // ---- The footer.
     BUILDING.set(None);
@@ -217,15 +227,20 @@ mod tests {
     fn boxes() -> Vec<(Option<usize>, &'static str, R)> {
         let mut b = vec![(None, "tabs", TAB_TRACK), (None, "close", R::new(608, FOOTER + 14, 88, 28))];
         b.push((None, "status", R::new(16, FOOTER + 1, 500, 55)));
-        b.push((Some(0), "page switch", PAGE_TRACK));
+        b.push((None, "page switch", PAGE_TRACK));
+        b.push((None, "pad status", R::new(WIDTH - 276, 8, 260, 32)));
         b.push((Some(0), "key card", KEY_CARD));
+        b.push((Some(0), "key hint", R::new(16, PAGE + 176, 680, 16)));
         for k in 0..3 {
-            b.push((Some(0), "knob select", R::new(16 + k * 228, PAGE + 260, 216, 28)));
+            for c in 0..4 {
+                let x = KEY_CARD.x + KEY_COL + c * KEY_PITCH;
+                b.push((Some(0), "knob select", R::new(x, KNOB_GRID + 20 + k * 32, 132, 28)));
+            }
         }
         for i in 0..4 {
             b.push((Some(1), "channel card", channel_card(i)));
         }
-        for card in [SCREEN_CARD, KNOBS_CARD, LIGHTS_CARD, SYSTEM_CARD] {
+        for card in [SCREEN_CARD, SOUND_CARD, LIGHTS_CARD, SYSTEM_CARD] {
             b.push((Some(2), "pad card", card));
         }
         b

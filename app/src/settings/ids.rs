@@ -7,6 +7,7 @@ pub const ID_PAGE: i32 = 20; // + page
 pub const ID_COLUMN: i32 = 30; // + column: channel name over a key column
 pub const ID_KEY: i32 = 100; // + row * 4 + col
 pub const ID_KNOB: i32 = 120; // + knob
+pub const ID_PRESS: i32 = 130; // + knob * 3 + part (tap, hold, double)
 pub const ID_CH_NAME: i32 = 200; // + channel, and the same for the rest of the channel ids
 pub const ID_CH_KIND: i32 = 210;
 pub const ID_CH_ABOUT: i32 = 220;
@@ -26,6 +27,8 @@ pub const ID_OPEN_FILE: i32 = 308;
 pub const ID_OPEN_FOLDER: i32 = 309;
 pub const ID_VERSION: i32 = 310;
 pub const ID_BRIGHTNESS_VALUE: i32 = 311;
+pub const ID_OUTPUT: i32 = 312;
+pub const ID_IDLE_LIGHTS: i32 = 313;
 pub const ID_STATUS: i32 = 400;
 pub const ID_CLOSE: i32 = 401;
 /// Labels nothing refers to get ids from here up.

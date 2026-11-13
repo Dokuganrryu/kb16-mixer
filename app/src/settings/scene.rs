@@ -73,7 +73,7 @@ pub fn paint(cv: &mut Canvas, hwnd: HWND) {
             }
         }
         Tab::Pad => {
-            for card in [SCREEN_CARD, KNOBS_CARD, LIGHTS_CARD, SYSTEM_CARD] {
+            for card in [SCREEN_CARD, SOUND_CARD, LIGHTS_CARD, SYSTEM_CARD] {
                 draw::card(cv, scaled(card));
             }
         }

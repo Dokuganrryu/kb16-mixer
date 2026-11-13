@@ -4,9 +4,10 @@
 use super::checks::{Member, members};
 use super::choices::*;
 use super::controls::{child, fill_combo, fill_list, set_checked, set_text, status};
+use super::file::output_name;
 use super::ids::*;
 use super::layout::{place_remove, show_tab};
-use super::{HIDDEN, MEMBERS, PAGE, SEEN, window};
+use super::{DEVICES, HIDDEN, MEMBERS, PAGE, SEEN, window};
 use crate::config::{self, PAGES};
 use crate::win::send;
 
@@ -22,8 +23,9 @@ pub fn pad_line() -> String {
     }
 }
 
+/// The app's version; the header beside the tabs shows the pad's.
 pub fn version_line() -> String {
-    format!("KB16 mixer {}.   {}", env!("CARGO_PKG_VERSION"), pad_line())
+    format!("KB16 mixer {}.", env!("CARGO_PKG_VERSION"))
 }
 
 /// The slider's value as the text beside it ("65%").
@@ -71,6 +73,7 @@ pub fn fill(boxes: bool) -> Option<String> {
     };
     let raw = config::raw_keys(&text);
     let moved = config::load_apps();
+    let output_name = output_name(&text);
     SEEN.set(Some(text));
     let mut hidden = Vec::new();
 
@@ -90,6 +93,11 @@ pub fn fill(boxes: bool) -> Option<String> {
     }
     for k in 0..3 {
         fill_combo(ID_KNOB + k as i32, knob_choices(&cfg), knob_index(&cfg, cfg.knobs[k]));
+        let press = &cfg.knob_press[k];
+        for (p, part) in [&press.tap, &press.hold, &press.double].into_iter().enumerate() {
+            let (list, at) = press_choices(part);
+            fill_combo(ID_PRESS + (k * 3 + p) as i32, list, at);
+        }
     }
 
     // Channels
@@ -126,9 +134,12 @@ pub fn fill(boxes: bool) -> Option<String> {
     show_brightness();
     fill_combo(ID_STEP, labelled(STEPS), nearest(STEPS, |v| (v - cfg.step as f64).abs()));
     fill_combo(ID_DUCK, labelled(DUCKS), nearest(DUCKS, |v| (v - cfg.duck as f64).abs()));
+    let (list, at) = DEVICES.with_borrow(|d| output_choices(&cfg.output, d, output_name.as_deref()));
+    fill_combo(ID_OUTPUT, list, at);
     fill_combo(ID_SHIFT, shift_entries(), cfg.oled_top as usize);
     fill_combo(ID_SCREEN_OFF, labelled(MINUTES), minutes_at(cfg.screen_off_min));
     fill_combo(ID_LIGHTS_DIM, labelled(MINUTES), minutes_at(cfg.lights_dim_min));
+    fill_combo(ID_IDLE_LIGHTS, labelled(IDLE_LIGHTS), idle_lights_at(cfg.idle_led_percent));
     set_checked(ID_AUTOSTART, crate::autostart_enabled());
     set_text(ID_VERSION, &version_line());
 
@@ -176,10 +187,9 @@ pub fn apps_moved() {
     }
 }
 
-/// The pad came or went: the version line and the header say so.
+/// The pad came or went: the header says so.
 pub fn pad_changed() {
     if window().is_some() {
-        set_text(ID_VERSION, &version_line());
         super::scene::pad_status_changed();
     }
 }

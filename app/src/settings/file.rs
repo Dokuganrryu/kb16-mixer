@@ -83,6 +83,48 @@ pub fn set_knob(doc: &mut DocumentMut, knob: usize, text: &str) {
     put_in(table(doc, "knobs"), &format!("knob{}", knob + 1), text.into());
 }
 
+/// Sets one part ("tap", "hold" or "double") of a knob's press in [knob_press.knobN], made as
+/// a section (or inline, inside an inline [knob_press]) if it is missing.
+pub fn set_press(doc: &mut DocumentMut, knob: usize, part: &str, text: &str) {
+    if doc.get("knob_press").and_then(Item::as_table_like).is_none() {
+        let mut t = Table::new();
+        t.set_implicit(true);
+        doc["knob_press"] = Item::Table(t);
+    }
+    let presses = table(doc, "knob_press");
+    let name = format!("knob{}", knob + 1);
+    if presses.get(&name).and_then(Item::as_table_like).is_none() {
+        // Inside an inline [knob_press], toml_edit makes the new table inline too.
+        presses.insert(&name, Item::Table(Table::new()));
+    }
+    if let Some(press) = presses.get_mut(&name).and_then(Item::as_table_like_mut) {
+        put_in(press, part, text.into());
+    }
+}
+
+pub fn set_idle_percent(doc: &mut DocumentMut, percent: i64) {
+    put_in(table(doc, "lights"), "idle_percent", percent.into());
+}
+
+/// Sets `[audio] output`; a device gets its name in a comment beside the id, so the window can
+/// still name it while it is unplugged.
+pub fn set_output(doc: &mut DocumentMut, id: &str, name: Option<&str>) {
+    let audio = table(doc, "audio");
+    put_in(audio, "output", id.into());
+    if let Some(v) = audio.get_mut("output").and_then(Item::as_value_mut) {
+        let comment = name.map(|n| format!("  # {}", n.replace(['\r', '\n'], " ")));
+        v.decor_mut().set_suffix(comment.unwrap_or_default());
+    }
+}
+
+/// The device name in the comment beside `[audio] output`, if there is one. A plain scan of
+/// the lines: `output` is a key of [audio] only.
+pub fn output_name(text: &str) -> Option<String> {
+    let line = text.lines().find(|l| l.split('=').next().is_some_and(|k| k.trim() == "output"))?;
+    let name = line.split_once('#')?.1.trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
 pub fn set_number(doc: &mut DocumentMut, name: &str, v: f64) {
     put(&mut doc[name], if v.fract() == 0.0 { (v as i64).into() } else { v.into() });
 }
@@ -243,6 +285,57 @@ mod tests {
         assert_eq!(cfg.pages[1][1][0], KeyAction::Keyboard { code: 0x70, mods: 0 });
         assert_eq!(cfg.pages[1][1][1], KeyAction::Keyboard { code: 0x08, mods: 0 }, "keys2 row2 keeps its others");
         assert!(text.starts_with("knobs = { knob1 = \"master\", knob2 = \"Media\""), "still inline: {text}");
+    }
+
+    #[test]
+    fn presses_lights_and_the_output_device_are_written_in_their_tables() {
+        use crate::config::{Output, PressAction};
+        let text = edited(config::DEFAULT, |d| {
+            set_press(d, 2, "double", "open:C:\\Tools\\obs64.exe");
+            set_press(d, 0, "hold", "none");
+            set_idle_percent(d, 20);
+            set_output(d, "{0.0.0.00000000}.{a}", Some("USB speakers"));
+            Ok(())
+        });
+        let cfg = config::parse(&text).unwrap();
+        assert_eq!(cfg.knob_press[2].double, PressAction::Open("C:\\Tools\\obs64.exe".into()));
+        assert_eq!(cfg.knob_press[0].hold, PressAction::Nothing);
+        assert_eq!(cfg.knob_press[1], config::defaults().knob_press[1], "the other knobs stay");
+        assert_eq!(cfg.idle_led_percent, 20);
+        assert_eq!(cfg.output, Output::Device("{0.0.0.00000000}.{a}".into()));
+        assert!(text.contains("output = \"{0.0.0.00000000}.{a}\"  # USB speakers\n"), "{text}");
+        assert_eq!(output_name(&text).as_deref(), Some("USB speakers"));
+        assert_eq!(text.lines().count(), config::DEFAULT.lines().count(), "edited in place");
+        // Back to the Windows default: the name goes with the id.
+        let text = edited(&text, |d| {
+            set_output(d, "default", None);
+            Ok(())
+        });
+        assert!(text.contains("output = \"default\"\n"), "{text}");
+        assert_eq!(output_name(&text), None);
+
+        // A file without the tables gets them; an inline [knob_press] stays inline.
+        let bare = "[[channel]]\nname = \"Game\"\ntarget = \"other\"\n";
+        let text = edited(bare, |d| {
+            set_press(d, 1, "tap", "pick");
+            set_idle_percent(d, 3);
+            Ok(())
+        });
+        let cfg = config::parse(&text).unwrap();
+        assert_eq!(cfg.knob_press[1].tap, PressAction::Pick);
+        assert_eq!(cfg.knob_press[1].hold, PressAction::Pick, "left out: the default");
+        assert_eq!(cfg.idle_led_percent, 3);
+        assert!(text.contains("[knob_press.knob2]\ntap = \"pick\""), "{text}");
+        assert!(!text.contains("[knob_press]\n"), "no empty parent section: {text}");
+        let inline = format!("knob_press = {{ knob1 = {{ tap = \"none\" }} }}\n{bare}");
+        let text = edited(&inline, |d| {
+            set_press(d, 2, "hold", "mute");
+            Ok(())
+        });
+        let first = text.lines().next().unwrap_or_default();
+        assert!(first.starts_with("knob_press = { knob1 = { tap = \"none\" }"), "{text}");
+        assert!(first.ends_with("knob3 = { hold = \"mute\" } }"), "still one inline table: {text}");
+        assert_eq!(config::parse(&text).unwrap().knob_press[2].hold, PressAction::Mute);
     }
 
     #[test]
