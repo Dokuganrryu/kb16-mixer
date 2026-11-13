@@ -73,6 +73,28 @@ When the window moves to a display with a different scale (`WM_DPICHANGED`), the
 | List | `LISTBOX`, owner-drawn | `WM_DRAWITEM` for each row. The parent paints the frame. |
 | Label, status line | `STATIC`, `SS_OWNERDRAW` | `WM_DRAWITEM`. |
 
+## Layout of the tabs
+
+The window does not grow. When a tab must hold more controls, the layout moves or removes text, and keeps the 4 px grid and the 28 px controls.
+
+- **Keys**: the key grid is in a card.
+  Under it, the knob grid has one row for each knob, in the same columns as the key grid: **Turn**, **Tap**, **Hold** and **Double tap**.
+  The page switch (**Page 1**, **Page 2**) is in the header, at the right of the tab strip.
+  It shows only on the Keys tab.
+- **Channels**: one card for each channel.
+- **Pad**: four cards: **Screen**, **Sound**, **Lights** and **System**.
+  **Sound** holds the knob step, the Focus level and the output device.
+  **Lights** holds the brightness, the dim time and the idle level (**Dim lights to**).
+
+Holds and double taps of keys (`[keys_hold]` and the other tables like it) have no controls, because the Keys tab has no more space.
+Set them in `config.toml`.
+
+The **Output device** select gets the list of output devices when the window opens, and again when its list opens.
+No timer reads the list.
+A device that is not connected shows as "*name* (not connected)" and stays selected.
+Windows does not give the name of a device that is not connected.
+Thus the app writes the name in a comment after the device id in `config.toml`.
+
 A control that has the keyboard focus gets a 2 px ring in the accent colour, 2 px outside the control.
 The parent paints the ring.
 Windows hides the ring until the user presses a key (`UISF_HIDEFOCUS`).
