@@ -39,6 +39,7 @@ These are the facts about the code:
 - For the Move key and a `focused` channel, the app asks Windows which program has the foreground window.
 - Keys that type (media keys, F13–F24, shortcuts, digits) come from the pad itself, as usual USB keyboard input.
 - An `open:` key starts its target through the Windows shell, as a double-click in Explorer does.
+- One key can send a key combination, for example `Win+Shift+S` (a default key on page 1). The rules of some games forbid one key that sends a combination. This project has no macros (a series of keys). But the owner of the game makes the rules.
 
 ## Are administrator rights necessary?
 

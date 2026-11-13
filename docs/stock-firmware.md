@@ -58,6 +58,8 @@ If the pad starts as usual (the screen and the lights come on), this procedure d
 
 Status: **from the seller's documentation, not tested here**. The QMK readme also names "the button on the back of the PCB".
 
+The author of this project does not know where the reset button is on the board. Nobody photographed it.
+
 > **CAUTION:** The seller says that you must remove the bottom cover with a hexagon screwdriver. Do not touch the components on the board. Static electricity can damage them.
 
 1. Disconnect the pad.
@@ -65,8 +67,6 @@ Status: **from the seller's documentation, not tested here**. The QMK readme als
 3. Connect the pad.
 4. Push the reset button one time. Do not touch other parts.
 5. Look for `Maple 003` in Device Manager.
-
-This project does not know where the button is on the board. This project has no photo of it.
 
 ### Procedure 3: a RESET key that you set with an old `VIA` version
 

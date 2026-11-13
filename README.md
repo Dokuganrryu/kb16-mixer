@@ -44,7 +44,7 @@ Do these checks before you change anything. If one check does not agree, **stop 
 
 1. The model is **KB16-01** (16 keys, 2 small knobs, 1 large knob, a screen, a cable, no battery). The wireless KB16B-02 is not supported.
 2. Device Manager shows the USB ID `VID_D010&PID_1601`.
-3. In the bootloader, Windows shows `Maple 003` with the USB ID `1EAF:0003`. A rev1 pad shows a different bootloader.
+3. In the bootloader, Windows shows `Maple 003` with the USB ID `1EAF:0003`. A rev1 pad shows an Atmel DFU bootloader (USB ID `03EB:2FF4`). This project does not support rev1.
 4. After you download the release zip (step 1 of the quick start), run `kb16-mixer.exe --check`. On the `pad` line, it shows `WARN  A pad with other firmware is connected (USB D010:1601, ...)`.
 
 The full check, with the steps, is in [docs/install.md](docs/install.md#2-examine-your-pad).
