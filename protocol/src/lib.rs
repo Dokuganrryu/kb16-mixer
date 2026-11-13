@@ -29,6 +29,7 @@
 //! the screen can show) stays with the side that acts on it.
 
 #![no_std]
+#![forbid(unsafe_code)]
 
 /// USB vendor and product id of the pad (the stock DOIO KB16-01 ids).
 pub const VID: u16 = 0xD010;
