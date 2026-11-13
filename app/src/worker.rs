@@ -63,6 +63,7 @@ pub fn run(events: Receiver<PadEvent>, shared: Shared) {
         w.take_config(&cfg, shared.generation.load(Ordering::Relaxed));
         let shown_page = w.keys.page();
         w.mixer.refresh(&cfg.channels, false);
+        w.put_back_talk(&cfg.channels);
 
         let is_paused = shared.paused.load(Ordering::Relaxed);
         let mut popup = None;
@@ -117,6 +118,9 @@ struct Worker {
     aims: [trim::Aim; 3],
     knob_buttons: KnobButtons,
     saved: Saved,
+    /// The mic's mute state from before a Talk key that the last run left held (it crashed),
+    /// until the mic is there to take it.
+    talk_left: Option<bool>,
     /// When `saved` is to be written next; None when the file holds it.
     save_at: Option<Instant>,
     seen_generation: u64,
@@ -148,6 +152,7 @@ impl Worker {
             aims: Default::default(),
             knob_buttons: KnobButtons::default(),
             saved: config::load_state(),
+            talk_left: None,
             save_at: None,
             seen_generation: u64::MAX,
             names: Vec::new(),
@@ -209,6 +214,8 @@ impl Worker {
         // After that the mixer keeps its own: Focus has just put back what it turned down.
         if starting {
             mixer.restore = self.saved.restore.clone();
+            mixer.restore_ids = self.saved.restore_ids.clone();
+            self.talk_left = self.saved.talk;
         }
         mixer.trims = self.saved.trims.clone();
         self.aims = Default::default();
@@ -388,9 +395,17 @@ impl Worker {
         aim.touch(now);
     }
 
+    /// Puts the mic back as it was before a Talk key that the last run left held.
+    fn put_back_talk(&mut self, channels: &[ChannelCfg]) {
+        if let Some(muted) = talk_to_put_back(&mut self.talk_left, self.mixer.has_mic()) {
+            self.mixer.set_mic_muted(muted, channels);
+        }
+    }
+
     /// Writes state.toml when `save_due` says so.
     fn save(&mut self, channels: &[ChannelCfg], closing: bool) {
-        let now_state = saved_state(&self.mixer, channels);
+        let talk = self.keys.talk_restore().or(self.talk_left);
+        let now_state = saved_state(&self.mixer, channels, talk);
         if save_due(&mut self.saved, &mut self.save_at, now_state, closing, Instant::now()) {
             config::save_state(&self.saved);
         }
@@ -541,11 +556,18 @@ impl KnobButtons {
     }
 }
 
-/// What is worth remembering across runs: levels set on the pad, trims, and what Focus has
-/// turned down.
-fn saved_state(mixer: &Mixer, channels: &[ChannelCfg]) -> Saved {
+/// The Talk state the last run left to put back, once the mic is there to take it.
+fn talk_to_put_back(left: &mut Option<bool>, has_mic: bool) -> Option<bool> {
+    if has_mic { left.take() } else { None }
+}
+
+/// What is worth remembering across runs: levels set on the pad, trims, what Focus has turned
+/// down, and the mic state from before a held Talk key (`talk`).
+fn saved_state(mixer: &Mixer, channels: &[ChannelCfg], talk: Option<bool>) -> Saved {
     Saved {
         restore: mixer.restore.clone(),
+        restore_ids: mixer.restore_ids.clone(),
+        talk,
         levels: channels
             .iter()
             .zip(&mixer.faders)
@@ -563,11 +585,14 @@ fn saved_state(mixer: &Mixer, channels: &[ChannelCfg]) -> Saved {
 
 /// Takes in the state as it is `now` and says whether to write it. A level or a trim set on the
 /// pad waits `SAVE_AFTER` after the last change, so a knob spin is written once. A change to
-/// what Focus has turned down is due at once: it is what puts those apps right after a crash
-/// or a power cut. Closing writes whatever is still waiting.
+/// what Focus has turned down, or a Talk key going down or up, is due at once: it is what puts
+/// those apps and the mic right after a crash or a power cut. Closing writes whatever is still
+/// waiting.
 fn save_due(saved: &mut Saved, save_at: &mut Option<Instant>, now_state: Saved, closing: bool, now: Instant) -> bool {
     if now_state != *saved {
-        let urgent = now_state.restore != saved.restore;
+        let urgent = now_state.restore != saved.restore
+            || now_state.restore_ids != saved.restore_ids
+            || now_state.talk != saved.talk;
         *saved = now_state;
         *save_at = Some(if urgent { now } else { now + SAVE_AFTER });
     }
@@ -752,6 +777,27 @@ mod tests {
     }
 
     #[test]
+    fn session_levels_and_a_held_talk_key_are_written_at_once() {
+        let t0 = Instant::now();
+        let (mut saved, mut save_at) = (Saved::default(), None);
+        let session = Saved { restore_ids: [("a".to_string(), 0.6)].into(), ..Saved::default() };
+        assert!(save_due(&mut saved, &mut save_at, session, false, t0), "a session Focus turned down");
+        let talk = Saved { talk: Some(false), ..saved.clone() };
+        assert!(save_due(&mut saved, &mut save_at, talk, false, t0), "Talk went down");
+        let let_go = Saved { talk: None, ..saved.clone() };
+        assert!(save_due(&mut saved, &mut save_at, let_go, false, t0), "Talk went up");
+    }
+
+    #[test]
+    fn talk_left_held_by_the_last_run_is_put_back_once_the_mic_is_there() {
+        let mut left = Some(true);
+        assert_eq!(talk_to_put_back(&mut left, false), None, "no mic yet: wait");
+        assert_eq!(left, Some(true), "and keep it on disk");
+        assert_eq!(talk_to_put_back(&mut left, true), Some(true));
+        assert_eq!(talk_to_put_back(&mut left, true), None, "once");
+    }
+
+    #[test]
     fn a_knob_set_to_selected_follows_focus() {
         assert_eq!(knob_channel(KnobBinding::Selected, None, 2, 4), Some(2), "the default channel");
         assert_eq!(knob_channel(KnobBinding::Selected, Some(1), 2, 4), Some(1), "the one Focus stands out");
@@ -798,10 +844,13 @@ mod tests {
         mixer.faders[3].volume = 0.9; // read from an app, never set on the pad
         mixer.trims = [("a.exe".to_string(), 0.12345), ("b.exe".to_string(), 0.9995)].into();
         mixer.restore = [("c.exe".to_string(), 0.7)].into();
-        let state = saved_state(&mixer, &channels);
+        mixer.restore_ids = [("c1".to_string(), 0.7)].into();
+        let state = saved_state(&mixer, &channels, Some(true));
         assert_eq!(state.levels, [("Game".to_string(), 0.46)].into(), "only what was set on the pad");
         assert_eq!(state.trims, [("a.exe".to_string(), 0.123)].into(), "a trim of about 1 is no trim");
         assert_eq!(state.restore, mixer.restore);
+        assert_eq!(state.restore_ids, mixer.restore_ids);
+        assert_eq!(state.talk, Some(true), "the mic state from before a held Talk key");
     }
 
     #[test]

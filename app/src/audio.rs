@@ -153,6 +153,9 @@ pub struct Mixer {
     /// down when they closed or when the last run ended: their slider may still show the
     /// turned-down level, so they get the real one back when they appear. Saved to disk.
     pub restore: HashMap<String, f32>,
+    /// The same by session id, which `restore` falls back from: two sessions of one app can
+    /// stand at different levels. Only a session still live after a crash matches. Saved to disk.
+    pub restore_ids: HashMap<String, f32>,
     /// Each app's share of its channel level, by exe; missing = `trim::FULL`. Saved to disk.
     pub trims: HashMap<String, f32>,
 }
@@ -176,6 +179,7 @@ impl Mixer {
                 duck: 0.25,
                 ducked: HashMap::new(),
                 restore: HashMap::new(),
+                restore_ids: HashMap::new(),
                 trims: HashMap::new(),
             })
         }
@@ -279,7 +283,11 @@ impl Mixer {
         let mut seen = Seen { adopted: vec![false; channels.len()], ..Seen::default() };
         for s in &sessions {
             let ducked = s.channel.is_some_and(|c| self.is_ducked(c, channels));
-            let left = if self.ducked.contains_key(&s.id) { None } else { left_over.get(&s.exe).copied() };
+            let left = if self.ducked.contains_key(&s.id) {
+                None
+            } else {
+                self.restore_ids.get(&s.id).or_else(|| left_over.get(&s.exe)).copied()
+            };
             if !ducked && let Some(level) = self.ducked.remove(&s.id).or(left) {
                 // No longer turned down (Focus ended while the app was gone, or the session left
                 // a turned-down channel), but its slider still shows the reduced level: put the
@@ -307,6 +315,8 @@ impl Mixer {
         }
         let live: HashSet<&str> = sessions.iter().map(|s| s.id.as_str()).collect();
         self.ducked.retain(|id, _| live.contains(id.as_str()));
+        // A session id never comes back once its session has ended.
+        self.restore_ids.retain(|id, _| live.contains(id.as_str()));
         self.sessions = sessions;
         self.sync_restore();
     }
@@ -389,14 +399,18 @@ impl Mixer {
         }
     }
 
-    /// Rebuilds `restore` from `ducked`. An app that is not running keeps its entry, so it gets
-    /// its real level back when it returns, whether or not Focus is still on then.
+    /// Rebuilds `restore` and `restore_ids` from `ducked`. An app that is not running keeps its
+    /// entry, so it gets its real level back when it returns, whether or not Focus is still on
+    /// then. Before the first refresh nothing is live, so the saved entries all stay.
     fn sync_restore(&mut self) {
         let live: HashSet<&str> = self.sessions.iter().map(|s| s.exe.as_str()).collect();
         self.restore.retain(|exe, _| !live.contains(exe.as_str()));
+        let live_ids: HashSet<&str> = self.sessions.iter().map(|s| s.id.as_str()).collect();
+        self.restore_ids.retain(|id, _| !live_ids.contains(id.as_str()));
         for s in &self.sessions {
             if let Some(&level) = self.ducked.get(&s.id) {
                 self.restore.insert(s.exe.clone(), level);
+                self.restore_ids.insert(s.id.clone(), level);
             }
         }
     }
@@ -639,6 +653,10 @@ impl Mixer {
         }
         self.sync_restore();
         self.app_readout(channel, exe)
+    }
+
+    pub fn has_mic(&self) -> bool {
+        self.mic.is_some()
     }
 
     pub fn mic_muted(&self) -> bool {
@@ -1281,6 +1299,24 @@ mod tests {
         settled_refresh(&mut m, windows_has(&[("a", "spotify.exe", &a, MEDIA), ("b", "spotify.exe", &b, MEDIA)]), true);
         assert!(close(a.get(), 0.7) && close(b.get(), 0.7), "{} {}", a.get(), b.get());
         assert!(m.restore.is_empty());
+    }
+
+    #[test]
+    fn crash_recovery_gives_two_sessions_of_one_app_their_own_levels() {
+        let (a, b) = (Fake::at(0.4), Fake::at(0.8));
+        let mut before = mixer([0.8, 0.5]);
+        before.faders[MEDIA].touched = Some(Instant::now()); // just turned: Windows is not read back
+        let both = || windows_has(&[("a", "spotify.exe", &a, MEDIA), ("b", "spotify.exe", &b, MEDIA)]);
+        before.follow(both(), &channels(), true);
+        before.set_focus(Some(GAME), &channels());
+        assert!(close(a.get(), 0.1) && close(b.get(), 0.2));
+        // The run ends mid-focus; the next one starts from what was saved, the sessions still live.
+        let mut m = mixer([0.8, 0.5]);
+        m.restore = before.restore.clone();
+        m.restore_ids = before.restore_ids.clone();
+        settled_refresh(&mut m, both(), true);
+        assert!(close(a.get(), 0.4) && close(b.get(), 0.8), "{} {}", a.get(), b.get());
+        assert!(m.restore.is_empty() && m.restore_ids.is_empty());
     }
 
     #[test]

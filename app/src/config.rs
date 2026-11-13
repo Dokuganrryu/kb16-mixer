@@ -930,6 +930,16 @@ pub struct Saved {
     /// and that write (a few milliseconds) loses it.
     #[serde(default)]
     pub restore: HashMap<String, f32>,
+    /// The same by session id (session id -> real level), written with `restore`. Two sessions
+    /// of one app can stand at different levels; only a session still live at the next start
+    /// matches, and `restore` covers the rest.
+    #[serde(default)]
+    pub restore_ids: HashMap<String, f32>,
+    /// The mic's mute state from before the Talk key that is held now; none when no Talk key is
+    /// down. Written at once like `restore`, so a crash while Talk is held does not leave the mic
+    /// flipped: the next start puts it back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub talk: Option<bool>,
     /// Apps turned on their own inside a channel: exe -> share of the channel level (0..1).
     #[serde(default)]
     pub trims: HashMap<String, f32>,
@@ -1087,6 +1097,25 @@ mod tests {
         assert_eq!(c.step, 20.0);
         assert_eq!(c.brightness, 255);
         assert_eq!(c.oled_top, 6);
+    }
+
+    #[test]
+    fn the_saved_state_keeps_session_levels_and_talk_and_reads_an_older_file() {
+        let state = Saved {
+            restore_ids: [("{0.0.0}|session|1%b42".to_string(), 0.5)].into(),
+            talk: Some(true),
+            ..Saved::default()
+        };
+        let text = toml::to_string(&state).unwrap();
+        assert!(toml::from_str::<Saved>(&text).unwrap() == state, "{text}");
+        let older: Saved = toml::from_str(
+            "[restore]
+\"spotify.exe\" = 0.7
+",
+        )
+        .unwrap();
+        assert!(older.restore_ids.is_empty() && older.talk.is_none());
+        assert!(!toml::to_string(&Saved::default()).unwrap().contains("talk"), "no Talk held: no line");
     }
 
     #[test]

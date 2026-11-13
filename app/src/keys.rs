@@ -53,6 +53,11 @@ impl Keys {
         self.page
     }
 
+    /// The mic's mute state from before the Talk key that is down; none when no Talk key is.
+    pub fn talk_restore(&self) -> Option<bool> {
+        self.talk_restore
+    }
+
     pub fn press(&mut self, row: usize, col: usize, now: Instant, cfg: &Config, hands: &mut impl Hands) {
         if row >= 4 || col >= 4 {
             return;
