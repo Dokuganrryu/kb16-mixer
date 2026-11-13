@@ -23,7 +23,7 @@ labels: bug
 
 ## Versions
 
-<!-- The first line of the tray menu shows the versions, for example "KB16 mixer 0.1.0: pad connected, firmware 0.1.0". -->
+<!-- The first line of the tray menu shows the versions, for example "KB16 mixer 0.2.0: pad connected, firmware 0.2.0". -->
 
 - First line of the tray menu:
 - Release tag or git commit (if you built from source):

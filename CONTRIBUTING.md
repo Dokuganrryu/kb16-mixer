@@ -226,7 +226,7 @@ The maintainer makes each release. The full checklist is in [docs/releasing.md](
 
 1. Set the same version in the four `Cargo.toml` files.
 2. Move the entries of the "Unreleased" section of `CHANGELOG.md` to a new version section with a date.
-3. Push a tag of the form `v<major>.<minor>.<patch>`, for example `v0.1.0`. A suffix such as `v0.1.0-rc.1` is also possible.
+3. Push a tag of the form `v<major>.<minor>.<patch>`, for example `v0.2.0`. A suffix such as `v0.3.0-rc.1` is also possible.
 
 The tag starts `.github/workflows/release.yml`. The workflow checks the versions, builds the firmware image and the app, and makes a draft pre-release.
 The workflow does not publish a release. The maintainer does a test of the draft on a pad. If it is correct, the maintainer publishes it.
