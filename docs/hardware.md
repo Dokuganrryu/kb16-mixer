@@ -180,7 +180,7 @@ The firmware sends its version as the release number of its USB device (`bcdDevi
 
 The format is `0xJJMN` in binary-coded decimal, for version JJ.M.N. For example, version 0.1.0 is `0x0010`.
 Thus the major version can be 0–99, and the minor and patch versions can be 0–9. The build stops for a version that does not fit.
-Builds before version 0.1.0 had no version, and sent `0x0300`. The **Pad** tab then shows "Pad firmware: an early build without a version.", and `--check` shows "firmware unknown (an early build)".
+Builds before version 0.1.0 had no version, and sent `0x0300`. The top right of the settings window then shows "Pad firmware: an early build without a version.", and `--check` shows "firmware unknown (an early build)".
 
 The current firmware also has the version 0.1.0, but it is not the image of the draft release 0.1.0. It sends knob releases and reads the idle light byte. The version number does not show this difference.
 

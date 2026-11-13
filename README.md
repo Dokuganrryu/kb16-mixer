@@ -12,7 +12,7 @@ It is not a driver, and it does not route audio. The app uses no keyboard hooks 
 
 | Keys tab | Channels tab | Pad tab |
 |---|---|---|
-| ![The Keys tab of the settings window in the dark theme: the 16 keys of page 1, their actions, and the three knobs](docs/images/settings-keys.png) | ![The Channels tab: the four channels, what each channel plays, and the programs in the two app lists](docs/images/settings-channels.png) | ![The Pad tab: the name on the screen, the screen shift, the knob step, the Focus level, the light brightness, the screen and light timers, and the Start with Windows switch](docs/images/settings-pad.png) |
+| ![The Keys tab of the settings window in the dark theme: the 16 keys of page 1, their actions, and the target, tap, hold and double tap of each knob](docs/images/settings-keys.png) | ![The Channels tab: the four channels, what each channel plays, and the programs in the two app lists](docs/images/settings-channels.png) | ![The Pad tab: the name on the screen, the screen shift, the knob step, the Focus level, the output device, the light brightness, the screen and light timers, the idle light level, and the Start with Windows switch](docs/images/settings-pad.png) |
 
 ## What it does
 

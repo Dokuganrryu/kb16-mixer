@@ -73,10 +73,12 @@ In the window, "app" means a program, for example "These apps" or "App in front"
 
 | Control | Use |
 |---|---|
-| **Page 1**, **Page 2** | Select the page that the grid below shows. The pad starts on page 1. |
+| **Page 1**, **Page 2** | In the header, at the right of the tabs. Select the page that the key grid shows. The pad starts on page 1. |
 | Column names | The name of the channel of each column, or "(no channel)" |
 | **Row 1 (top)** to **Row 4 (bottom)** | One list for each key. Select the action of the key. |
-| **Small knob, left**, **Small knob, right**, **Big knob** | Select the target of each knob. |
+| **Left knob**, **Right knob**, **Big knob** | One row for each knob. |
+| **Turn** | Select the target of the knob. See [Knobs](#knobs). |
+| **Tap**, **Hold**, **Double tap** | Select the action of each knob press. See [Knob presses](#knob-presses). |
 
 The key lists contain these entries:
 
@@ -88,6 +90,19 @@ The key lists contain these entries:
 | **Nothing** | The key does nothing. |
 | **Shortcut...** | Opens the [Shortcut dialog](#shortcut-dialog). |
 | **Open...** | Opens the [Open dialog](#open-dialog). |
+
+The knob press lists contain these entries:
+
+| Entry | Action | Config value |
+|---|---|---|
+| **Mute** | Mutes or unmutes the knob target. The default for **Tap**. | `mute` |
+| **Pick app** | Selects the next program in the channel. The default for **Hold**. | `pick` |
+| **Nothing** | The press does nothing. The default for **Double tap**. | `none` |
+| **Open** and the target, for example **Open obs64.exe** | The current target, if the press opens a target. | `open:<what>` |
+| **Open...** | Opens the [Open dialog](#open-dialog). | `open:<what>` |
+
+The window has no controls for the hold and the double tap of a key. There is no space for them.
+To set them, edit `config.toml`. See [Hold and double tap on keys](#hold-and-double-tap-on-keys).
 
 A key can have an action from the config file that is not in the list, for example `ctrl+shift+m`. The list then shows it as an extra entry.
 
@@ -171,15 +186,24 @@ To add or remove a channel, edit the config file. See [Channels](#channels).
 | **Light brightness** | A slider, 10 % to 100 % | `brightness` |
 | **Knob step** | 1, 2, 3, 5 or 10 % per click | `step` |
 | **Focus turns the others down to** | Almost silent (10 %), A quarter (25 %), Half (50 %), Three quarters (75 %) | `duck` |
+| **Output device** | **Windows default output**, then each active output device by name. A chosen device that is not connected shows as "*name* (not connected)". It stays chosen. | `[audio] output` |
 | **Screen shift** | 0 to 6 px down | `oled_top` |
 | **Screen off after** | 1, 2, 5, 10 or 30 minutes, 1 hour, or Never | `screen_off_min` |
 | **Dim lights after** | 1, 2, 5, 10 or 30 minutes, 1 hour, or Never | `lights_dim_min` |
+| **Dim lights to** | Default (6%), 3%, 10%, 20% or 30% | `[lights] idle_percent` (0 = Default) |
 | **Start with Windows** | On or off | The registry, not the config file |
 | **Open config file** | Opens `config.toml` in Notepad | |
 | **Open settings folder** | Opens the settings folder in Explorer | |
 
-The line below the buttons shows the version of the app and of the firmware, for example `KB16 mixer 0.1.0.   Pad firmware 0.1.0.`
-If no pad is connected, it shows `Pad not connected.`
+The **Knob step**, **Focus turns the others down to** and **Output device** controls are on the **Sound** card.
+
+The window reads the list of output devices when it opens and when you open the list.
+Windows does not give the name of a device that is not connected. Thus the window writes the device name as a comment after the ID, for example `output = "{...}"  # Speakers`.
+
+A value of `idle_percent` that is not in the list shows as the nearest entry. The value 6 shows as **Default (6%)**.
+
+The line below the buttons shows the version of the app, for example `KB16 mixer 0.1.0.`
+The top right of the window shows the firmware version, for example `Pad firmware 0.1.0.`, on each tab. If no pad is connected, it shows `Pad not connected.`
 
 ## Edit the file by hand
 
@@ -271,8 +295,8 @@ The `[knobs]` table gives the target of each knob.
 
 | Setting | Knob | Default in the file |
 |---|---|---|
-| `knob1` | Small knob, left | `"Chat"` |
-| `knob2` | Small knob, right | `"Media"` |
+| `knob1` | Left knob (small) | `"Chat"` |
+| `knob2` | Right knob (small) | `"Media"` |
 | `knob3` | Big knob | `"Game"` |
 
 Values:

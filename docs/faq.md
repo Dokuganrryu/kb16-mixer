@@ -141,7 +141,7 @@ In PowerShell, use `Get-FileHash`. `flash.ps1` also shows the SHA-256 value of t
 
 ## How do I find the version?
 
-The first line of the tray menu shows the version of the app and of the firmware. The **Pad** tab of the settings window shows them too.
+The first line of the tray menu shows the version of the app and of the firmware. The settings window shows them too: the app version on the **Pad** tab, and the firmware version at the top right.
 `kb16-mixer.exe --check` also shows them.
 
 ## Does it work with other pads?

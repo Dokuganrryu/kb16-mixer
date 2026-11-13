@@ -47,7 +47,7 @@ The documents follow ASD-STE100 Simplified Technical English. STE lets a documen
 |---|---|
 | key | One of the 16 keys of the pad. The documents do not use "button" for a key. |
 | button | A control in a window of the app on the PC. |
-| knob | One of the 3 knobs of the pad: the small left knob, the small right knob and the large knob. |
+| knob | One of the 3 knobs of the pad: the small left knob, the small right knob and the large knob. The settings window calls them **Left knob**, **Right knob** and **Big knob**. |
 | detent | One click of a knob. One detent is one `TURN` message. |
 | tap | A push and release of a knob or a key in less than 350 ms. |
 | hold | A push of a knob or a key for 350 ms or more. The hold action starts while you hold. |

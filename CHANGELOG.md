@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The
 Nobody did a test of these changes on a pad.
 
 For the knob hold, the pad must have new firmware. The firmware of the draft release 0.1.0 does not send the knob release. Until you flash the new firmware, each knob press acts as a tap.
-The new firmware also has the version 0.1.0. Thus `--check` and the **Pad** tab do not tell it from the draft release.
+The new firmware also has the version 0.1.0. Thus `--check` and the settings window do not tell it from the draft release.
 
 ### Added
 
@@ -18,6 +18,7 @@ The new firmware also has the version 0.1.0. Thus `--check` and the **Pad** tab 
 - Protocol: byte 19 of `SETTINGS` (`idle_led_percent`) sets the light of the dimmed key lights. The new setting is `[lights] idle_percent`. The firmware of the draft release ignores the byte.
 - `[audio] output`: `"default"` follows the Windows default output device when it changes. A device ID selects one device. While that device is disconnected, the app uses the Windows default.
 - The `audio` line of `--check` tells which output device the app uses.
+- New controls in the settings window: **Output device** and **Dim lights to** (**Pad** tab), and the knob tap, hold and double tap (**Keys** tab).
 - Screen motion: the meters glide, a readout pushes in and out, and the page slides. A channel name flashes when its mute changes. The screen fades before it goes off.
 
 ### Changed
