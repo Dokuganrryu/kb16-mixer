@@ -851,6 +851,22 @@ mod tests {
     }
 
     #[test]
+    fn a_whole_write_leaves_the_complete_file_and_no_side_file() {
+        let dir = std::env::temp_dir().join(format!("kb16-write-whole-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("state.toml");
+        let long = "[levels]\n".to_string() + &"\"Game\" = 0.5\n".repeat(2000);
+        for text in [long.as_str(), "[levels]\n\"Chat\" = 0.25\n"] {
+            write_whole(&file, text).unwrap();
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), text, "the whole text, the old one replaced");
+            let names: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+            assert_eq!(names, ["state.toml"], "no side file is left");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_renamed_channel_is_told_from_a_reshuffle() {
         let before: Vec<String> = ["Mic", "Chat", "Game", "Media"].map(String::from).to_vec();
         let with = |names: [&str; 4]| {
