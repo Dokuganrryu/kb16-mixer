@@ -704,8 +704,8 @@ In a command prompt, type `kb16-mixer.exe --check | more`. In PowerShell, type `
 
 `--selftest` is for your own diagnosis. It writes `selftest.txt` in the settings folder:
 
-- One line for each audio session: the process ID, the program name, the channel and the volume.
-- One line for each channel: the name, the volume, the mute, and the peak level in 1.5 seconds. The line also tells if a program plays in the channel.
+- Each audio session has one line: the process ID, the program name, the channel and the volume.
+- Each channel has one line: the name, the volume, the mute state and the peak level in 1.5 seconds. The line also tells if a program plays in the channel.
 
 > **CAUTION:** `selftest.txt` holds the names of the programs that run on your PC. Do not paste it into a bug report. Use the `--check` report.
 

@@ -371,7 +371,7 @@ If the program does not start, the pad shows `Open failed`, and the app writes a
 ## What the app does not touch
 
 - It does not route, capture or record audio.
-- It does not create virtual audio devices.
+- It does not make virtual audio devices.
 - It does not install or load a driver.
 - It does not use keyboard hooks or mouse hooks.
 - It does not inject input. It does not send key presses or mouse movements.

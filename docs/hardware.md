@@ -153,7 +153,7 @@ After a power cycle, the bootloader finds no "stay" mark and starts the firmware
 The public source code of the stm32duino bootloader starts the firmware only if its first word is a stack pointer in RAM. Otherwise the bootloader stays in DFU mode. It checks the words at `0x08002000` and `0x08005000`. This project does not know if the bootloader in this pad has the same code.
 
 After a download, the bootloader does not start the new firmware. It waits for a power cycle.
-Thus each flash ends with one disconnect and one connect of the pad.
+Thus, after each flash, disconnect the pad and connect it again.
 
 ## How the firmware uses the bootloader
 
