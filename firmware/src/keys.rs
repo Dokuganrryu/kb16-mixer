@@ -7,15 +7,10 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Ticker};
 use pad_core::input::{Combo, Debounce, Knob, Turns};
+use pad_core::route::Event;
 
 pub const ROWS: usize = 4;
 pub const COLS: usize = 5;
-
-#[derive(Clone, Copy)]
-pub enum Event {
-    Key { row: u8, col: u8, pressed: bool },
-    Turn { knob: u8, cw: bool },
-}
 
 pub static EVENTS: Channel<CriticalSectionRawMutex, Event, 64> = Channel::new();
 

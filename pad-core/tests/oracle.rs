@@ -6,6 +6,16 @@
 //! `Instant` and `Duration` (ticking at 1 MHz, as in the firmware), loop bodies turned into
 //! step functions, and globals (the state lock, the event channel, the meter atomics) passed in
 //! as arguments.
+//!
+//! One module differs on purpose: the keyboard report (`pad_core::route::Keyboard`, which left
+//! `firmware/src/main.rs` after commit 14c3e6a). The old `release(code)` freed the
+//! first slot with that usage, whichever key had pressed it: with `ctrl+c` on one key and `c` on
+//! another, a tap of `c` let go of Ctrl and left `c` held, so it auto-repeated. The old code
+//! also dropped a modifier-only key and a seventh key for good, and put a usage in the report
+//! twice when two keys held it. The new code frees what the released key added. So
+//! `old::keyboard` is compared only where its answer was right: up to six keys, each with its
+//! own non-zero usage. The cases where it was wrong are pinned in
+//! `tests/keyboard.rs`.
 
 use kb16_mixer_protocol::{HostMsg, LOGO_NAME_LEN, NEVER, NOTICE};
 use pad_core::Time;
@@ -88,6 +98,39 @@ impl Rng {
 // The old code.
 
 mod old {
+    /// `firmware/src/main.rs` at commit 14c3e6a.
+    pub mod keyboard {
+        /// Keys currently typed, as (HID usage, modifier bits).
+        pub struct Keyboard {
+            pub held: [(u8, u8); 6],
+        }
+
+        impl Keyboard {
+            pub fn report(&self, extra: u8) -> [u8; 8] {
+                let mut r = [0u8; 8];
+                let mut n = 2;
+                for &(code, mods) in self.held.iter().chain([(extra, 0)].iter()) {
+                    if code != 0 && n < 8 {
+                        r[0] |= mods;
+                        r[n] = code;
+                        n += 1;
+                    }
+                }
+                r
+            }
+            pub fn press(&mut self, code: u8, mods: u8) {
+                if let Some(slot) = self.held.iter_mut().find(|s| s.0 == 0) {
+                    *slot = (code, mods);
+                }
+            }
+            pub fn release(&mut self, code: u8) {
+                if let Some(slot) = self.held.iter_mut().find(|s| s.0 == code) {
+                    *slot = (0, 0);
+                }
+            }
+        }
+    }
+
     pub mod keys {
         pub const ROWS: usize = 4;
         pub const COLS: usize = 5;
@@ -1527,6 +1570,45 @@ fn the_screen_draws_the_same_pixels() {
             let b = screen.draw(&mut fb, now, since_boot, &input);
             assert_eq!(a, b);
             assert_eq!(o.fb.buf, fb.buf);
+        }
+    }
+}
+
+#[test]
+fn the_keyboard_report_holds_the_same_keys_where_the_old_one_was_right() {
+    use pad_core::route::Keyboard;
+    let mut rng = Rng(0x5EED_0000_0000_0006);
+    for _ in 0..2_000 {
+        let mut old = old::keyboard::Keyboard { held: [(0, 0); 6] };
+        let mut new = Keyboard::new();
+        // Each matrix key's usage (distinct, non-zero) and modifiers, and whether it is down.
+        let mut codes = [0u8; 16];
+        for (i, c) in codes.iter_mut().enumerate() {
+            *c = 4 + i as u8 * 8 + rng.below(8) as u8;
+        }
+        let mods: [u8; 16] = core::array::from_fn(|_| if rng.chance(3) { rng.byte() } else { 0 });
+        let mut down = [false; 16];
+        for _ in 0..200 {
+            let key = rng.below(16) as usize;
+            if down[key] {
+                down[key] = false;
+                old.release(codes[key]);
+                new.release(key as u8);
+            } else if down.iter().filter(|&&d| d).count() < 6 {
+                down[key] = true;
+                old.press(codes[key], mods[key]);
+                new.press(key as u8, codes[key], mods[key]);
+            }
+            // A tapped usage that a held key has already was in the old report twice.
+            let extra = if rng.chance(4) && !codes.contains(&0x4B) { 0x4B } else { 0 };
+            let (o, n) = (old.report(extra), new.report(extra));
+            // The same modifiers and the same usages; the old code reused a freed slot, so the
+            // order of the usages can differ, which the PC ignores.
+            assert_eq!((o[0], o[1]), (n[0], n[1]));
+            let (mut o, mut n) = (o[2..].to_vec(), n[2..].to_vec());
+            o.sort();
+            n.sort();
+            assert_eq!(o, n);
         }
     }
 }

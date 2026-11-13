@@ -15,6 +15,7 @@ pub mod input;
 pub mod leds;
 pub mod name;
 pub mod oled;
+pub mod route;
 pub mod state;
 
 /// A point in time as the firmware clock gives it.
