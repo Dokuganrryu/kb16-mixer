@@ -5,6 +5,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The
 
 ## [Unreleased]
 
+Nobody did a test of these changes on a pad.
+
+For the knob hold, the pad must have new firmware. The firmware of the draft release 0.1.0 does not send the knob release. Until you flash the new firmware, each knob press acts as a tap.
+The new firmware also has the version 0.1.0. Thus `--check` and the **Pad** tab do not tell it from the draft release.
+
+### Added
+
+- A knob has a tap, a hold (350 ms) and a double tap. By default, a tap mutes or unmutes the knob target, and a hold selects the next program in the channel. The new `[knob_press]` table changes the actions.
+- Mute keys, `open:` keys and `none` keys can have a hold and a double tap: `[keys_hold]`, `[keys_double]`, `[keys2_hold]` and `[keys2_double]`.
+- Protocol: the pad sends `KNOB_UP` (`0x05`) when you release a knob, while the app is present. The app does not wait for it, because the firmware of the draft release does not send it. A previous app ignores the message.
+- Protocol: byte 19 of `SETTINGS` (`idle_led_percent`) sets the light of the dimmed key lights. The new setting is `[lights] idle_percent`. The firmware of the draft release ignores the byte.
+- `[audio] output`: `"default"` follows the Windows default output device when it changes. A device ID selects one device. While that device is disconnected, the app uses the Windows default.
+- The `audio` line of `--check` tells which output device the app uses.
+- Screen motion: the meters glide, a readout pushes in and out, and the page slides. A channel name flashes when its mute changes. The screen fades before it goes off.
+
+### Changed
+
+- A knob tap mutes. Before, a knob press selected the next program. The hold does that at this time.
+- The key lights glide to each new level, with gamma 2.4 and a dither in quarter steps. Before, the light changed in visible steps.
+- Idle: the key lights dim to 6 % of their light in 0.7 seconds. After three times `lights_dim_min` (at most 240 minutes), they go off. Before, they dimmed to approximately 14 % and stayed on.
+- New default channel tints, all ice white with a different warmth: Mic `#e6dcd7`, Chat `#c8d7ff`, Game `#afcdff`, Media `#d7def5`. A `config.toml` with a `color` for each channel keeps its colours.
+- The rule for audible sound uses the output device of each program. Before, it used only the Windows default device.
+
 ## [0.1.0] - 2026-11-13
 
 This is the first public version. It is a pre-release.
