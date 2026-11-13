@@ -580,7 +580,14 @@ fn save_due(saved: &mut Saved, save_at: &mut Option<Instant>, now_state: Saved, 
 
 /// A knob turn or press, or a key going down or up.
 fn is_touch(e: &PadEvent) -> bool {
-    matches!(e, PadEvent::Turn { .. } | PadEvent::Press { .. } | PadEvent::Key { .. } | PadEvent::KeyUp { .. })
+    matches!(
+        e,
+        PadEvent::Turn { .. }
+            | PadEvent::Press { .. }
+            | PadEvent::KnobUp { .. }
+            | PadEvent::Key { .. }
+            | PadEvent::KeyUp { .. }
+    )
 }
 
 /// How long the loop waits for the next tick: the fast rate while programme audio plays or the
@@ -822,6 +829,14 @@ mod tests {
         knobs.let_go();
         knobs.press(0, at(4000), &cfg, &mut out);
         assert_eq!(out.len(), 2, "after a let-go the pad is still known to send releases");
+    }
+
+    /// A knob let go just after Pause was chosen must not finish a tap: the pause drops it,
+    /// like the press before it.
+    #[test]
+    fn a_knob_release_is_a_touch_like_its_press() {
+        assert!(is_touch(&PadEvent::Press { knob: 0 }));
+        assert!(is_touch(&PadEvent::KnobUp { knob: 0 }));
     }
 
     #[test]
