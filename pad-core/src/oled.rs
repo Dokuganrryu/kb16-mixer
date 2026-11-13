@@ -17,6 +17,30 @@ const ROWS: i32 = 29;
 pub const SPLASH_MS: u64 = 1800;
 const POPUP_MS: u64 = 1300;
 const SCREENSAVER_MS: u64 = 45_000;
+/// A readout pushes the screen beneath it up and out; it leaves faster than it came.
+const ENTER_MS: u32 = 100;
+const EXIT_MS: u32 = 70;
+const _: () = assert!(EXIT_MS < ENTER_MS);
+/// How far a readout travels: far enough that it and the screen it pushes never overlap.
+const PUSH: i32 = 32;
+/// A page change slides the screen sideways, in from the side of the new page.
+const SLIDE: i32 = 24;
+const SLIDE_MS: u32 = 140;
+/// A page change back within this time is the end of a held page key (a peek) or a quick
+/// double tap: it only nudges, as the user goes back to what they just saw.
+const PEEK_WINDOW_MS: u32 = 1500;
+const PEEK: i32 = 4;
+const PEEK_MS: u32 = 60;
+/// A channel name stays inverted this long after its mute changes.
+const MUTE_FLASH_MS: u32 = 200;
+/// Frames a meter waits before it drops one segment, so a level on a segment edge does not
+/// flicker. A drop of two or more segments shows at once.
+const METER_HOLD: u8 = 6;
+/// Meter positions are in eighths of a pixel column; a segment is 3 columns.
+const SUB: u16 = 8;
+/// The screen fades out over this long before it turns off, and fades in this fast on wake.
+pub const FADE_MS: u32 = 800;
+pub const WAKE_MS: u32 = 120;
 /// The SSD1306 control byte that says "display data follows".
 const DATA: u8 = 0x40;
 
@@ -26,13 +50,15 @@ pub struct Fb {
     pub buf: [u8; 1 + (W * H / 8) as usize],
     /// Vertical offset applied to everything drawn.
     pub top: i32,
+    /// Sideways offset applied to everything drawn (a page change slides the frame).
+    left: i32,
 }
 
 impl Fb {
     pub fn new(top: i32) -> Fb {
         let mut buf = [0; 1 + (W * H / 8) as usize];
         buf[0] = DATA;
-        Fb { buf, top }
+        Fb { buf, top, left: 0 }
     }
 
     fn clear(&mut self) {
@@ -41,12 +67,12 @@ impl Fb {
 
     /// Whether the pixel at (`x`, `y`) of the drawn layout is lit (`top` applies).
     pub fn get(&self, x: i32, y: i32) -> bool {
-        let y = y + self.top;
+        let (x, y) = (x + self.left, y + self.top);
         (0..W).contains(&x) && (0..H).contains(&y) && self.buf[1 + (y / 8 * W + x) as usize] & 1 << (y % 8) != 0
     }
 
     fn px(&mut self, x: i32, y: i32, on: bool) {
-        let y = y + self.top;
+        let (x, y) = (x + self.left, y + self.top);
         if !(0..W).contains(&x) || !(0..H).contains(&y) {
             return;
         }
@@ -212,13 +238,17 @@ fn draw_logo(fb: &mut Fb, ms: u64, reveal: i32, name: &[u8]) {
 
 /// Scribble strip: one 32 px column per channel, laid out in ROWS rows:
 /// name 0..8, live meter 11..14, fader 17..19, value 21..28.
-fn draw_mixer(fb: &mut Fb, m: &Mixer, meters: &[u8; NCH], peaks: &[u8; NCH]) {
+///
+/// `cols` is each meter's lit width in pixel columns (0..=21, three per segment); a width
+/// between segments, while the meter glides, lights part of the next segment. `flash` has a
+/// bit set for each channel whose name shows inverted.
+fn draw_mixer(fb: &mut Fb, m: &Mixer, cols: &[u8; NCH], peaks: &[u8; NCH], flash: u8) {
     for c in 0..m.n as usize {
         let x0 = c as i32 * 32;
         let muted = m.mutes & (1 << c) != 0;
         let name = trimmed(&m.names[c]);
         let name = &name[..name.len().min(kb16_mixer_protocol::NAME_SHOWN)];
-        if c as u8 == m.selected {
+        if (c as u8 == m.selected) != (flash & 1 << c != 0) {
             fb.pill(x0, 0, x0 + 30, 8);
             fb.centred(x0, 1, name, false);
         } else {
@@ -226,12 +256,15 @@ fn draw_mixer(fb: &mut Fb, m: &Mixer, meters: &[u8; NCH], peaks: &[u8; NCH]) {
         }
 
         // Live meter: 7 segments with a peak-hold marker.
-        let lit = segments(meters[c]);
+        let lit = cols[c] as i32 / 3;
+        let part = cols[c] as i32 % 3;
         let peak = segments(peaks[c]);
         for s in 0..7 {
             let sx = x0 + 2 + s * 4;
             if !muted && s < lit {
                 fb.rect(sx, 11, sx + 2, 14, true);
+            } else if !muted && s == lit && part > 0 {
+                fb.rect(sx, 11, sx + part - 1, 14, true);
             } else if !muted && s == peak - 1 {
                 fb.rect(sx, 11, sx + 2, 11, true);
                 fb.rect(sx, 14, sx + 2, 14, true);
@@ -322,24 +355,119 @@ pub struct Input<T> {
     pub meters: [u8; NCH],
 }
 
+/// A value that eases from `from` to `to` over `dur` ms with a cubic ease-out: it starts fast,
+/// settles gently, and lands on `to` exactly.
+#[derive(Clone, Copy)]
+struct Tween {
+    from: i32,
+    to: i32,
+    at: u32,
+    dur: u32,
+}
+
+impl Tween {
+    const fn rest(at: i32) -> Tween {
+        Tween { from: at, to: at, at: 0, dur: 0 }
+    }
+
+    fn value(&self, ms: u32) -> i32 {
+        let t = ms.wrapping_sub(self.at);
+        if t >= self.dur {
+            return self.to;
+        }
+        let left = 256 - (t * 256 / self.dur) as i32; // 256..=1
+        let eased = (left * left * left) >> 16; // (1 - x)^3 in 256ths
+        self.to + (self.from - self.to) * eased / 256
+    }
+
+    /// Heads for `to` from wherever the value is now, so a change of mind mid-motion carries
+    /// on from the current position instead of jumping back to the start.
+    fn retarget(&mut self, ms: u32, to: i32, dur: u32) {
+        *self = Tween { from: self.value(ms), to, at: ms, dur };
+    }
+}
+
+/// One step of an exponential glide towards `target`: a `1/div` part of the gap, at least one
+/// unit. It never passes the target and lands on it exactly.
+fn glide(pos: u16, target: u16, div: u16) -> u16 {
+    if target > pos { pos + (target - pos).div_ceil(div) } else { pos - (pos - target).div_ceil(div) }
+}
+
+/// The panel contrast for this frame: `want`, faded out over the last `FADE_MS` before the
+/// screen turns off after `off_min` minutes of quiet, and faded in over `WAKE_MS` after the
+/// panel turned on (`since_wake` ms ago).
+pub fn contrast(want: u8, idle: u64, off_min: u8, since_wake: u64) -> u8 {
+    let mut c = want as u32;
+    if off_min != kb16_mixer_protocol::NEVER {
+        let left = (off_min as u64 * 60_000).saturating_sub(idle).min(FADE_MS as u64) as u32;
+        c = c * left / FADE_MS;
+    }
+    (c * since_wake.min(WAKE_MS as u64) as u32 / WAKE_MS) as u8
+}
+
 /// Everything the screen remembers from one frame to the next.
 pub struct Screen<T> {
     peaks: [u8; NCH],
     peak_at: [T; NCH],
     /// Popup bar, x10 for smooth easing.
     shown_vol: u32,
+    /// The popup was on screen last frame (also while it left).
     popup_open: bool,
+    /// Per meter: the segments it heads for, the frames it has wanted fewer, and where it is
+    /// now (in `SUB`ths of a column).
+    meter_to: [u8; NCH],
+    meter_low: [u8; NCH],
+    meter_pos: [u16; NCH],
+    /// How far the popup sits below its place (0 = in, `PUSH` = gone), and the popup on screen,
+    /// kept while it leaves.
+    push: Tween,
+    shown: Option<Popup<T>>,
+    /// Sideways offset of the whole frame after a page change.
+    slide: Tween,
+    page: Option<bool>,
+    page_at: u32,
+    mutes: Option<u8>,
+    mute_at: [Option<u32>; NCH],
+    /// No frame drawn yet: the first one shows the state as it is, without motion.
+    fresh: bool,
+    moving: bool,
 }
 
 impl<T: Time> Screen<T> {
     pub fn new(now: T) -> Screen<T> {
-        Screen { peaks: [0; NCH], peak_at: [now; NCH], shown_vol: 0, popup_open: false }
+        Screen {
+            peaks: [0; NCH],
+            peak_at: [now; NCH],
+            shown_vol: 0,
+            popup_open: false,
+            meter_to: [0; NCH],
+            meter_low: [0; NCH],
+            meter_pos: [0; NCH],
+            push: Tween::rest(PUSH),
+            shown: None,
+            slide: Tween::rest(0),
+            page: None,
+            page_at: 0,
+            mutes: None,
+            mute_at: [None; NCH],
+            fresh: true,
+            moving: false,
+        }
+    }
+
+    /// True while the last frame drawn was part of a motion. A frame drawn while it is false
+    /// shows the state exactly as the screen did before it had motion.
+    pub fn moving(&self) -> bool {
+        self.moving
     }
 
     /// Draws one frame into `fb`. `since_boot` is in milliseconds. Returns true for the calm
     /// idle logo, which may be drawn at half rate and with the panel dimmed.
     pub fn draw(&mut self, fb: &mut Fb, now: T, since_boot: u64, s: &Input<T>) -> bool {
         let ms = now.ms();
+        // Motion only looks at short spans, so a wrapping 32-bit clock does (cheaper on the M3).
+        let clock = ms as u32;
+        let fresh = core::mem::replace(&mut self.fresh, false);
         for ((peak, at), &l) in self.peaks.iter_mut().zip(self.peak_at.iter_mut()).zip(s.meters.iter()) {
             if l >= *peak {
                 *peak = l;
@@ -348,32 +476,384 @@ impl<T: Time> Screen<T> {
                 *peak = peak.saturating_sub(6);
             }
         }
+        let (cols, mut moving) = self.meters(&s.meters, fresh);
+        let flash = self.mute_flash(clock, s);
+        moving |= flash != 0;
+        self.page_change(clock, s, fresh);
+        fb.left = self.slide.value(clock);
+        moving |= fb.left != 0;
 
         fb.clear();
         let popup = s.popup.filter(|p| s.alive && now.ms_since(p.at) < POPUP_MS);
         let calm = if since_boot < SPLASH_MS {
             draw_logo(fb, ms, (since_boot * 160 / 900) as i32, &s.name);
-            false
-        } else if let Some(p) = popup {
-            let target = p.volume.min(100) as u32 * 10;
-            // A fresh popup starts at the value; while it stays open the bar glides.
-            self.shown_vol = if !self.popup_open {
-                target
-            } else if target > self.shown_vol {
-                self.shown_vol + (target - self.shown_vol).div_ceil(3)
-            } else {
-                self.shown_vol - (self.shown_vol - target).div_ceil(3)
-            };
-            draw_popup(fb, &p, self.shown_vol);
-            false
-        } else if s.alive && s.idle < SCREENSAVER_MS {
-            draw_mixer(fb, &s.mixer, &s.meters, &self.peaks);
+            self.shown = None;
+            self.push = Tween::rest(PUSH);
             false
         } else {
-            draw_logo(fb, ms, W, &s.name);
-            true
+            let sliding = clock.wrapping_sub(self.page_at) < SLIDE_MS;
+            match popup {
+                // The slide is the page's one entrance: the notice that names the page comes
+                // in with it, not with a push of its own.
+                Some(_) if fresh || sliding => self.push = Tween::rest(0),
+                Some(_) if self.push.to != 0 => self.push.retarget(clock, 0, ENTER_MS),
+                None if !s.alive => self.push = Tween::rest(PUSH),
+                None if self.push.to != PUSH => self.push.retarget(clock, PUSH, EXIT_MS),
+                _ => {}
+            }
+            if popup.is_some() {
+                self.shown = popup;
+            }
+            let d = self.push.value(clock);
+            if d >= PUSH {
+                self.shown = None;
+            }
+            moving |= d != self.push.to;
+
+            // The screen beneath sits right above the popup, so the two move as one sheet.
+            let top = fb.top;
+            let mut calm = false;
+            if self.shown.is_none() || d > 0 {
+                fb.top = top + if self.shown.is_some() { d - PUSH } else { 0 };
+                if s.alive && s.idle < SCREENSAVER_MS {
+                    draw_mixer(fb, &s.mixer, &cols, &self.peaks, flash);
+                } else {
+                    draw_logo(fb, ms, W, &s.name);
+                    calm = self.shown.is_none();
+                }
+            }
+            if let Some(p) = self.shown {
+                let target = p.volume.min(100) as u32 * 10;
+                // A fresh popup starts at the value; while it stays open the bar glides.
+                self.shown_vol =
+                    if self.popup_open { glide(self.shown_vol as u16, target as u16, 3) as u32 } else { target };
+                moving |= self.shown_vol != target;
+                fb.top = top + d;
+                draw_popup(fb, &p, self.shown_vol);
+            }
+            fb.top = top;
+            calm
         };
-        self.popup_open = popup.is_some();
-        calm
+        self.popup_open = self.shown.is_some();
+        fb.left = 0;
+        self.moving = moving;
+        calm && !moving
+    }
+
+    /// Meters go up at once and down only after a short hold; the bar then glides there, fast
+    /// up and slower down, like a needle. Returns each meter's lit columns, and whether any
+    /// meter is still on its way.
+    fn meters(&mut self, levels: &[u8; NCH], fresh: bool) -> ([u8; NCH], bool) {
+        let mut cols = [0u8; NCH];
+        let mut moving = false;
+        for c in 0..NCH {
+            let want = segments(levels[c]) as u8;
+            let (to, low) = (&mut self.meter_to[c], &mut self.meter_low[c]);
+            if fresh || want > *to || *to - want >= 2 || (want < *to && *low + 1 >= METER_HOLD) {
+                *to = want;
+                *low = 0;
+            } else if want < *to {
+                *low += 1;
+            } else {
+                *low = 0;
+            }
+            let target = *to as u16 * 3 * SUB;
+            let pos = &mut self.meter_pos[c];
+            *pos = if fresh { target } else { glide(*pos, target, if target > *pos { 2 } else { 3 }) };
+            cols[c] = ((*pos + SUB / 2) / SUB) as u8;
+            moving |= *pos != target || *low != 0;
+        }
+        (cols, moving)
+    }
+
+    /// The channels whose name shows inverted because their mute just changed.
+    fn mute_flash(&mut self, ms: u32, s: &Input<T>) -> u8 {
+        let changed = self.mutes.map_or(0, |m| m ^ s.mixer.mutes);
+        self.mutes = s.alive.then_some(s.mixer.mutes);
+        let mut flash = 0;
+        for (c, at) in self.mute_at.iter_mut().enumerate() {
+            if changed & 1 << c != 0 {
+                *at = Some(ms);
+            }
+            if s.alive && at.is_some_and(|t| ms.wrapping_sub(t) < MUTE_FLASH_MS) {
+                flash |= 1 << c;
+            }
+        }
+        flash
+    }
+
+    /// A page change slides the frame in from the new page's side: page 2 from the right.
+    fn page_change(&mut self, ms: u32, s: &Input<T>, fresh: bool) {
+        let page = s.alive.then_some(s.mixer.second_page);
+        if let (Some(was), Some(is)) = (self.page, page)
+            && was != is
+            && !fresh
+        {
+            let peek = ms.wrapping_sub(self.page_at) < PEEK_WINDOW_MS;
+            let (dist, dur) = if peek { (PEEK, PEEK_MS) } else { (SLIDE, SLIDE_MS) };
+            let dir = if is { 1 } else { -1 };
+            let from = (self.slide.value(ms) + dir * dist).clamp(-SLIDE, SLIDE);
+            self.slide = Tween { from, to: 0, at: ms, dur };
+            self.page_at = ms;
+        }
+        self.page = page;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kb16_mixer_protocol::NOTICE;
+
+    #[test]
+    fn a_glide_lands_exactly_without_overshoot_or_a_limit_cycle() {
+        for div in 2..=4 {
+            for start in (0..=168).step_by(7) {
+                for target in (0..=168).step_by(5) {
+                    let mut pos = start;
+                    for _ in 0..40 {
+                        let next = glide(pos, target, div);
+                        assert!(next == target || next.abs_diff(target) < pos.abs_diff(target), "closer every step");
+                        assert!(next == target || (next > target) == (pos > target), "never passes the target");
+                        pos = next;
+                    }
+                    assert_eq!(pos, target);
+                    assert_eq!(glide(pos, target, div), target, "stays at rest");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_tween_eases_out_monotonically_and_lands_exactly() {
+        let t = Tween { from: PUSH, to: 0, at: 1000, dur: ENTER_MS };
+        assert_eq!(t.value(1000), PUSH);
+        assert_eq!(t.value(1000 + ENTER_MS), 0);
+        assert_eq!(t.value(1000 + 60_000), 0);
+        assert_eq!(t.value(999), 0, "a clock that wrapped long ago counts as done");
+        let mut last = PUSH;
+        for ms in 1000..1000 + ENTER_MS {
+            let v = t.value(ms);
+            assert!(v <= last && v >= 0);
+            last = v;
+        }
+        // Ease-out: most of the way is covered in the first third.
+        assert!(t.value(1000 + ENTER_MS / 3) < PUSH / 3);
+    }
+
+    #[test]
+    fn a_retarget_carries_on_from_where_the_value_is() {
+        let mut t = Tween { from: 0, to: PUSH, at: 0, dur: EXIT_MS };
+        let mid = t.value(30);
+        assert!(mid > 0 && mid < PUSH);
+        t.retarget(30, 0, ENTER_MS);
+        assert_eq!(t.value(30), mid, "no jump");
+        assert_eq!(t.value(30 + ENTER_MS), 0);
+    }
+
+    #[test]
+    fn the_contrast_fades_out_before_sleep_and_in_on_wake() {
+        let off = 60_000;
+        assert_eq!(contrast(0x30, 0, 1, 10_000), 0x30);
+        assert_eq!(contrast(0x30, off - FADE_MS as u64, 1, 10_000), 0x30);
+        assert_eq!(contrast(0x30, off, 1, 10_000), 0);
+        let mut last = 0x30;
+        for idle in (off - FADE_MS as u64..=off).step_by(10) {
+            let c = contrast(0x30, idle, 1, 10_000);
+            assert!(c <= last, "monotone");
+            last = c;
+        }
+        assert_eq!(contrast(0xCF, off * 10, kb16_mixer_protocol::NEVER, 10_000), 0xCF, "never sleeps, never fades");
+        assert_eq!(contrast(0xCF, 0, 1, 0), 0);
+        assert_eq!(contrast(0xCF, 0, 1, WAKE_MS as u64), 0xCF);
+        let mut last = 0;
+        for ms in 0..=WAKE_MS as u64 {
+            let c = contrast(0xCF, 0, 1, ms);
+            assert!(c >= last);
+            last = c;
+        }
+    }
+
+    fn mixer() -> Mixer {
+        Mixer {
+            n: 4,
+            colors: [[255; 3]; NCH],
+            level: [0; NCH],
+            volume: [80, 55, 100, 30],
+            mutes: 0b0100,
+            selected: 0,
+            mixer_keys: true,
+            mic_muted: false,
+            playing: true,
+            second_page: false,
+            names: [*b"GAME  ", *b"MUSIC ", *b"CHAT  ", *b"WEB   "],
+        }
+    }
+
+    fn input(meters: [u8; NCH]) -> Input<u64> {
+        Input { alive: true, mixer: mixer(), popup: None, idle: 0, name: [0; 10], meters }
+    }
+
+    fn popup(at: u64, volume: u8, text: &[u8]) -> Option<Popup<u64>> {
+        let mut name = [0; 16];
+        name[..text.len()].copy_from_slice(text);
+        Some(Popup { at, volume, muted: false, name })
+    }
+
+    const T0: u64 = 100_000;
+
+    /// Draws `frames` frames 33 ms apart from `at`; returns the last frame and the time after.
+    fn run(screen: &mut Screen<u64>, at: u64, frames: u64, s: &Input<u64>) -> (Fb, u64) {
+        let mut fb = Fb::new(3);
+        let mut ms = at;
+        for _ in 0..frames {
+            screen.draw(&mut fb, ms, ms, s);
+            ms += 33;
+        }
+        (fb, ms)
+    }
+
+    /// The frame without motion: what the screen drew for this input before it had motion.
+    fn settled(s: &Input<u64>) -> Fb {
+        let mut fb = Fb::new(3);
+        Screen::new(T0).draw(&mut fb, T0, T0, s);
+        fb
+    }
+
+    #[test]
+    fn a_meter_glides_up_through_part_segments_and_settles_on_the_same_frame() {
+        let mut screen = Screen::new(T0);
+        let (_, ms) = run(&mut screen, T0, 1, &input([0; NCH]));
+        let high = input([255, 0, 0, 0]);
+        let mut fb = Fb::new(3);
+        screen.draw(&mut fb, ms, ms, &high);
+        assert!(screen.moving());
+        // Half way after one frame: 21 columns -> 10.5, drawn as 3 segments and 2 columns.
+        assert_eq!(screen.meter_pos[0], 21 * SUB / 2);
+        assert!(fb.get(2 + 3 * 4, 12) && fb.get(3 + 3 * 4, 12) && !fb.get(4 + 3 * 4, 12));
+        let (fb, _) = run(&mut screen, ms + 33, 10, &high);
+        assert!(!screen.moving());
+        assert_eq!(fb.buf, settled(&high).buf);
+    }
+
+    #[test]
+    fn a_meter_on_a_segment_edge_does_not_flicker() {
+        let mut screen = Screen::new(T0);
+        // 110 and 108 sit on the two sides of the segment edge at 109.3.
+        let (a, b) = (input([110, 0, 0, 0]), input([108, 0, 0, 0]));
+        let first = settled(&a);
+        let mut fb = Fb::new(3);
+        for i in 0..60 {
+            screen.draw(&mut fb, T0 + i * 33, T0, if i % 2 == 0 { &a } else { &b });
+            assert_eq!(fb.buf, first.buf, "frame {i}");
+        }
+        // Held below the edge, it drops after the hold and, once the peak marker has fallen
+        // back (after 900 ms), matches the plain frame.
+        let (fb, _) = run(&mut screen, T0 + 2000, 40, &b);
+        assert!(!screen.moving());
+        assert_eq!(fb.buf, settled(&b).buf);
+    }
+
+    #[test]
+    fn a_popup_pushes_in_fast_leaves_faster_and_a_retrigger_carries_on() {
+        let base = input([0; NCH]);
+        let mut screen = Screen::new(T0);
+        let (_, ms) = run(&mut screen, T0, 2, &base);
+        let pop = |at| Input { popup: popup(at, 64, b"MUSIC"), ..input([0; NCH]) };
+        let p = pop(ms);
+        let mut fb = Fb::new(3);
+        screen.draw(&mut fb, ms, ms, &p);
+        assert_eq!(screen.push.value((ms) as u32), PUSH, "starts below");
+        let entered = ms + ENTER_MS as u64;
+        screen.draw(&mut fb, entered, entered, &p);
+        assert!(!screen.moving());
+        assert_eq!(fb.buf, settled(&p).buf, "a popup at rest is the old popup");
+
+        // It times out and leaves; half way out a new popup comes, from where the old one is.
+        let gone = ms + POPUP_MS;
+        screen.draw(&mut fb, gone, gone, &p);
+        let mid = gone + 30;
+        let d = screen.push.value((mid) as u32);
+        assert!(d > 0 && d < PUSH);
+        screen.draw(&mut fb, mid, mid, &pop(mid));
+        assert_eq!(screen.push.value((mid) as u32), d, "carries on, not from the bottom");
+        assert!(screen.push.value((mid + 33) as u32) < d);
+
+        // Let it go for good: it is out within the exit time, and the mixer is back as before.
+        let end = mid + POPUP_MS;
+        screen.draw(&mut fb, end, end, &pop(mid));
+        let (fb, _) = run(&mut screen, end + EXIT_MS as u64, 2, &base);
+        assert!(!screen.moving());
+        assert_eq!(fb.buf, settled(&base).buf);
+    }
+
+    #[test]
+    fn a_page_change_slides_in_from_the_new_pages_side_and_lands_exactly() {
+        let one = input([0; NCH]);
+        let two = Input { mixer: Mixer { second_page: true, ..mixer() }, ..input([0; NCH]) };
+        let mut screen = Screen::new(T0);
+        let (_, ms) = run(&mut screen, T0, 2, &one);
+        let mut fb = Fb::new(3);
+        screen.draw(&mut fb, ms, ms, &two);
+        assert_eq!(screen.slide.value((ms) as u32), SLIDE, "page 2 comes from the right");
+        assert!(fb.buf[1..1 + SLIDE as usize].iter().all(|&b| b == 0));
+        let (fb, ms) = run(&mut screen, ms + SLIDE_MS as u64, 1, &two);
+        assert!(!screen.moving());
+        assert_eq!(fb.buf, settled(&two).buf);
+
+        // Back soon after (a held page key let go): only a nudge, from the left.
+        let mut fb = Fb::new(3);
+        screen.draw(&mut fb, ms, ms, &one);
+        assert_eq!(screen.slide.value((ms) as u32), -PEEK);
+        let (fb, ms) = run(&mut screen, ms + PEEK_MS as u64, 1, &one);
+        assert_eq!(fb.buf, settled(&one).buf);
+
+        // Forth and back mid-slide: it carries on from where it is.
+        let later = ms + PEEK_WINDOW_MS as u64;
+        let mut fb = Fb::new(3);
+        screen.draw(&mut fb, later, later, &two);
+        let at = screen.slide.value((later + 40) as u32);
+        screen.draw(&mut fb, later + 40, later + 40, &one);
+        assert_eq!(screen.slide.value((later + 40) as u32), at - PEEK);
+    }
+
+    #[test]
+    fn a_page_notice_comes_in_with_the_slide_not_with_a_push() {
+        let one = input([0; NCH]);
+        let mut screen = Screen::new(T0);
+        let (_, ms) = run(&mut screen, T0, 2, &one);
+        let two = Input {
+            mixer: Mixer { second_page: true, ..mixer() },
+            popup: popup(ms, NOTICE, b"KEYS"),
+            ..input([0; NCH])
+        };
+        let mut fb = Fb::new(3);
+        screen.draw(&mut fb, ms, ms, &two);
+        assert_eq!(screen.push.value((ms) as u32), 0);
+    }
+
+    #[test]
+    fn a_mute_change_inverts_the_name_briefly() {
+        let base = input([0; NCH]);
+        let mut screen = Screen::new(T0);
+        let (_, ms) = run(&mut screen, T0, 2, &base);
+        let muted = Input { mixer: Mixer { mutes: 0b0101, ..mixer() }, ..input([0; NCH]) };
+        let mut fb = Fb::new(3);
+        screen.draw(&mut fb, ms, ms, &muted);
+        assert!(!fb.get(1, 0), "channel 0 (selected, in a pill) shows plain while it flashes");
+        assert!(screen.moving());
+        let (fb, _) = run(&mut screen, ms + MUTE_FLASH_MS as u64, 1, &muted);
+        assert!(fb.get(1, 0), "and in its pill again after");
+        assert!(!screen.moving());
+        assert_eq!(fb.buf, settled(&muted).buf);
+    }
+
+    #[test]
+    fn the_first_frame_shows_the_state_without_motion() {
+        let s = Input { popup: popup(T0, 64, b"MUSIC"), ..input([255, 120, 0, 60]) };
+        let mut screen = Screen::new(T0);
+        let mut fb = Fb::new(3);
+        screen.draw(&mut fb, T0, T0, &s);
+        assert!(!screen.moving());
     }
 }

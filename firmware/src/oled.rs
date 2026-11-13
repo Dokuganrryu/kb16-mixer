@@ -7,7 +7,7 @@ use embassy_stm32::i2c::{I2c, Master};
 use embassy_stm32::mode::Async;
 use embassy_time::{Duration, Instant, Ticker, Timer};
 use pad_core::Time;
-use pad_core::oled::{Fb, H, Input, SPLASH_MS, Screen, W};
+use pad_core::oled::{Fb, H, Input, SPLASH_MS, Screen, W, contrast};
 use pad_core::state::{DEFAULT_OLED_TOP, past};
 
 const ADDR: u8 = 0x3C;
@@ -42,8 +42,9 @@ pub async fn run(mut i2c: Bus) {
     let mut sent = [0xFFu8; (W * H / 8) as usize];
     let mut screen = Screen::new(Tick::now());
     let mut asleep = false;
-    let mut contrast = 0u8;
+    let mut shown_contrast = 0u8;
     let boot = Instant::now();
+    let mut woke = boot;
     let mut was_calm = false;
     let mut skip = false;
     let mut ticker = Ticker::every(Duration::from_millis(33));
@@ -68,7 +69,7 @@ pub async fn run(mut i2c: Bus) {
                 asleep = false;
             }
             sent.fill(0xFF);
-            contrast = 0;
+            shown_contrast = 0;
             continue;
         }
         let now = Tick::now();
@@ -90,6 +91,7 @@ pub async fn run(mut i2c: Bus) {
         let want_sleep = state::suspended() || (since_boot > SPLASH_MS && past(input.idle, off_after));
         if want_sleep != asleep {
             asleep = want_sleep;
+            woke = now.0;
             ready = cmd(&mut i2c, &[if asleep { 0xAE } else { 0xAF }]).await;
         }
         if asleep {
@@ -100,10 +102,11 @@ pub async fn run(mut i2c: Bus) {
         let calm = screen.draw(&mut fb, now, since_boot, &input);
         was_calm = calm;
 
-        // Dim the panel on the idle logo to spare it.
-        let want = if calm { 0x30 } else { 0xCF };
-        if want != contrast {
-            contrast = want;
+        // Dim the panel on the idle logo to spare it; fade out before sleep, and in on wake.
+        let since_wake = now.0.saturating_duration_since(woke).as_millis();
+        let want = contrast(if calm { 0x30 } else { 0xCF }, input.idle, off_after, since_wake);
+        if want != shown_contrast {
+            shown_contrast = want;
             ready &= cmd(&mut i2c, &[0x81, want]).await;
         }
 

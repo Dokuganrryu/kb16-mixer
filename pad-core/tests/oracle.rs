@@ -23,6 +23,12 @@
 //! further when idle and then go off (see `pad_core::leds`; pinned in `tests/lights.rs`). So
 //! `old::leds` is compared only for the meter ballistics, which the screen draws and which did
 //! not change.
+//!
+//! The screen differs on purpose while it moves: meters glide between segments, a readout
+//! pushes the screen beneath it up and leaves the same way, a page change slides sideways, and
+//! a mute change inverts the channel name for 200 ms (see `pad_core::oled`). So frames are
+//! compared only when `Screen::moving` says the screen is at rest; then they must match bit for
+//! bit. The motion itself is pinned in the unit tests of `pad_core::oled`.
 
 use kb16_mixer_protocol::{HostMsg, LOGO_NAME_LEN, NEVER, NOTICE};
 use pad_core::Time;
@@ -1512,6 +1518,8 @@ fn the_screen_draws_the_same_pixels() {
     let mut rng = Rng(0xD15C_0DE5_1234_5678);
     let names = [*b"KB16\0\0\0\0\0\0", *b"DESK PC\0\0\0", *b"WWWWWWWWWW", *b"J Q\0\0\0\0\0\0\0", [0; 10]];
     let popups = [*b"GAME\0\0\0\0\0\0\0\0\0\0\0\0", *b"Config loaded\0\0\0", *b"A VERY LONG NAME", [b' '; 16]];
+    let mut compared = 0;
+    let mut meter = [0u8; 4];
     for _run in 0..40 {
         let mut now = Instant::from_ticks(rng.below(5_000_000));
         let boot = now;
@@ -1552,7 +1560,10 @@ fn the_screen_draws_the_same_pixels() {
                     name: popups[rng.below(popups.len() as u64) as usize],
                 });
             }
-            let meter: [u8; 4] = core::array::from_fn(|_| rng.byte());
+            // Levels hold for a while, so the gliding meters come to rest between changes.
+            if rng.chance(15) {
+                meter = core::array::from_fn(|_| rng.byte());
+            }
             let since_boot = now.saturating_duration_since(boot).as_millis();
             let mut idle = now.saturating_duration_since(activity).as_millis();
             if rng.chance(20) {
@@ -1574,10 +1585,18 @@ fn the_screen_draws_the_same_pixels() {
                 meters: meter,
             };
             let b = screen.draw(&mut fb, now, since_boot, &input);
-            assert_eq!(a, b);
-            assert_eq!(o.fb.buf, fb.buf);
+            // The old popup bar started over at its value when a popup came back; the new one
+            // carries on from where it was, so the two can still be gliding apart.
+            let old_bar_rests = !o.popup_open
+                || popup.is_none_or(|p| p.volume == NOTICE || o.shown_vol == p.volume.min(100) as u32 * 10);
+            if !screen.moving() && old_bar_rests {
+                assert_eq!(a, b);
+                assert_eq!(o.fb.buf, fb.buf);
+                compared += 1;
+            }
         }
     }
+    assert!(compared > 40 * 1500 / 3, "only {compared} frames at rest");
 }
 
 #[test]
