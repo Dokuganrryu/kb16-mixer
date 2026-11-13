@@ -33,6 +33,12 @@ the backup, so it needs the pad in its bootloader.
 Do all the checks (and the backup, if you ask for it), but do not write the pad,
 do not stop the app and do not restart the pad.
 
+.NOTES
+The environment variable KB16_APP_PROCESS names the app process that the script stops
+before the bootloader request. Default: kb16-mixer (without .exe). The script refuses a
+name with characters other than letters, digits, "-", "_" and ".". The tests set a
+made-up name, so that they never stop the app that runs on the PC.
+
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File .\flash.ps1 -Backup .\stock-backup.bin
 
@@ -190,6 +196,12 @@ function Write-Next {
 
 # --- Checks that do not need the pad ---------------------------------------------------------
 
+# Get-Process takes "*" and "?" as wildcards, so a name with other characters could stop other
+# programs. "\z" and not "$": "$" also matches before a final line break.
+$AppProcess = if ($env:KB16_APP_PROCESS) { $env:KB16_APP_PROCESS } else { 'kb16-mixer' }
+if ($AppProcess -notmatch '^[A-Za-z0-9._-]+\z') {
+    Stop-Flash "KB16_APP_PROCESS may hold only letters, digits, '-', '_' and '.'."
+}
 $script:Dfu = Find-DfuUtil
 $image = Find-Firmware
 $info = Test-Image $image
@@ -228,9 +240,9 @@ if ($found.Count -eq 0) {
             $asked = $true
             # A running app keeps the pad open and talks to it, so it stops before the restart
             # and starts again from the same file at the end.
-            $restart = @(Get-Process -Name kb16-mixer -ErrorAction SilentlyContinue |
+            $restart = @(Get-Process -Name $AppProcess -ErrorAction SilentlyContinue |
                     ForEach-Object { $_.Path } | Where-Object { $_ } | Sort-Object -Unique)
-            Get-Process -Name kb16-mixer -ErrorAction SilentlyContinue | Stop-Process -Force
+            Get-Process -Name $AppProcess -ErrorAction SilentlyContinue | Stop-Process -Force
             # The app is a GUI program: "&" does not wait for it and does not set $LASTEXITCODE.
             $request = Start-Process -FilePath $app -ArgumentList '--bootloader' -Wait -PassThru -WindowStyle Hidden
             if ($request.ExitCode -eq 0) { Write-Host 'The pad was told to enter its bootloader.' }

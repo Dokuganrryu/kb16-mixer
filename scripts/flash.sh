@@ -6,9 +6,21 @@
 # dfu-util is taken from $DFU_UTIL, else PATH, else anywhere under the git-ignored tools/ folder.
 # If the pad does not answer the bootloader request, unplug it, hold the top-left key,
 # plug it in and keep holding until the download starts.
+#
+# KB16_APP_PROCESS names the app process that the script stops before the download (default:
+# kb16-mixer, without .exe). Only letters, digits, "-", "_" and "." are allowed. The tests set a
+# made-up name, so that they never stop the app that runs on the PC.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${1:-$ROOT/firmware/target/kb16-mixer-firmware.bin}"
 APP="$ROOT/app/target/release/kb16-mixer.exe"
+APP_PROCESS="${KB16_APP_PROCESS:-kb16-mixer}"
+# taskkill and Get-Process take "*" and "?" as wildcards, so a name with other characters could
+# stop other programs. The letters are spelled out because a range such as A-Z depends on the locale.
+case "$APP_PROCESS" in
+  *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*)
+    echo "REFUSED: KB16_APP_PROCESS may hold only letters, digits, '-', '_' and '.'" >&2
+    exit 1 ;;
+esac
 
 DFU="$DFU_UTIL"
 if [ -z "$DFU" ]; then
@@ -53,11 +65,11 @@ echo "dfu-util: $DFU"
 RUNNING=""
 if command -v powershell.exe >/dev/null 2>&1; then
   RUNNING=$(powershell.exe -NoProfile -Command \
-    "Get-Process kb16-mixer -ErrorAction SilentlyContinue | ForEach-Object { \$_.Path } | Sort-Object -Unique" |
+    "Get-Process -Name $APP_PROCESS -ErrorAction SilentlyContinue | ForEach-Object { \$_.Path } | Sort-Object -Unique" |
     tr -d '\r')
 fi
 if command -v taskkill >/dev/null 2>&1; then
-  taskkill //IM kb16-mixer.exe //F >/dev/null 2>&1
+  taskkill //IM "$APP_PROCESS.exe" //F >/dev/null 2>&1
 fi
 if [ -x "$APP" ] && "$APP" --bootloader; then
   echo "pad told to enter its bootloader"

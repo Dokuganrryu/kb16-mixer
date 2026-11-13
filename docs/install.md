@@ -350,6 +350,7 @@ The script writes only the firmware area (`0x08002000`). It does not write the b
 If the pad is not in the bootloader when the script starts, the script asks: "Restart it into its bootloader with kb16-mixer.exe? (y/N)".
 
 - If the pad has this firmware, type `y`. The script stops `kb16-mixer.exe` if it runs. After the write, it starts the app again.
+  The environment variable `KB16_APP_PROCESS` can give a different process name to stop. The tests use it. Usually you do not set it.
 - If the pad has the stock firmware, press Enter. The script then tells you what to do.
 
 The script waits for the bootloader for 120 seconds at most.

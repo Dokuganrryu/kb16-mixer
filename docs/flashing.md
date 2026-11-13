@@ -73,6 +73,8 @@ The script stops `kb16-mixer.exe` before it flashes. Then it runs `kb16-mixer.ex
 After the download, the script starts `kb16-mixer.exe` again from the same file, if the app ran before.
 After "Download done", `dfu-util` can show exit code 74. This is usual and correct.
 
+The environment variable `KB16_APP_PROCESS` can give a different process name to stop, without `.exe`. The tests use it. The script rejects a name with characters other than letters, digits, `-`, `_` and `.`.
+
 `flash.sh` shows the `NEXT:` line also after an unsatisfactory write. If `dfu-util` did not show "Download done", do not disconnect the pad. Run the script again.
 
 `flash.sh` asks for no confirmation, and it does not list the devices first. If more than one DFU device has the USB ID `1EAF:0003`, `dfu-util` itself stops. `flash.ps1` does more checks. See [install.md](install.md#6-flash-the-firmware).

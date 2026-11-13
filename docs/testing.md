@@ -86,7 +86,7 @@ python scripts/check-links.py
 python -m unittest scripts/test_ste_lint.py scripts/test_check_privacy.py scripts/test_package_release.py scripts/test_flash_scripts.py
 ```
 
-`test_flash_scripts.py` runs copies of `flash.sh` and `flash.ps1` with a fake `dfu-util` and a stub app. It does not use the pad or the installed app. It has a test for each refusal of the two flashers. No test runs a flasher on a pad.
+`test_flash_scripts.py` runs copies of `flash.sh` and `flash.ps1` with a fake `dfu-util` and a stub app. It does not use the pad or the installed app. Each test sets `KB16_APP_PROCESS` to a made-up name, so the flashers cannot stop the app that runs on the PC. It has a test for each refusal of the two flashers. No test runs a flasher on a pad.
 
 The `flash.ps1` tests run only on Windows. The `docs` job on Linux does not run them. The `app` job on Windows runs them with `KB16_REQUIRE_PS1_TESTS=1`, so there a skip is an error.
 

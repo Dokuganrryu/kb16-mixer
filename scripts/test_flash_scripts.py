@@ -9,15 +9,22 @@ Set KB16_REQUIRE_PS1_TESTS=1 (CI does) to make that a failure instead of a skip.
 
 There is a test for each refusal of each flasher. Each refusal test also checks that dfu-util
 got no write command.
+
+The flashers stop the running app. Each test gives them a made-up process name in
+KB16_APP_PROCESS, so that no test can stop the app of the person who runs the tests. Every start
+of a flasher goes through launch(), which refuses an environment without such a name.
 """
 
+import ast
 import os
+import re
 import shutil
 import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -31,6 +38,22 @@ FULL_AREA = 122880  # the size of a backup of alternate setting 2 on the tested 
 def image(size: int = 4096, sp: int = 0x20005000, reset: int = 0x08002131) -> bytes:
     vectors = struct.pack("<II", sp, reset)
     return vectors[:size] + bytes(max(size - len(vectors), 0))
+
+
+APP_PROCESS = "KB16_APP_PROCESS"
+TEST_NAME = "kb16-test-"
+
+
+def made_up_name() -> str:
+    return TEST_NAME + uuid.uuid4().hex[:12]
+
+
+def launch(command: list[str], env: dict, **kwargs) -> subprocess.CompletedProcess:
+    """Runs a flasher, or a tool that a flasher test needs, but only with a made-up app name."""
+    name = env.get(APP_PROCESS, "")
+    if not name.startswith(TEST_NAME):
+        raise AssertionError(f"{APP_PROCESS} must start with {TEST_NAME!r}, not {name!r}")
+    return subprocess.run(command, env=env, capture_output=True, text=True, timeout=120, **kwargs)
 
 
 def write_tool(path: Path, body: str) -> None:
@@ -53,21 +76,44 @@ class FlashSh(unittest.TestCase):
         self.bin = root / "bin"
         self.bin.mkdir()
         # On Windows the script stops the running app with taskkill and lists it with
-        # powershell.exe. These fakes take their place, so no real program is stopped.
-        write_tool(self.bin / "taskkill", "exit 0\n")
-        write_tool(self.bin / "powershell.exe", "exit 0\n")
+        # powershell.exe. These fakes record their arguments. The made-up name is the main guard;
+        # the fakes are a second one.
+        self.tools_log = root / "tools.log"
+        record = f'echo "$(basename "$0") $*" >> "{self.tools_log.as_posix()}"\nexit 0\n'
+        write_tool(self.bin / "taskkill", record)
+        write_tool(self.bin / "powershell.exe", record)
+        self.name = made_up_name()
         self.env = dict(os.environ, PATH=str(self.bin) + os.pathsep + os.environ["PATH"])
+        self.env[APP_PROCESS] = self.name
         self.env.pop("DFU_UTIL", None)
 
     def run_script(self, dfu_body: str) -> subprocess.CompletedProcess:
         write_tool(self.bin / "dfu-util", dfu_body)
-        found = subprocess.run(["sh", "-c", "command -v taskkill; command -v dfu-util"], env=self.env,
-                               capture_output=True, text=True).stdout.split()
+        found = launch(["sh", "-c", "command -v taskkill; command -v dfu-util"], self.env).stdout.split()
         self.assertEqual(len(found), 2)
         for tool in found:
             self.assertEqual(Path(tool).parent.name, "bin", "the fake tools are not first on the PATH")
-        return subprocess.run(["sh", str(self.root / "scripts" / "flash.sh")], env=self.env,
-                              capture_output=True, text=True, timeout=60)
+        return launch(["sh", str(self.root / "scripts" / "flash.sh")], self.env)
+
+    def test_the_stop_uses_the_name_in_the_variable(self):
+        result = self.run_script('echo "Download done."\nexit 74\n')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lines = self.tools_log.read_text().splitlines()
+        self.assertIn(f"taskkill //IM {self.name}.exe //F", lines)
+        self.assertTrue([line for line in lines if line.startswith("powershell.exe ")
+                         and f"Get-Process -Name {self.name} " in line], lines)
+        self.assertFalse([line for line in lines if "kb16-mixer" in line], lines)
+
+    def test_a_bad_name_is_refused_before_anything_runs(self):
+        log = self.root / "dfu.log"
+        for bad in ("*", "?", " x", "\nkb16-mixer", "'", "/x"):
+            with self.subTest(repr(bad)):
+                self.env[APP_PROCESS] = self.name + bad
+                result = self.run_script(f'echo "$@" >> "{log.as_posix()}"\necho "Download done."\n')
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("REFUSED: KB16_APP_PROCESS may hold only", result.stderr)
+                self.assertFalse(log.exists(), "dfu-util ran after a refusal")
+                self.assertFalse(self.tools_log.exists(), "taskkill or powershell.exe ran after a refusal")
 
     def test_next_step_after_download_done(self):
         # The tested bootloader does not answer the reset request: exit 74 after a good download.
@@ -123,8 +169,7 @@ class FlashSh(unittest.TestCase):
         env = dict(self.env, PATH=os.pathsep.join(p for p in self.env["PATH"].split(os.pathsep)
                                                      if not shutil.which("dfu-util", path=p)
                                                      and not shutil.which("dfu-util-static", path=p)))
-        result = subprocess.run(["sh", str(self.root / "scripts" / "flash.sh")], env=env,
-                                capture_output=True, text=True, timeout=60)
+        result = launch(["sh", str(self.root / "scripts" / "flash.sh")], env)
         self.assertEqual(result.returncode, 1)
         self.assertIn("dfu-util not found", result.stderr)
 
@@ -229,10 +274,6 @@ class FlashPs1(unittest.TestCase):
         self.folder = self.root / "release"
         self.folder.mkdir()
         text = (SCRIPTS / "flash.ps1").read_text(encoding="utf-8")
-        # The script stops every running kb16-mixer process. In the test it must not stop the
-        # app of the person who runs the test, so the copy looks for a name that does not exist.
-        self.assertEqual(text.count("Get-Process -Name kb16-mixer "), 2)
-        text = text.replace("Get-Process -Name kb16-mixer ", "Get-Process -Name kb16-mixer-test-none ")
         # A real run waits 120 seconds for the bootloader; the copy waits 2.
         self.assertEqual(text.count("$WaitSeconds = 120\n"), 1)
         text = text.replace("$WaitSeconds = 120\n", "$WaitSeconds = 2\n")
@@ -247,6 +288,8 @@ class FlashPs1(unittest.TestCase):
         self.env = dict(os.environ, FAKE_DFU_LIST=str(self.list), FAKE_DFU_LOG=str(self.log),
                         PATH=os.pathsep.join([str(windir / "System32"),
                                               str(windir / "System32" / "WindowsPowerShell" / "v1.0")]))
+        self.name = made_up_name()
+        self.env[APP_PROCESS] = self.name
         for name in ("FAKE_DFU_LIST_AFTER", "FAKE_DFU_UPLOAD", "FAKE_DFU_WRITE_OUTPUT", "FAKE_DFU_WRITE_EXIT"):
             self.env.pop(name, None)
 
@@ -257,8 +300,7 @@ class FlashPs1(unittest.TestCase):
         command = [POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(self.folder / "flash.ps1")]
         if dfu:
             command += ["-DfuUtil", str(self.fake_dfu)]
-        return subprocess.run(command + list(args), input=answers, env=self.env,
-                              capture_output=True, text=True, timeout=120)
+        return launch(command + list(args), self.env, input=answers)
 
     def calls(self) -> list[str]:
         return self.log.read_text().splitlines() if self.log.exists() else []
@@ -453,6 +495,66 @@ class FlashPs1(unittest.TestCase):
         self.assertIn("The pad did not answer.", out)
         self.assertNotIn("The pad was told to enter its bootloader.", out)
         self.assertIn("Put the pad into its bootloader now:", out)
+
+    def test_the_stop_uses_the_name_in_the_variable(self):
+        # A long-running program with the made-up name stands for a running app.
+        decoy = start_decoy(self.root / f"{self.name}.exe")
+        self.addCleanup(decoy.kill)
+        out, _ = self.run_request(0)
+        self.assertIn("The pad was told to enter its bootloader.", out)
+        self.assertIsNotNone(decoy.poll(), "the script did not stop the process with the name in the variable")
+
+    def test_a_bad_name_is_refused_before_anything_runs(self):
+        self.listing(PAD)
+        for bad in ("*", "?", " x", "\n", "'", "/x"):
+            with self.subTest(repr(bad)):
+                self.env[APP_PROCESS] = self.name + bad
+                self.assert_refused(self.run_script("-DryRun"), "KB16_APP_PROCESS may hold only")
+                self.assertEqual(self.calls(), [], "dfu-util ran after a refusal")
+
+
+def start_decoy(exe: Path) -> subprocess.Popen:
+    """Starts a copy of ping.exe under the given name. It runs for about a minute."""
+    shutil.copy(Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32" / "PING.EXE", exe)
+    return subprocess.Popen([str(exe), "-n", "60", "127.0.0.1"], stdout=subprocess.DEVNULL)
+
+
+class Guard(unittest.TestCase):
+    """Checks of the tests themselves: no flasher starts without a made-up app name."""
+
+    def test_launch_refuses_an_environment_without_a_made_up_name(self):
+        for env in ({}, {APP_PROCESS: ""}, {APP_PROCESS: "kb16-mixer"}):
+            with self.subTest(env=env), self.assertRaises(AssertionError):
+                launch([sys.executable, "-c", "pass"], env)
+
+    def test_every_process_start_goes_through_launch(self):
+        # compile_cs runs the C# compiler and start_decoy runs a copy of ping.exe: no flasher.
+        tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+        starts = set()
+        for function in ast.walk(tree):
+            if isinstance(function, ast.FunctionDef):
+                for node in ast.walk(function):
+                    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                            and isinstance(node.func.value, ast.Name)
+                            and node.func.value.id in ("subprocess", "os")):
+                        starts.add((function.name, f"{node.func.value.id}.{node.func.attr}"))
+        self.assertEqual(starts, {("launch", "subprocess.run"), ("compile_cs", "subprocess.run"),
+                                  ("start_decoy", "subprocess.Popen")})
+
+    def test_the_default_name_is_the_name_of_the_app(self):
+        # No test runs a flasher without the variable, so the default is read from the text.
+        cargo = (SCRIPTS.parent / "app" / "Cargo.toml").read_text(encoding="utf-8")
+        app = re.search(r'^name = "([^"]+)"', cargo, re.M).group(1)
+        self.assertEqual(app, "kb16-mixer")
+        sh = (SCRIPTS / "flash.sh").read_text(encoding="utf-8")
+        self.assertIn('APP_PROCESS="${KB16_APP_PROCESS:-' + app + '}"\n', sh)
+        self.assertIn('taskkill //IM "$APP_PROCESS.exe" //F', sh)
+        ps1 = (SCRIPTS / "flash.ps1").read_text(encoding="utf-8")
+        self.assertIn("$AppProcess = if ($env:KB16_APP_PROCESS) { $env:KB16_APP_PROCESS } else { '"
+                      + app + "' }", ps1)
+        self.assertEqual(ps1.count("Get-Process -Name $AppProcess -ErrorAction"), 2)
+        for text in (sh, ps1):
+            self.assertNotRegex(text, r"(Get-Process|taskkill|Stop-Process)[^\n]*kb16-mixer")
 
 
 if __name__ == "__main__":
