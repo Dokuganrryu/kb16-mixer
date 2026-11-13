@@ -36,7 +36,8 @@ The documents follow ASD-STE100 Simplified Technical English. STE lets a documen
 | channel level | The volume (0 % to 100 %) of a channel. |
 | trim | A number from 0 to 1 for each program. A program plays at channel level x trim. |
 | knob target | What a knob controls: a channel, one program in a channel, the master volume, the microphone, the foreground program, or the channel that has Focus. |
-| master volume | The volume of the default output device of Windows. |
+| master volume | The volume of the output device: the default output device of Windows, or the device in `[audio] output`. |
+| output device | A speaker or a headset that Windows plays sound on. By default, the app uses the default output device of Windows and follows it when it changes. |
 | meter | The live level that the pad shows for a channel, on the screen and on the key lights. |
 | audible | A program plays sound above approximately −40 dBFS for at least 1 second. See [how-it-works.md](how-it-works.md#idle-rule). |
 
@@ -48,12 +49,16 @@ The documents follow ASD-STE100 Simplified Technical English. STE lets a documen
 | button | A control in a window of the app on the PC. |
 | knob | One of the 3 knobs of the pad: the small left knob, the small right knob and the large knob. |
 | detent | One click of a knob. One detent is one `TURN` message. |
+| tap | A push and release of a knob or a key in less than 350 ms. |
+| hold | A push of a knob or a key for 350 ms or more. The hold action starts while you hold. |
+| double tap | A tap, then a second push in less than 280 ms after the release. The app looks for a double tap only on a knob or a key that has a double-tap action. |
+| pick | The knob action that selects the next program in the channel of the knob. By default, a knob hold does it. |
 | page | One of the two key layouts. Page 1 is the mixer page (`[keys]`). Page 2 is the keypad page (`[keys2]`). |
 | key table | The actions of the 16 keys of the current page. The app sends it to the pad. |
 | typed key | A key that the pad sends to Windows as usual keyboard input or as a media key. The app does not see it. |
 | page keys | The keys Page Up, Page Down and Home. In keyboard mode, knob 2 sends them. |
 | mixer key | A key with an action of the app: Mute, Focus, Talk, Move, Switch page or `open:`. The pad sends it to the app. |
-| Mute | The action that mutes or unmutes a channel. |
+| Mute | The action that mutes or unmutes a channel. By default, a knob tap mutes or unmutes the knob target. |
 | Focus | The action that turns all other channels down to a part of their level. "The channel that has Focus" is the channel of the Focus key that is on. |
 | ducking | What Focus does to the other channels. The `duck` setting gives the part of the level that stays. |
 | Talk | The action that changes the microphone mute while you hold the key. |
@@ -76,7 +81,7 @@ The documents follow ASD-STE100 Simplified Technical English. STE lets a documen
 | readout | A popup with a name, a value and a bar, for example after a knob turn. |
 | notice | A popup with text only, for example `Open failed`. |
 | activity | A key press, a knob turn, or audible sound. A popup is not activity. |
-| idle | The state after some minutes without activity. The screen goes off and the key lights dim. |
+| idle | The state after some minutes without activity. The screen goes off and the key lights dim. After a longer time without activity, the key lights go off. |
 | logo name | The name on the logo screen, 1 to 10 characters. The default is `KB16`. The pad keeps it in the name page. |
 | name page | The flash page at `0x0801F400` that holds the logo name. |
 | crash log | The flash page at `0x0801F800`. The firmware writes the details of each panic and hard fault into it. See [hardware.md](hardware.md#crash-log). |

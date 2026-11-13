@@ -247,10 +247,10 @@ A key with a hold or a double tap also gets those actions from this loop.
 
 `app/src/gesture.rs` finds a tap, a hold or a double tap from the press and the release of a knob or a key. These are the rules:
 
-- When a button has no hold and no double tap, a press is a tap at once.
-- A hold occurs while the button is down, 350 ms after the press. The release then does nothing.
-- When a button has a hold, a tap is a release before 350 ms.
-- When a button has a double tap, a tap waits 280 ms after the release for a second press. The second press is the double tap.
+- When a knob or a key has no hold and no double tap, a press is a tap at once.
+- A hold occurs while the knob or the key is down, 350 ms after the press. The release then does nothing.
+- When a knob or a key has a hold, a tap is a release before 350 ms.
+- When a knob or a key has a double tap, a tap waits 280 ms after the release for a second press. The second press is the double tap.
 - A knob turn while the knob is down cancels the press.
 
 The worker loop waits with a timeout. It wakes up at the next time limit of a gesture. Thus the gestures do not use a thread or a timer of their own.
