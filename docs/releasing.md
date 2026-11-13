@@ -31,8 +31,11 @@ The zip is reproducible. The same commit and the same Python build give the same
 3. Run `cargo check` in each of the four crate folders. Cargo then writes the new versions into each `Cargo.lock`.
 4. In `CHANGELOG.md`, move the entries of the "Unreleased" section to a new section.
 5. Give the new section a heading with the version and the date, for example `## [0.1.0] - 2026-11-20`.
-6. Open a pull request with these changes.
-7. Merge the pull request when CI is green.
+6. Keep an empty "Unreleased" section above the new section.
+7. Use only full URLs for links in the new section. The section becomes the release notes, and a relative link does not work there.
+8. At the end of `CHANGELOG.md`, add a link definition for the new version. Change the `[Unreleased]` link to compare the new tag with `HEAD`.
+9. Open a pull request with these changes.
+10. Merge the pull request when CI is green.
 
 The firmware sends its version as the USB release number. Thus the major version must be 0 to 99. The minor version and the patch version must be 0 to 9.
 
@@ -79,6 +82,7 @@ Do not publish the draft if one of these steps does not give the correct result.
 1. Open the draft on the **Releases** page.
 2. Keep the mark "Set as a pre-release" for each 0.x version.
 3. Click **Publish release**.
+4. After the first release only: remove the status notes that tell that no release exists. They are in `README.md` and `docs/install.md`. Merge that change through a pull request.
 
 ## Repair a bad release
 
