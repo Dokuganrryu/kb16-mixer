@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use toml_edit::{DocumentMut, Item};
 
 pub const DEFAULT: &str = r##"# kb16-mixer. Most of this is easier in the settings window (click the tray icon).
 # If you edit by hand: save, then tray icon > Reload config. A mistake in this file cannot
@@ -166,46 +167,7 @@ struct RawConfig {
     #[serde(default)]
     keys2: RawKeys,
     #[serde(default)]
-    knob_press: RawKnobPresses,
-    #[serde(default)]
-    keys_hold: RawKeys,
-    #[serde(default)]
-    keys_double: RawKeys,
-    #[serde(default)]
-    keys2_hold: RawKeys,
-    #[serde(default)]
-    keys2_double: RawKeys,
-    #[serde(default)]
-    lights: RawLights,
-    #[serde(default)]
-    audio: RawAudio,
-    #[serde(default)]
     channel: Vec<RawChannel>,
-}
-
-#[derive(Deserialize, Default)]
-struct RawKnobPresses {
-    knob1: Option<RawPress>,
-    knob2: Option<RawPress>,
-    knob3: Option<RawPress>,
-}
-
-#[derive(Deserialize, Default)]
-struct RawPress {
-    tap: Option<String>,
-    hold: Option<String>,
-    double: Option<String>,
-}
-
-#[derive(Deserialize, Default)]
-struct RawLights {
-    #[serde(default)]
-    idle_percent: u32,
-}
-
-#[derive(Deserialize, Default)]
-struct RawAudio {
-    output: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -470,34 +432,54 @@ pub fn parse_press(text: &str, knob: bool) -> Result<PressAction, String> {
     }
 }
 
-fn parse_knob_presses(raw: RawKnobPresses) -> Result<[KnobPress; 3], String> {
-    let [tap, hold, double] = DEFAULT_KNOB_PRESS;
+// The tables below ([knob_press], [keys_hold] and the like, [lights], [audio]) are read from
+// toml_edit's document, which the app has for the settings window anyway: each table read
+// through serde's derive added several KB to the exe.
+
+/// `item`, which must be a table if it is there.
+fn table_in<'a>(item: Option<&'a Item>, place: &str) -> Result<Option<&'a Item>, String> {
+    match item {
+        Some(i) if !i.is_table_like() => Err(format!("{place} is not a table")),
+        other => Ok(other),
+    }
+}
+
+/// `item`, which must be text if it is there.
+fn text_in<'a>(item: Option<&'a Item>, place: &str) -> Result<Option<&'a str>, String> {
+    item.map(|i| i.as_str().ok_or_else(|| format!("{place}: text in quotes, such as \"none\""))).transpose()
+}
+
+fn parse_knob_presses(doc: &DocumentMut) -> Result<[KnobPress; 3], String> {
+    let presses = table_in(doc.get("knob_press"), "[knob_press]")?;
     let mut out: [KnobPress; 3] = Default::default();
-    for (k, press) in [raw.knob1, raw.knob2, raw.knob3].into_iter().enumerate() {
-        let press = press.unwrap_or_default();
-        let at = |part: &str, text: Option<String>, default: &str| {
-            parse_press(text.as_deref().unwrap_or(default), true)
-                .map_err(|e| format!("[knob_press.knob{}] {part}: {e}", k + 1))
+    for (k, slot) in out.iter_mut().enumerate() {
+        let table = format!("[knob_press.knob{}]", k + 1);
+        let press = table_in(presses.and_then(|p| p.get(format!("knob{}", k + 1).as_str())), &table)?;
+        let part = |i: usize| {
+            let name = ["tap", "hold", "double"][i];
+            let place = format!("{table} {name}");
+            let text = text_in(press.and_then(|p| p.get(name)), &place)?.unwrap_or(DEFAULT_KNOB_PRESS[i]);
+            parse_press(text, true).map_err(|e| format!("{place}: {e}"))
         };
-        out[k] = KnobPress {
-            tap: at("tap", press.tap, tap)?,
-            hold: at("hold", press.hold, hold)?,
-            double: at("double", press.double, double)?,
-        };
+        *slot = KnobPress { tap: part(0)?, hold: part(1)?, double: part(2)? };
     }
     Ok(out)
 }
 
 /// One table of key holds or double taps; a row left out holds none.
-fn parse_press_grid(raw: RawKeys, table: &str) -> Result<PressGrid, String> {
+fn parse_press_grid(doc: &DocumentMut, table: &str) -> Result<PressGrid, String> {
+    let rows = table_in(doc.get(table), &format!("[{table}]"))?;
     let mut grid = PressGrid::default();
-    for (r, row) in [raw.row1, raw.row2, raw.row3, raw.row4].into_iter().enumerate() {
-        let Some(names) = row else { continue };
+    for (r, slots) in grid.iter_mut().enumerate() {
+        let place = format!("[{table}] row{}", r + 1);
+        let Some(row) = rows.and_then(|t| t.get(format!("row{}", r + 1).as_str())) else { continue };
+        let names = row.as_array().ok_or_else(|| format!("{place}: a list of 4 keys"))?;
         if names.len() != 4 {
-            return Err(format!("[{table}] row{}: {} entries, a row has 4 keys", r + 1, names.len()));
+            return Err(format!("{place}: {} entries, a row has 4 keys", names.len()));
         }
-        for (c, name) in names.iter().enumerate() {
-            grid[r][c] = parse_press(name, false).map_err(|e| format!("[{table}] row{}: {e}", r + 1))?;
+        for (slot, name) in slots.iter_mut().zip(names) {
+            let name = name.as_str().ok_or_else(|| format!("{place}: text in quotes, such as \"none\""))?;
+            *slot = parse_press(name, false).map_err(|e| format!("{place}: {e}"))?;
         }
     }
     Ok(grid)
@@ -505,8 +487,9 @@ fn parse_press_grid(raw: RawKeys, table: &str) -> Result<PressGrid, String> {
 
 /// The holds and double taps of one page, refused on keys whose tap is not the app's: a key
 /// the pad types never reaches the app, and Talk, Focus, Page and Move already use the hold.
-fn parse_key_gestures(hold: RawKeys, double: RawKeys, page: usize, keys: &KeyGrid) -> Result<[PressGrid; 2], String> {
-    let grids = [parse_press_grid(hold, GESTURE_TABLES[page][0])?, parse_press_grid(double, GESTURE_TABLES[page][1])?];
+fn parse_key_gestures(doc: &DocumentMut, page: usize, keys: &KeyGrid) -> Result<[PressGrid; 2], String> {
+    let [hold, double] = GESTURE_TABLES[page];
+    let grids = [parse_press_grid(doc, hold)?, parse_press_grid(doc, double)?];
     for (g, grid) in grids.iter().enumerate() {
         for (r, row) in grid.iter().enumerate() {
             for (c, action) in row.iter().enumerate() {
@@ -522,6 +505,21 @@ fn parse_key_gestures(hold: RawKeys, double: RawKeys, page: usize, keys: &KeyGri
         }
     }
     Ok(grids)
+}
+
+/// `[lights] idle_percent`: above 100 counts as 100, like other numbers out of range.
+fn parse_idle_percent(doc: &DocumentMut) -> Result<u8, String> {
+    let lights = table_in(doc.get("lights"), "[lights]")?;
+    let Some(item) = lights.and_then(|l| l.get("idle_percent")) else { return Ok(0) };
+    match item.as_integer() {
+        Some(n) if n >= 0 => Ok(n.min(100) as u8),
+        _ => Err("[lights] idle_percent: a whole number from 0 to 100".into()),
+    }
+}
+
+fn parse_output_in(doc: &DocumentMut) -> Result<Output, String> {
+    let audio = table_in(doc.get("audio"), "[audio]")?;
+    text_in(audio.and_then(|a| a.get("output")), "[audio] output")?.map_or(Ok(Output::Default), parse_output)
 }
 
 /// A key whose tap may have a hold and a double tap besides.
@@ -675,7 +673,8 @@ fn parse_color(s: &str) -> Option<[u8; 3]> {
 
 impl RawConfig {
     /// Turns the file's contents into settings, or says what is wrong in plain words.
-    fn check(self) -> Result<Config, String> {
+    /// `doc`: the same file, for the tables serde does not read.
+    fn check(self, doc: &DocumentMut) -> Result<Config, String> {
         if self.channel.is_empty() {
             return Err("no [[channel]] sections".into());
         }
@@ -729,14 +728,11 @@ impl RawConfig {
             duck: in_range("duck", self.duck, 0.0, 1.0)?,
             screen_off_min: self.screen_off_min.min(240) as u8,
             lights_dim_min: self.lights_dim_min.min(240) as u8,
-            key_gestures: [
-                parse_key_gestures(self.keys_hold, self.keys_double, 0, &pages[0])?,
-                parse_key_gestures(self.keys2_hold, self.keys2_double, 1, &pages[1])?,
-            ],
+            key_gestures: [parse_key_gestures(doc, 0, &pages[0])?, parse_key_gestures(doc, 1, &pages[1])?],
             pages,
-            knob_press: parse_knob_presses(self.knob_press)?,
-            idle_led_percent: self.lights.idle_percent.min(100) as u8,
-            output: self.audio.output.as_deref().map_or(Ok(Output::Default), parse_output)?,
+            knob_press: parse_knob_presses(doc)?,
+            idle_led_percent: parse_idle_percent(doc)?,
+            output: parse_output_in(doc)?,
             knobs: [
                 bind("knob1", self.knobs.knob1, KnobBinding::Master)?,
                 bind("knob2", self.knobs.knob2, KnobBinding::Master)?,
@@ -789,7 +785,13 @@ pub fn parse(text: &str) -> Result<Config, String> {
         // toml's message spans several lines (location, source excerpt, reason); keep it on one.
         e.to_string().lines().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join(" ")
     })?;
-    raw.check()
+    raw.check(&document(text)?)
+}
+
+/// The file as toml_edit reads it. Called only after serde has read the same text, so it
+/// does not fail in practice.
+fn document(text: &str) -> Result<DocumentMut, String> {
+    text.parse().map_err(|e: toml_edit::TomlError| e.message().to_string())
 }
 
 /// A problem in config.toml, told without quoting the file: where it is (for what the TOML
@@ -806,7 +808,7 @@ pub fn parse_located(text: &str) -> Result<Config, Problem> {
         at: e.span().map(|s| line_column(text, s.start)),
         reason: e.message().trim().to_string(),
     })?;
-    raw.check().map_err(|reason| Problem { at: None, reason })
+    document(text).and_then(|doc| raw.check(&doc)).map_err(|reason| Problem { at: None, reason })
 }
 
 /// Line and column (1-based, in characters) of a byte offset into `text`.
@@ -1158,7 +1160,13 @@ mod tests {
         assert!(e.starts_with("[knob_press.knob1] hold: \"play\": here only mute, pick,"), "{e}");
         assert!(problem(&format!("[knob_press.knob3]\ntap = \"F13\"\n{ONE}")).contains("the pad types keys itself"));
         assert!(problem(&format!("[knob_press.knob3]\ntap = \"mutee\"\n{ONE}")).contains("not an action"));
-        assert!(problem(&format!("[knob_press.knob1]\ntap = 3\n{ONE}")).contains("invalid type"));
+        assert_eq!(
+            problem(&format!("[knob_press.knob1]\ntap = 3\n{ONE}")),
+            "[knob_press.knob1] tap: text in quotes, such as \"none\""
+        );
+        assert_eq!(problem(&format!("knob_press = 3\n{ONE}")), "[knob_press] is not a table");
+        let inline = parse(&format!("knob_press = {{ knob2 = {{ tap = \"pick\" }} }}\n{ONE}")).unwrap();
+        assert_eq!(inline.knob_press[1].tap, PressAction::Pick, "an inline table works too");
     }
 
     #[test]
@@ -1182,6 +1190,8 @@ mod tests {
         assert!(problem(&on_focus).contains("[keys_hold] row3 key 2"), "Focus uses the hold already");
         let pick = format!("[keys2_hold]\nrow4 = [\"pick\", \"none\", \"none\", \"none\"]\n{ONE}");
         assert_eq!(problem(&pick), "[keys2_hold] row4: \"pick\": pick works on knob presses only");
+        let not_a_list = format!("[keys_double]\nrow1 = \"mute\"\n{ONE}");
+        assert_eq!(problem(&not_a_list), "[keys_double] row1: a list of 4 keys");
         let short = format!("[keys_hold]\nrow2 = [\"none\"]\n{ONE}");
         assert_eq!(problem(&short), "[keys_hold] row2: 1 entries, a row has 4 keys");
         let typed = format!("[keys_hold]\nrow4 = [\"F13\", \"none\", \"none\", \"none\"]\n{ONE}");
@@ -1193,7 +1203,11 @@ mod tests {
         let with = |extra: &str| parse(&format!("{extra}\n{ONE}"));
         assert_eq!(with("[lights]\nidle_percent = 25").unwrap().idle_led_percent, 25);
         assert_eq!(with("[lights]\nidle_percent = 900").unwrap().idle_led_percent, 100, "clamped like the others");
-        assert!(with("[lights]\nidle_percent = -1").is_err());
+        for bad in ["-1", "0.5", "\"10\""] {
+            let e = with(&format!("[lights]\nidle_percent = {bad}")).err().expect("should be rejected");
+            assert_eq!(e, "[lights] idle_percent: a whole number from 0 to 100");
+        }
+        assert!(with("[audio]\noutput = 1").err().expect("should be rejected").contains("text in quotes"));
         assert_eq!(with("[audio]\noutput = \" Default \"").unwrap().output, Output::Default);
         let id = "{0.0.0.00000000}.{8f0e2a1c-0000-4000-8000-000000000001}";
         assert_eq!(with(&format!("[audio]\noutput = \"{id}\"")).unwrap().output, Output::Device(id.into()));
