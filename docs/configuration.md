@@ -31,7 +31,7 @@ The environment variable `KB16_MIXER_DIR` can replace this folder. See [Environm
 |---|---|---|
 | `config.toml` | All settings | You, or the settings window. The app writes the defaults on the first start. |
 | `apps.toml` | Programs that you moved to a channel with the Move key | Only the app. To undo a move, use **Remove** in the settings window, or delete the line. |
-| `state.toml` | Channel levels that you set on the pad, the trim of each program, and levels to restore after Focus | The app |
+| `state.toml` | Channel levels that you set on the pad, the trim of each program, levels to restore after Focus, and the mute state of the microphone while you hold **Talk** | The app |
 | `log.txt` | Problems and errors | The app |
 | `selftest.txt` | Output of `kb16-mixer.exe --selftest` | The app |
 

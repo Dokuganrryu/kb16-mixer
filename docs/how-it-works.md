@@ -241,6 +241,7 @@ Otherwise the worker looks for a change at intervals of 200 ms. An open micropho
 
 The worker handles key presses and releases one at a time, in the order in which they arrived (`app/src/keys.rs`).
 Thus a quick release and press of **Talk** cannot put the microphone in an incorrect state.
+When you push **Talk**, the app writes the earlier mute state of the microphone to `state.toml` at once. If the app stops while you hold **Talk**, it sets that mute state again at the next start.
 A key with a hold or a double tap also gets those actions from this loop.
 
 ### Tap, hold and double tap
@@ -324,6 +325,7 @@ In a channel that you did not set on the pad, the app follows the level of the p
 - While Focus turns a channel down, the app learns nothing from Windows for that channel.
 - Focus does not turn down the microphone channel.
 - The app writes the initial levels to `state.toml` at once. If the app stops while Focus is on, it sets those levels again at the next start.
+- The app keeps these levels for each session. A session that is live again at the next start gets its own level back. A session that stopped gets the level of its program.
 - The app writes a side file to the disk (`sync_all`). When the side file is on the disk, the app renames it over `state.toml`. After a crash or a power cut, the disk has the previous file or the new file, not a part of a file. The app does not wait until the rename itself is on the disk. Nobody did a test with a power cut.
 
 ## Channels and programs

@@ -236,6 +236,8 @@ The pad sends `PRESS` when you push a knob down. While the app is present, it al
 The app uses the time between `PRESS` and `KNOB_UP` to find a hold.
 Firmware before version 0.2.0 does not send `KNOB_UP`. Thus the app must not wait for it. The app then uses each `PRESS` as a press and a release together: a tap or a double tap, but not a hold.
 
+If the USB bus does not accept a `KNOB_UP` or a `KEY_UP`, the firmware sends it again until the bus accepts it. It does not send `PRESS` or `KEY_DOWN` again.
+
 The pad sends `KEY_DOWN` and `KEY_UP` only for keys of the type `Host`.
 
 ## Version
