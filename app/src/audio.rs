@@ -12,17 +12,23 @@
 //! - Mute keys mute the whole channel and never touch a level or a trim.
 //! - Focus sits on top: it turns sessions down from their real level and puts back exactly
 //!   that level; nothing is learned from Windows while a channel is turned down.
+//!
+//! The output device (`[audio] output`): with "default", the master knob and the muted-output
+//! rule use the Windows default output device, looked up again at each use, so a new default
+//! is followed at once; apps on every active output device stay on their knobs. With a chosen
+//! device, all of that is that one device; while it is not active, it is as with "default".
 
-use crate::config::{ChannelCfg, ChannelTarget};
+use crate::config::{ChannelCfg, ChannelTarget, Output};
 use crate::procs::{self, Snapshot};
 use crate::trim::{self, place};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
+use windows::Win32::Foundation::PROPERTYKEY;
 use windows::Win32::Foundation::S_OK;
 use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
 use windows::Win32::Media::Audio::*;
 use windows::Win32::System::Com::*;
-use windows::core::{GUID, Interface, Result};
+use windows::core::{GUID, HSTRING, Interface, Result};
 
 const NO_CONTEXT: *const GUID = std::ptr::null();
 const REFRESH_EVERY: Duration = Duration::from_millis(1500);
@@ -83,6 +89,8 @@ struct Session {
     volume: Box<dyn Slider>,
     meter: Option<IAudioMeterInformation>,
     channel: Option<usize>,
+    /// Its output device is muted: nothing it plays is heard.
+    output_muted: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -130,8 +138,8 @@ pub struct Mixer {
     sessions: Vec<Session>,
     exe_of: HashMap<u32, String>,
     mic: Option<Mic>,
-    /// The default output device is muted: nothing an app plays is heard.
-    output_muted: bool,
+    /// `[audio] output`: the device this mixer works on.
+    pub output: Output,
     refreshed: Option<Instant>,
     pub faders: Vec<Fader>,
     /// Apps moved by hand: exe (lowercase) -> channel name. Beats the config's app lists.
@@ -160,7 +168,7 @@ impl Mixer {
                 sessions: Vec::new(),
                 exe_of: HashMap::new(),
                 mic: None,
-                output_muted: false,
+                output: Output::Default,
                 refreshed: None,
                 faders: Vec::new(),
                 moved: HashMap::new(),
@@ -248,7 +256,6 @@ impl Mixer {
         self.follow(sessions, channels, first);
 
         self.mic = self.open_mic();
-        self.output_muted = self.device_muted(Device::Master);
         if let (Some(c), Some(mic)) = (mic_channel(channels), &self.mic) {
             let f = &mut self.faders[c];
             if f.touched.is_none_or(|t| t.elapsed() >= SETTLE) {
@@ -394,15 +401,22 @@ impl Mixer {
         }
     }
 
-    /// Every live app session on every active output device.
+    /// Every live app session on the chosen output device, or on every active one.
     fn enumerate(&self) -> Vec<Session> {
         let mut out = Vec::new();
+        let devices = active_outputs(&self.devices);
+        let ids: Vec<String> = devices.iter().map(device_id).collect();
+        let only = chosen(&self.output, &ids);
         // SAFETY: COM calls on the enumerator and the objects it returns. The instance id string is
         // freed once, after it was copied.
         unsafe {
-            let Ok(coll) = self.devices.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) else { return out };
-            for i in 0..coll.GetCount().unwrap_or(0) {
-                let Ok(dev) = coll.Item(i) else { continue };
+            for (i, dev) in devices.iter().enumerate() {
+                if only.is_some_and(|o| o != i) {
+                    continue;
+                }
+                let output_muted = dev
+                    .Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None)
+                    .is_ok_and(|ep| ep.GetMute().is_ok_and(|b| b.as_bool()));
                 let Ok(mgr) = dev.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { continue };
                 let Ok(list) = mgr.GetSessionEnumerator() else { continue };
                 for j in 0..list.GetCount().unwrap_or(0) {
@@ -431,6 +445,7 @@ impl Mixer {
                         volume: Box::new(volume),
                         meter: ctl.cast::<IAudioMeterInformation>().ok(),
                         channel: None,
+                        output_muted,
                     });
                 }
             }
@@ -473,7 +488,7 @@ impl Mixer {
     /// Live level per channel for the meters, 0..255 on a -48..0 dB scale, and the loudest
     /// app as it is really heard. Windows reports a session's peak before its volume and mute,
     /// so the meters show what an app sends (and the Mic column the voice), while the second
-    /// value applies both, and is 0 with the output device muted.
+    /// value applies both, and is 0 with the app's output device muted.
     pub fn levels(&self, channels: &[ChannelCfg]) -> ([u8; 4], f32) {
         let mut peak = [0f32; 4];
         let mut heard = 0f32;
@@ -488,7 +503,7 @@ impl Mixer {
             // Only a session that sends sound is asked for its slider.
             if p > AUDIBLE {
                 let level = s.volume.level().unwrap_or(1.0);
-                heard = heard.max(heard_peak(p, level, s.volume.muted().unwrap_or(false), self.output_muted));
+                heard = heard.max(heard_peak(p, level, s.volume.muted().unwrap_or(false), s.output_muted));
             }
         }
         if let (Some(c), Some(Mic { meter: Some(m), .. })) = (mic_channel(channels), &self.mic)
@@ -730,12 +745,25 @@ impl Mixer {
         unsafe {
             match device {
                 Device::Mic => self.open_mic().map(|m| m.volume),
-                Device::Master => {
-                    let dev = self.devices.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
-                    dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None).ok()
-                }
+                Device::Master => self.output_device()?.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None).ok(),
             }
         }
+    }
+
+    /// The chosen output device while it is active.
+    fn pinned_device(&self) -> Option<IMMDevice> {
+        let Output::Device(id) = &self.output else { return None };
+        // SAFETY: COM calls on the enumerator this mixer created and the device it returns.
+        unsafe {
+            let dev = self.devices.GetDevice(&HSTRING::from(id.as_str())).ok()?;
+            (dev.GetState().ok()? == DEVICE_STATE_ACTIVE).then_some(dev)
+        }
+    }
+
+    /// The device the master knob turns: the chosen one, else the Windows default as it is now.
+    fn output_device(&self) -> Option<IMMDevice> {
+        // SAFETY: COM call on the enumerator this mixer created.
+        self.pinned_device().or_else(|| unsafe { self.devices.GetDefaultAudioEndpoint(eRender, eConsole).ok() })
     }
 
     pub fn device_muted(&self, device: Device) -> bool {
@@ -839,9 +867,15 @@ impl Mixer {
             let outputs = self.devices.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE).and_then(|c| c.GetCount());
             (outputs.unwrap_or(0) as usize, self.devices.GetDefaultAudioEndpoint(eRender, eConsole).is_ok())
         };
+        let output = match self.output {
+            Output::Default => OutputState::Default,
+            Output::Device(_) if self.pinned_device().is_some() => OutputState::Chosen,
+            Output::Device(_) => OutputState::ChosenMissing,
+        };
         Census {
             outputs,
             default_output,
+            output,
             output_muted: self.device_muted(Device::Master),
             sessions: self.enumerate().len(),
             mic: self.open_mic().is_some(),
@@ -855,10 +889,90 @@ pub struct Census {
     /// Active output devices.
     pub outputs: usize,
     pub default_output: bool,
+    pub output: OutputState,
+    /// The device the master knob turns is muted.
     pub output_muted: bool,
     /// App sessions on all active output devices (system sounds not counted).
     pub sessions: usize,
     pub mic: bool,
+}
+
+/// Which output device the mixer works on, as `--check` tells it (never by name).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum OutputState {
+    /// The Windows default.
+    #[default]
+    Default,
+    /// A chosen device, which is active.
+    Chosen,
+    /// A chosen device that is not active: the Windows default stands in.
+    ChosenMissing,
+}
+
+/// The index in `active` of the chosen output device; None for the Windows default (also
+/// when the chosen device is not among the active ones).
+fn chosen(output: &Output, active: &[String]) -> Option<usize> {
+    match output {
+        Output::Default => None,
+        Output::Device(id) => active.iter().position(|a| a == id),
+    }
+}
+
+/// The active output devices, in Windows' order.
+fn active_outputs(devices: &IMMDeviceEnumerator) -> Vec<IMMDevice> {
+    // SAFETY: COM calls on an enumerator the caller holds and the collection it returns.
+    unsafe {
+        let Ok(coll) = devices.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) else { return Vec::new() };
+        (0..coll.GetCount().unwrap_or(0)).filter_map(|i| coll.Item(i).ok()).collect()
+    }
+}
+
+/// A device's endpoint id, the string `[audio] output` holds.
+fn device_id(dev: &IMMDevice) -> String {
+    // SAFETY: COM call on a device the caller holds; the string is freed once, after the copy.
+    unsafe {
+        let Ok(p) = dev.GetId() else { return String::new() };
+        let id = p.to_string().unwrap_or_default();
+        CoTaskMemFree(Some(p.0 as *const _));
+        id
+    }
+}
+
+/// One output device for the settings window to offer.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OutputDevice {
+    pub id: String,
+    pub name: String,
+}
+
+/// The active output devices with their names, sorted by name. On a thread where COM is
+/// initialized (the main thread is). It names devices: never log it.
+pub fn output_devices() -> Vec<OutputDevice> {
+    // PKEY_Device_FriendlyName: "Speakers (USB Audio)".
+    const FRIENDLY_NAME: PROPERTYKEY =
+        PROPERTYKEY { fmtid: GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0), pid: 14 };
+    // SAFETY: COM calls on an enumerator created here and the devices and property stores it
+    // returns; the PROPVARIANT clears itself when dropped.
+    unsafe {
+        let Ok(devices) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
+            return Vec::new();
+        };
+        let mut out: Vec<OutputDevice> = active_outputs(&devices)
+            .iter()
+            .map(|dev| {
+                let id = device_id(dev);
+                let name = dev
+                    .OpenPropertyStore(STGM_READ)
+                    .and_then(|store| store.GetValue(&FRIENDLY_NAME))
+                    .map(|v| v.to_string())
+                    .ok()
+                    .filter(|n| !n.is_empty());
+                OutputDevice { name: name.unwrap_or_else(|| id.clone()), id }
+            })
+            .collect();
+        out.sort_by_key(|d| d.name.to_lowercase());
+        out
+    }
 }
 
 pub fn mic_channel(channels: &[ChannelCfg]) -> Option<usize> {
@@ -928,7 +1042,7 @@ impl Audible {
 }
 
 /// How loud a session is really heard: its peak after its own slider and mute, and nothing
-/// with the default output device muted. A peak below `AUDIBLE` counts as silence.
+/// with its output device muted. A peak below `AUDIBLE` counts as silence.
 fn heard_peak(peak: f32, level: f32, muted: bool, output_muted: bool) -> f32 {
     if peak > AUDIBLE && !muted && !output_muted { peak * level } else { 0.0 }
 }
@@ -1039,6 +1153,7 @@ mod tests {
                 volume: Box::new(fake.clone()),
                 meter: None,
                 channel: Some(channel),
+                output_muted: false,
             })
             .collect()
     }
@@ -1219,6 +1334,35 @@ mod tests {
         assert!(close(a.get(), 0.15) && close(m.faders[MEDIA].volume, 0.6), "and leaves every level as it is");
         m.set_focus(None, &channels());
         assert!(close(a.get(), 0.6) && close(b.get(), 0.3), "real levels back: {} {}", a.get(), b.get());
+    }
+
+    #[test]
+    fn the_chosen_output_device_counts_only_while_it_is_active() {
+        let active = ["{0.0.0.00000000}.{a}".to_string(), "{0.0.0.00000000}.{b}".to_string()];
+        let pick = |id: &str| chosen(&Output::Device(id.into()), &active);
+        assert_eq!(chosen(&Output::Default, &active), None, "the Windows default; apps on every device");
+        assert_eq!(pick("{0.0.0.00000000}.{b}"), Some(1));
+        assert_eq!(pick("{0.0.0.00000000}.{c}"), None, "unplugged: the default stands in");
+        assert_eq!(pick("{0.0.0.00000000}.{B}"), None, "an id is matched exactly");
+        assert_eq!(chosen(&Output::Device(active[0].clone()), &[]), None, "no device at all");
+    }
+
+    #[test]
+    fn a_listed_output_device_can_be_chosen_and_a_missing_one_falls_back() {
+        // Real Core Audio, read only. On a PC with no output device the list is empty.
+        let mut m = Mixer::new().expect("COM");
+        let listed = output_devices();
+        for d in &listed {
+            assert!(!d.name.is_empty());
+            assert_eq!(crate::config::parse_output(&d.id), Ok(Output::Device(d.id.clone())), "the config takes it");
+        }
+        if let Some(d) = listed.first() {
+            m.output = Output::Device(d.id.clone());
+            assert_eq!(m.census().output, OutputState::Chosen);
+        }
+        m.output = Output::Device("{0.0.0.00000000}.{00000000-0000-0000-0000-000000000000}".into());
+        assert_eq!(m.census().output, OutputState::ChosenMissing);
+        assert_eq!(m.output_device().is_some(), m.census().default_output, "the Windows default stands in");
     }
 
     #[test]

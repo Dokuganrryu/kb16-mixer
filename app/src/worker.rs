@@ -203,6 +203,7 @@ impl Worker {
             config::save_apps(&mixer.moved);
         }
         mixer.set_focus(None, channels);
+        mixer.output = cfg.output.clone();
         mixer.reset(channels, &self.saved.levels);
         mixer.duck = cfg.duck;
         // After that the mixer keeps its own: Focus has just put back what it turned down.

@@ -5,7 +5,7 @@
 //! is the product string of a pad with other firmware. Each part is a plain function of what
 //! was read, so the tests below need no hardware.
 
-use crate::audio::{Census, Mixer};
+use crate::audio::{Census, Mixer, OutputState};
 use crate::{VERSION, autostart, config};
 use kb16_mixer_protocol as protocol;
 use std::time::Duration;
@@ -45,7 +45,7 @@ pub fn run() -> i32 {
         ("pad", pad_line(&hid_devices(), bootloaders())),
         ("settings", settings_line(read_config())),
         ("autostart", autostart_line(autostart::run_value_present(), config::custom_dir().is_some())),
-        ("audio", audio_line(Mixer::new().map(|m| m.census()).map_err(|e| e.code().0))),
+        ("audio", audio_line(census(read_config()).map_err(|e| e.code().0))),
     ];
     let (text, code) = report(&lines);
     to_console();
@@ -104,6 +104,16 @@ fn count_bootloaders(ids: &[u16]) -> usize {
 }
 
 /// None when there is no config.toml yet; the error kind when it cannot be read.
+/// Core Audio as the app would use it, on the output device config.toml chooses (the Windows
+/// default when the file is missing or wrong).
+fn census(config: Option<Result<String, std::io::ErrorKind>>) -> windows::core::Result<Census> {
+    let mut mixer = Mixer::new()?;
+    if let Some(Ok(cfg)) = config.and_then(Result::ok).map(|text| config::parse(&text)) {
+        mixer.output = cfg.output;
+    }
+    Ok(mixer.census())
+}
+
 fn read_config() -> Option<Result<String, std::io::ErrorKind>> {
     match std::fs::read_to_string(config::path()) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -228,12 +238,19 @@ fn audio_line(audio: Result<Census, i32>) -> Line {
     if c.outputs == 0 {
         return (Level::Fail, "No audio output device is active.".into());
     }
-    if !c.default_output {
+    if !c.default_output && c.output != OutputState::Chosen {
         return (Level::Warn, "No default output device is set.".into());
     }
     let mic = if c.mic { "a microphone" } else { "no microphone" };
-    let muted = if c.output_muted { " The default output device is muted." } else { "" };
-    (Level::Ok, format!("{} output device(s), {} app session(s), {mic}.{muted}", c.outputs, c.sessions))
+    let (level, output) = match c.output {
+        OutputState::Default => (Level::Ok, "Output: the Windows default."),
+        OutputState::Chosen => (Level::Ok, "Output: the device chosen in the settings."),
+        OutputState::ChosenMissing => {
+            (Level::Warn, "The output device chosen in the settings is not active; the Windows default is used.")
+        }
+    };
+    let muted = if c.output_muted { " That output device is muted." } else { "" };
+    (level, format!("{} output device(s), {} app session(s), {mic}. {output}{muted}", c.outputs, c.sessions))
 }
 
 /// The report text, one line per topic, and the exit code.
@@ -398,12 +415,33 @@ mod tests {
 
     #[test]
     fn the_audio_and_autostart_lines() {
-        let census = Census { outputs: 2, default_output: true, output_muted: false, sessions: 5, mic: true };
-        assert_eq!(audio_line(Ok(census)), (Level::Ok, "2 output device(s), 5 app session(s), a microphone.".into()));
+        let census = Census { outputs: 2, default_output: true, sessions: 5, mic: true, ..Census::default() };
+        assert_eq!(
+            audio_line(Ok(census)),
+            (Level::Ok, "2 output device(s), 5 app session(s), a microphone. Output: the Windows default.".into())
+        );
         let muted = Census { output_muted: true, mic: false, ..census };
-        assert!(audio_line(Ok(muted)).1.ends_with("no microphone. The default output device is muted."));
+        assert!(
+            audio_line(Ok(muted))
+                .1
+                .ends_with("no microphone. Output: the Windows default. That output device is muted.")
+        );
         assert_eq!(audio_line(Ok(Census { outputs: 0, ..census })).0, Level::Fail);
         assert_eq!(audio_line(Ok(Census { default_output: false, ..census })).0, Level::Warn);
+        let chosen = Census { output: OutputState::Chosen, default_output: false, ..census };
+        assert_eq!(
+            audio_line(Ok(chosen)),
+            (
+                Level::Ok,
+                "2 output device(s), 5 app session(s), a microphone. Output: the device chosen in the settings.".into()
+            ),
+            "no default is needed then"
+        );
+        let gone = audio_line(Ok(Census { output: OutputState::ChosenMissing, ..census }));
+        assert_eq!(gone.0, Level::Warn);
+        assert!(
+            gone.1.ends_with("The output device chosen in the settings is not active; the Windows default is used.")
+        );
         assert_eq!(audio_line(Err(0x8007_0005_u32 as i32)).1, "Core Audio does not answer (error 0x80070005).");
         assert_eq!(autostart_line(true, false), (Level::Ok, "Start with Windows is on.".into()));
         assert!(autostart_line(false, true).1.contains("KB16_MIXER_DIR"));
