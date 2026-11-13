@@ -55,10 +55,11 @@ For a test on hardware, a KB16-01 rev2 is necessary. Read [docs/flashing.md](doc
 
 For a full list of the test suites, see [docs/testing.md](docs/testing.md).
 CI runs the same checks for each pull request and for each push to `main`. Run them before you open a pull request.
+CI also runs `cargo check` for each crate with the oldest Rust version that its `Cargo.toml` gives in `rust-version`. Thus do not use a Rust feature that is newer than that version.
 
 | Part | Commands |
 |---|---|
-| Protocol | `cd protocol`, then `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` |
+| Protocol | `cd protocol`, then `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked` |
 | Firmware logic | `cd pad-core`, then `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`, `cargo test --locked --release` |
 | Firmware image | `cd firmware`, then `cargo fmt --check`, `cargo clippy --release --locked -- -D warnings`, `cargo clippy --locked -- -D warnings`. Then, in the root folder: `sh scripts/build-firmware.sh` |
 | App | `cd app`, then `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo test --locked`. Then, in the root folder: `sh scripts/build-app.sh` |
