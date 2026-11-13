@@ -189,7 +189,10 @@ The internal version 0.1.0 (`0x0010`) does not send knob releases, and it ignore
 The firmware writes panic and hard-fault details into the flash page at `0x0801F800`.
 Each entry is a 16-bit word. An empty word is `0xFFFF`. The page has space for 512 words.
 
-A usual build does not erase the page, so the entries of all crashes stay. When the page is full, the firmware writes no more entries.
+A usual build does not erase the page, so the entries of all crashes stay. When the page is full, the firmware writes no more entries and gives no message.
+
+A flash of a new usual build does not clear the page. `flash.ps1` and `flash.sh` write only below the name page.
+A usual build erases the page at start only if the first word is a start-up stage marker (`0x01xx`). Only a build with `--diag` writes these markers.
 A build with `--diag` erases the page at each start.
 
 | First word | Next words |

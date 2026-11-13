@@ -18,6 +18,16 @@ A person does a test of the draft on a pad. The person publishes the draft only 
 The script rejects a firmware image with a bad vector table or a size above `0x1D400` bytes. It also rejects an exe without the `MZ` header.
 The zip is reproducible. The same commit and the same Python build give the same bytes.
 
+The firmware image is not reproducible on a different computer. CI builds it on Ubuntu.
+A build on Windows, or in a different folder, gives different bytes. These are the causes:
+
+- Cargo puts the host system of the build scripts into the hash of each crate. A different hash changes the order of the functions in the image.
+- The firmware is a workspace of its own. Thus Cargo puts the full folder path of `protocol/` and `pad-core/` into their hashes.
+- `--remap-path-prefix` changes only the start of a path. On Windows, the remainder of the path keeps the `\` separator.
+
+Thus a local build cannot prove that a release image is correct.
+To examine a release, use `SHA256SUMS` and the attestation. To examine an image from CI, compare it with the `kb16-mixer-firmware` artifact of the CI run for the same commit.
+
 ## Checklist
 
 ### 1. Prepare the version

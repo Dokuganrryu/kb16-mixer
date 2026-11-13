@@ -106,6 +106,8 @@ gh attestation verify .\kb16-mixer-0.2.0-windows-x64.zip --repo Dokuganrryu/kb16
 
 The command must show that the verification succeeded. The attestation shows that GitHub Actions built the file from this repository.
 
+Do not examine the firmware with a build of your own. A build on your computer gives different bytes from the CI build. See [releasing.md](releasing.md#what-a-release-contains).
+
 **If the values are not the same:** do not use the file. Delete it. Download it again. If the values stay different, tell us in an issue.
 
 ### 1.3 Unzip the release
