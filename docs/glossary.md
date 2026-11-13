@@ -3,6 +3,7 @@
 This glossary gives one definition for each term in the KB16 Mixer documents.
 The documents use each term only with this definition.
 A term in `code font` is a name in the code or in the config file.
+The documents follow ASD-STE100 Simplified Technical English. STE lets a document use technical names and technical verbs that its dictionary does not have. This glossary gives the definition of each such term that the documents use.
 
 ## The parts
 
@@ -10,17 +11,20 @@ A term in `code font` is a name in the code or in the config file.
 |---|---|
 | pad | The DOIO KB16-01 rev2 macro pad: 16 keys, 3 knobs, one screen and 16 key lights. "USB device" means the pad as Windows sees it on the USB bus. |
 | rev2 | The second hardware revision of the KB16-01. It has the APM32F103CB chip. KB16 Mixer supports only rev2. See [hardware.md](hardware.md). |
-| app | `kb16-mixer.exe`, the Windows tray app of this project. The documents never use "app" for other software. |
-| program | Any other Windows program, for example a game or a music player. In the settings window, the labels use the word "app" for a program (for example **These apps**), because the labels are short. |
+| app | `kb16-mixer.exe`, the Windows tray app of this project. The documents do not use "app" for other software. |
+| program | A different Windows program, for example a game or a music player. In the settings window, the labels use the word "app" for a program (for example **These apps**), because the labels are short. |
 | firmware | The software of this project that runs on the chip of the pad. It starts at address `0x08002000`. |
-| stock firmware | The firmware that DOIO installs in the pad at the factory. See [stock-firmware.md](stock-firmware.md). |
-| bootloader | The small program in the first 8 KB of the flash memory (`0x08000000` to `0x08001FFF`). It starts before the firmware and can write a new firmware image. The firmware never writes the bootloader. |
+| stock firmware | The firmware in the pad before you flash KB16 Mixer. It can be the factory firmware, or a different firmware that a person installed before you. See [stock-firmware.md](stock-firmware.md). |
+| factory firmware | The firmware that DOIO installs in the pad at the factory. The pad of the author did not have it: it had a community firmware. |
+| community firmware | A firmware that a person other than DOIO made from public source code, for example a build of QMK or Vial. |
+| bootloader | The small program in the first 8 KB of the flash memory (`0x08000000` to `0x08001FFF`). It starts before the firmware and can write a new firmware image. The firmware does not write the bootloader. |
 | bootloader mode | The state of the pad when the bootloader runs and waits for an image. The pad then has the USB IDs `1EAF:0003`. |
 | DFU | Device Firmware Upgrade, the USB standard that the bootloader uses to receive an image. `dfu-util` is a program that sends an image over DFU. |
 | image | The firmware file that the build makes: `kb16-mixer-firmware.bin`. |
-| image check | The checks in `scripts/build-firmware.sh` that refuse a bad image. See [CONTRIBUTING.md](../CONTRIBUTING.md#the-image-check-and-why-it-exists). |
+| image check | The checks in `scripts/build-firmware.sh` that reject a bad image. See [CONTRIBUTING.md](../CONTRIBUTING.md#the-image-check-and-why-it-exists). |
 | flash | (noun) The flash memory of the chip. (verb) To write an image to the pad. See [flashing.md](flashing.md). |
-| crate | One Rust package of this project: `protocol`, `pad-core`, `firmware` or `app`. |
+| crate | One Rust package of this project: `protocol`, `pad-core`, `firmware` or `app`. Also a Rust package from crates.io that a crate uses. |
+| build | (noun) The result of a compilation: an image or an exe. (verb) To compile the code into an image or an exe. |
 
 ## Sound and volume
 
@@ -40,13 +44,14 @@ A term in `code font` is a name in the code or in the config file.
 
 | Term | Definition |
 |---|---|
-| key | One of the 16 keys of the pad. The documents never use "button" for a key. |
+| key | One of the 16 keys of the pad. The documents do not use "button" for a key. |
 | button | A control in a window of the app on the PC. |
-| knob | One of the 3 knobs of the pad: the small left knob, the small right knob and the big knob. |
+| knob | One of the 3 knobs of the pad: the small left knob, the small right knob and the large knob. |
 | detent | One click of a knob. One detent is one `TURN` message. |
 | page | One of the two key layouts. Page 1 is the mixer page (`[keys]`). Page 2 is the keypad page (`[keys2]`). |
 | key table | The actions of the 16 keys of the current page. The app sends it to the pad. |
-| typed key | A key that the pad sends to Windows as normal keyboard input or as a media key. The app does not see it. |
+| typed key | A key that the pad sends to Windows as usual keyboard input or as a media key. The app does not see it. |
+| page keys | The keys Page Up, Page Down and Home. In keyboard mode, knob 2 sends them. |
 | mixer key | A key with an action of the app: Mute, Focus, Talk, Move, Switch page or `open:`. The pad sends it to the app. |
 | Mute | The action that mutes or unmutes a channel. |
 | Focus | The action that turns all other channels down to a part of their level. "The channel that has Focus" is the channel of the Focus key that is on. |
@@ -89,3 +94,20 @@ A term in `code font` is a name in the code or in the config file.
 | tray menu | The menu that opens when you right-click the tray icon. |
 | `--check` | The option that prints a short report about the app, the pad and the settings. You can paste the report into a bug report. |
 | release | A version of the app and the firmware on the GitHub releases page, as one zip file. |
+
+## Install, build and release
+
+| Term | Definition |
+|---|---|
+| WinUSB | The generic USB driver of Windows. `dfu-util` uses it to send an image to the bootloader. You install it one time, for the USB ID `1EAF:0003` only. |
+| DFU alternate setting | One numbered part of the DFU interface of the bootloader. Each alternate setting writes to a different memory area. This project uses only alternate setting 2 (`-a 2`), the firmware area at `0x08002000`. |
+| `PATH` | The environment variable of Windows that lists the folders where Windows finds programs. |
+| flasher | One of the two scripts that write an image to the pad: `flash.ps1` (Windows PowerShell) and `flash.sh` (POSIX shell). |
+| dry run | A run of a flasher with `-DryRun`. It examines the image and `dfu-util`, and it writes nothing. |
+| SHA-256 value | A 64-character checksum of a file. Two files with the same SHA-256 value have the same contents. |
+| `SHA256SUMS` | The file of a release that lists the SHA-256 value of each release file. |
+| attestation | A signed record from GitHub that says which workflow run made a file. `gh attestation verify` examines it. |
+| not tested | Nobody did this action on a pad, and the documents make no promise about its result. |
+| VERIFIED, NOT YET VERIFIED | The status of a function in the table of [testing.md](testing.md#verified-on-the-pad). VERIFIED: a person did the action on a pad and saw the result. |
+| SWD | Serial Wire Debug, the debug port of the chip. It has two signals: `SWDIO` (pin PA13) and `SWCLK` (pin PA14). |
+| debug probe | A device that connects a PC to the SWD port. It can write the flash directly, also the bootloader region. An ST-Link is one example. |

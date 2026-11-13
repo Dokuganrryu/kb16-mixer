@@ -1,9 +1,9 @@
 # Hardware: DOIO KB16-01 rev2
 
-This document describes the board for people who want to write their own firmware for this pad.
+This document gives the facts about the board for persons who want to write their own firmware for this pad.
 The facts come from the firmware source (`firmware/src`, `firmware/memory.x`) and from the public QMK board definition (`keyboards/doio/kb16/rev2` in `qmk/qmk_firmware`).
 
-The project examined and tested only one unit. Other production runs can be different.
+The project examined only one unit, and did its tests on that unit. Other production runs can be different.
 
 ## Parts
 
@@ -30,11 +30,11 @@ The QMK board definition gives both revisions the same USB ID, `D010:1601`. Thus
 | rev1 | ATmega32U4 | Atmel DFU | No |
 | rev2 | APM32F103CBT6 | stm32duino, USB ID `1EAF:0003` | Yes |
 
-The bootloader tells the two revisions apart. See [install.md](install.md#2-check-your-pad).
+The bootloader tells the two revisions apart. See [install.md](install.md#2-examine-your-pad).
 
 ## Layout
 
-The 4 x 4 keys are on the left. On the right, the two small knobs are at the top, the screen is below them, and the big knob is at the bottom.
+The 4 x 4 keys are on the left. On the right, the two small knobs are at the top, the screen is below them, and the large knob is at the bottom.
 
 ```text
   +---------------------------------------------------+
@@ -50,7 +50,7 @@ The 4 x 4 keys are on the left. On the right, the two small knobs are at the top
   +---------------------------------------------------+
 ```
 
-The seller and the QMK readme name a reset button on the board, under the bottom cover. This project did not test it. See [stock-firmware.md](stock-firmware.md#way-2-the-reset-button-under-the-bottom-cover).
+The seller and the QMK readme name a reset button on the board, under the bottom cover. This project did not do a test of it. See [stock-firmware.md](stock-firmware.md#procedure-2-the-reset-button-under-the-bottom-cover).
 
 ## Pin table
 
@@ -77,14 +77,14 @@ The seller and the QMK readme name a reset button on the board, under the bottom
 The matrix uses COL2ROW diodes. The firmware drives one row low at a time and reads the columns with pull-up resistors.
 
 The QMK layout puts the knob push buttons at matrix positions (0,4), (1,4) and (2,4).
-In this project, knob 1 is the small left knob, knob 2 is the small right knob, and knob 3 is the big knob.
+In this project, knob 1 is the small left knob, knob 2 is the small right knob, and knob 3 is the large knob.
 On the wire, the knobs have the numbers 0, 1 and 2.
 
 ## Memory map
 
 | Address | Size | Contents |
 |---|---|---|
-| `0x08000000` | 8 KB | stm32duino bootloader. It is not part of this project. This project never writes it. |
+| `0x08000000` | 8 KB | stm32duino bootloader. It is not part of this project. This project does not write it. |
 | `0x08002000` | 117 KB | Firmware (DFU alternate setting 2) |
 | `0x0801F400` | 1 KB | Name for the logo screen (`firmware/src/name.rs`) |
 | `0x0801F800` | 1 KB | Crash log (`firmware/src/diag.rs`) |
@@ -94,7 +94,8 @@ On the wire, the knobs have the numbers 0, 1 and 2.
 `firmware/memory.x` gives the firmware region as 117 KB from `0x08002000`. The region ends below the name page.
 `scripts/build-firmware.sh` rejects an image that is larger than `0x1D400` bytes (117 KB).
 Thus the image cannot overlap the name page or the crash log.
-The image of version 0.1.0 is approximately 50 KB (51608 bytes in a local build of this branch).
+
+The image of version 0.1.0 is approximately 51 KB. A local build and the CI build are not equal in size. The CI build is approximately 64 bytes larger, because the file paths in the panic messages use a different path separator.
 
 ### Flash guard
 
@@ -104,13 +105,14 @@ All other flash is closed to the firmware: the bootloader, the firmware image, a
 | Step | Rule | Code |
 |---|---|---|
 | Address check | An erase must start at the first byte of a reserved page. A write must be on a 2-byte boundary, and stay inside one reserved page. Other addresses get an error, and the firmware does not touch the flash controller. | `pad-core/src/flash.rs` |
-| Wait | The firmware waits for the busy flag (`BSY`) for a limited time. After the limit, it stops with an error. | `firmware/src/flash.rs` |
-| Error flags | Before and after each step, the firmware reads and clears the error flags `PGERR` (program error) and `WRPRTERR` (write protection error). A set flag is an error. | `firmware/src/flash.rs` |
-| Read-back | After an erase, each word must read `0xFFFF`. After a write, each word must read back the written value. | `firmware/src/flash.rs` |
-| Lock | The firmware locks the flash controller again after each operation, also after an error. | `firmware/src/flash.rs` |
+| Wait | The firmware waits for the busy flag (`BSY`) for a limited time. After the limit, it stops with an error. | `pad-core/src/flash.rs` |
+| Error flags | Before and after each step, the firmware reads and clears the error flags `PGERR` (program error) and `WRPRTERR` (write protection error). A set flag is an error. | `firmware/src/flash.rs` reads and clears the register. `pad-core/src/flash.rs` makes the decision. |
+| Read-back | After an erase, each word must read `0xFFFF`. After a write, each word must read back the written value. | `pad-core/src/flash.rs` |
+| Lock | The firmware locks the flash controller again after each operation, also after an error. | `pad-core/src/flash.rs` sets the order of the steps. `firmware/src/flash.rs` writes the registers. |
 
-A refused or failed write changes nothing else. The firmware continues. The panic and hard-fault handlers use the same code, so it never panics and never waits without a limit.
-The tests in `pad-core/tests/rules.rs` check the address rules on the PC.
+A rejected or unsatisfactory write changes nothing else. The firmware continues. The panic and hard-fault handlers use the same code, so it does not panic and does not wait without a limit.
+
+On the PC, `pad-core/tests/rules.rs` examines the address rules. `pad-core/tests/flash.rs` examines the order of the steps with a fake flash controller. It also makes sure that the controller is locked again after each step, also after each error. No test examines the register writes in `firmware/src/flash.rs`, because they run only on the chip.
 
 ### Name page
 
@@ -124,9 +126,10 @@ The name page holds one record of 16-bit words:
 | 7 | Fletcher-16 checksum of words 0–6 |
 
 The firmware reads the record at start. If the record is not correct (for example, a blank page), the screen shows `KB16`.
-The firmware writes the page only when the app sends a different name. It writes at most one time each minute, and at most 8 times for each power-up.
+
+The firmware writes the page only when the app sends a different name. It writes at most one time each minute, and at most 8 times for each power-up. This rule is in `pad_core::name`, and `pad-core/tests/rules.rs` examines it.
 After the limit, a new name shows from RAM until the next start.
-An erase stops the CPU for approximately 20 ms.
+When the firmware erases the page, the CPU stops for approximately 20 ms.
 
 ## Bootloader
 
@@ -162,10 +165,10 @@ Thus each flash ends with one disconnect and one connect of the pad.
 | Watchdog reset | The firmware starts again. |
 | Three crashed starts in a row | The firmware writes `0x424C` and resets. The pad is designed to stay in the bootloader. This was not tested on the pad. |
 
-The independent watchdog has a timeout of approximately 2 seconds. A firmware task feeds it every 250 ms.
+The independent watchdog has a timeout of approximately 2 seconds. A firmware task feeds it at intervals of 250 ms.
 
 `BKP_DR9` counts crashed starts. A crash is a watchdog reset or a panic mark in `BKP_DR8`.
-After 10 seconds of normal operation, the firmware sets the counter to zero.
+After 10 seconds of correct operation, the firmware sets the counter to zero.
 
 The top-left key check occurs before the firmware sets the clocks. It reads PB14 while it drives row PB3 low.
 
@@ -175,14 +178,14 @@ The firmware sends its version as the release number of its USB device (`bcdDevi
 
 The format is `0xJJMN` in binary-coded decimal, for version JJ.M.N. For example, version 0.1.0 is `0x0010`.
 Thus the major version can be 0–99, and the minor and patch versions can be 0–9. The build stops for a version that does not fit.
-Early builds without a version sent `0x0300`. The **Pad** tab then shows "Pad firmware: an early build without a version.", and `--check` shows "firmware unknown (an early build)".
+Builds before version 0.1.0 had no version, and sent `0x0300`. The **Pad** tab then shows "Pad firmware: an early build without a version.", and `--check` shows "firmware unknown (an early build)".
 
 ## Crash log
 
 The firmware writes panic and hard-fault details into the flash page at `0x0801F800`.
 Each entry is a 16-bit word. An empty word is `0xFFFF`. The page has space for 512 words.
 
-A normal build does not erase the page, so the entries of all crashes stay. When the page is full, the firmware writes no more entries.
+A usual build does not erase the page, so the entries of all crashes stay. When the page is full, the firmware writes no more entries.
 A build with `--diag` erases the page at each start.
 
 | First word | Next words |
@@ -204,17 +207,17 @@ To read the crash log:
 This project used this method to read the crash log.
 
 A build with `--diag` (`scripts/build-firmware.sh --diag`) also writes start-up stage markers into this page.
-The project found the first start-up problems on this board in this way.
+The project found the first start-up problems on this board with this method.
 
 ## Lessons learned
 
 These facts cost time to learn. They can help you if you write your own firmware for this pad.
 
-- **embassy-stm32 needs the `rt` feature**, also with `default-features = false`. Without it, all interrupts go to `DefaultHandler`. The pad then stops at the first timer interrupt, with no lights. `scripts/build-firmware.sh` rejects such an image.
+- **embassy-stm32 must have the `rt` feature**, also with `default-features = false`. Without it, all interrupts go to `DefaultHandler`. The pad then stops at the first timer interrupt, with no lights. `scripts/build-firmware.sh` rejects such an image.
 - **Clear the NVIC at start.** The interrupt state of the bootloader stays after the jump to the firmware. The firmware disables and clears all interrupts before it starts.
-- **Force a new USB connection.** The board has a fixed pull-up resistor on D+. The firmware holds D+ low for 10 ms, so that the PC sees a new device.
-- **The case hides the top rows of the screen.** On the tested unit, the case hides approximately 3 pixel rows. All screen layouts use 29 rows and move down by `oled_top` (default 3).
-- **Free PB3.** PB3 is a JTAG pin after reset. Turn off JTAG (keep SWD) to use it as matrix row 0.
-- **Time the WS2812 signal with the cycle counter.** The firmware sends the LED data from RAM with interrupts off, timed by the DWT cycle counter. Flash wait states then cannot change the pulse length. One frame takes approximately 0.5 ms.
+- **Force a new USB connection.** The board has a permanent pull-up resistor on D+. The firmware holds D+ low for 10 ms, so that the PC sees a new device.
+- **The case hides the top rows of the screen.** On the unit of the author, the case hides approximately 3 pixel rows. All screen layouts use 29 rows and move down by `oled_top` (default 3).
+- **Free PB3.** PB3 is a JTAG pin after reset. Disable JTAG (keep SWD) to use it as matrix row 0.
+- **Time the WS2812 signal with the cycle counter.** The firmware sends the LED data from RAM with interrupts off, timed by the DWT cycle counter. Flash wait states then cannot change the pulse length. One frame lasts approximately 0.5 ms.
 - **Limit the LED current.** The firmware limits the sum of all LED values to 45 % of full white.
 - **Knobs:** each detent has four contact steps. If the decoder misses a step (two steps at once), it ignores that step.

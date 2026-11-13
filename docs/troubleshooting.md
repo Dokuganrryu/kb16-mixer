@@ -1,7 +1,8 @@
 # Troubleshooting
 
 Read this document if a step of [install.md](install.md) or the pad does not work as the documents say.
-Find your symptom. Each entry gives the cause and the fix.
+Find your symptom. Each entry gives the cause and the repair.
+For the terms, for example [bootloader](glossary.md#the-parts), [WinUSB](glossary.md#install-build-and-release) and [`PATH`](glossary.md#install-build-and-release), see [glossary.md](glossary.md).
 Many entries start from a line of `kb16-mixer.exe --check`. To run it, see [install.md](install.md#what---check-tells-you).
 
 If your problem is not here, open an issue. Paste the output of `kb16-mixer.exe --check` into it. The report has no names, user names, paths or serial numbers.
@@ -86,10 +87,10 @@ Each `REFUSED` message means that the script wrote nothing to the pad.
 
 | Message starts with | Cause | Fix |
 |---|---|---|
-| `REFUSED: dfu-util not found` | The script cannot find `dfu-util`. | Copy `dfu-util-static.exe` into the `tools` folder next to `flash.ps1`. See [install.md](install.md#14-get-dfu-util). Or give `-DfuUtil <path>`. |
+| `REFUSED: dfu-util not found` | The script did not find `dfu-util.exe` or `dfu-util-static.exe`. It looks in this order: the `-DfuUtil` path, the `PATH`, the `tools` folder next to `flash.ps1`, and the `tools` folder one level up (the repository root). | Copy `dfu-util-static.exe` into the `tools` folder next to `flash.ps1`. See [install.md](install.md#14-get-dfu-util). Or give `-DfuUtil <path>`. |
 | `REFUSED: No firmware image found` | The firmware file is not in the `firmware` folder next to the script. | Unzip the release again, with its folders. Or give `-Firmware <path>`. |
-| `REFUSED: The image ... is empty`, `... is too small` | The file is not firmware. | Download the release again. Check it. See [install.md](install.md#12-check-the-download). |
-| `REFUSED: The image is <n> bytes. The limit is 119808 bytes` | The image is too large for the firmware area of this project. A full stock backup (122880 bytes) is larger than this limit. | To write a stock backup back, see [stock-firmware.md](stock-firmware.md#write-the-backup-back-restore). |
+| `REFUSED: The image ... is empty`, `... is too small` | The file is not firmware. | Download the release again. Check it. See [install.md](install.md#12-examine-the-download). |
+| `REFUSED: The image is <n> bytes. The limit is 119808 bytes` | The image is too large for the firmware area of this project. A full stock backup (122880 bytes) is larger than this limit. | To write a stock backup back, see [stock-firmware.md](stock-firmware.md#write-the-backup-back). |
 | `REFUSED: The first word ... is not a stack pointer in RAM` or `The second word ... is not a reset vector` | The file is not an image for this pad. For example, it is a web page saved as `.bin`. | Do not flash the file. |
 | `REFUSED: No pad in bootloader mode (USB 1EAF:0003) was found` | The pad is not in the bootloader, or the bootloader has no driver. | Put the pad into the bootloader. See [install.md](install.md#3-put-the-pad-into-the-bootloader). Look at Device Manager. See [Maple 003 has a warning sign](#maple-003-has-a-warning-sign). |
 | `REFUSED: <n> devices with the USB ID 1EAF:0003 are connected` | More than one device is in the bootloader. | Disconnect all devices except the pad. |
@@ -120,7 +121,7 @@ Each `REFUSED` message means that the script wrote nothing to the pad.
 
 | Cause | Fix |
 |---|---|
-| The bootloader does not answer the reset request of `dfu-util`. | Nothing. This is normal. Disconnect the pad and connect it again. |
+| The bootloader does not answer the reset request of `dfu-util`. | Nothing. This is usual and correct. Disconnect the pad and connect it again. |
 
 ### dfu-util shows LIBUSB_ERROR_PIPE or LIBUSB_ERROR_IO
 
@@ -158,7 +159,7 @@ Other users of this pad report these errors. This project did not see them.
 
 | Cause | Fix |
 |---|---|
-| `kb16-mixer.exe` has no code signature. SmartScreen does not know it. | Check the download first. See [install.md](install.md#12-check-the-download). Then click **More info**, then **Run anyway**. |
+| `kb16-mixer.exe` has no code signature. SmartScreen does not know it. | Check the download first. See [install.md](install.md#12-examine-the-download). Then click **More info**, then **Run anyway**. |
 
 ### "Running scripts is disabled on this system"
 
