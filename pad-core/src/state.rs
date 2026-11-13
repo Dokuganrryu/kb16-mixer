@@ -12,6 +12,8 @@ pub const DEFAULT_OLED_TOP: u8 = 3;
 pub const RIPPLES: usize = 4;
 /// Minutes of quiet before the screen turns off / the lights dim, unless the PC app says otherwise.
 pub const DEFAULT_IDLE_MIN: u8 = 10;
+/// How long a readout stays after its last message, and a moved channel's lights show its fader.
+pub const POPUP_MS: u64 = 1300;
 
 #[derive(Clone, Copy)]
 pub struct Popup<T> {
@@ -56,6 +58,8 @@ pub struct State<T> {
     /// Light the dimmed LEDs keep, in percent of normal; 0 = the lights' own default.
     pub lights_idle_percent: u8,
     pub popup: Option<Popup<T>>,
+    /// The host that is there has sent a frame, so `mixer.volume` is its own and not left over.
+    pub frame_seen: bool,
     /// The last activity, for the idle rule (see `docs/how-it-works.md`).
     pub activity: T,
     pub keys: [Key; 16],
@@ -103,6 +107,7 @@ impl<T: Time> State<T> {
             lights_dim_min: DEFAULT_IDLE_MIN,
             lights_idle_percent: 0,
             popup: None,
+            frame_seen: false,
             activity: boot,
             keys: [Key::Host; 16],
             ripples: [None; RIPPLES],
@@ -141,6 +146,7 @@ impl<T: Time> State<T> {
         if !self.host_alive(now) {
             self.mixer.playing = false;
             self.mixer.second_page = false;
+            self.frame_seen = false;
         }
         self.host_seen = Some(now);
         let m = &mut self.mixer;
@@ -175,6 +181,7 @@ impl<T: Time> State<T> {
                 // and include the microphone. Whether something is heard is the host's call.
                 m.playing = f.playing;
                 m.second_page = f.second_page;
+                self.frame_seen = true;
             }
             HostMsg::Names(names) => m.names = names,
             HostMsg::Keys(k) => {

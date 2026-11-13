@@ -1,8 +1,8 @@
 //! The key lights' maths: gamma, smoothing, dithering, idle easing, and what a frame shows.
 
-use kb16_mixer_protocol::NEVER;
-use pad_core::leds::{self, Bytes, Ease, Input, Lights, dither, gamma, glide, off_after, ungamma};
-use pad_core::state::{Mixer, State};
+use kb16_mixer_protocol::{Frame, HostMsg, NEVER};
+use pad_core::leds::{self, Bytes, DIM_MS, Ease, Input, Lights, dither, gamma, glide, off_after, ungamma};
+use pad_core::state::{Mixer, POPUP_MS, State};
 
 const FULL: u32 = 0xFFFF;
 const MIN: u64 = 60_000;
@@ -107,12 +107,13 @@ fn the_idle_fade_eases_down_and_a_wake_comes_back_fast() {
     let mut e = Ease::new(FULL, 0u64);
     e.aim(10_000, 1000);
     let mut last = FULL;
-    for t in (1000..=1700).step_by(5) {
+    for t in (1000..=1000 + DIM_MS).step_by(5) {
         let v = e.value(t);
         assert!(v <= last);
         last = v;
     }
-    assert_eq!(e.value(1700), 10_000, "lands exactly at 700 ms");
+    assert_eq!(DIM_MS, 700, "the screen's idle fade takes the same time");
+    assert_eq!(e.value(1000 + DIM_MS), 10_000, "lands exactly at 700 ms");
     // Gentle start: after 5% of the time, under 2% of the way.
     assert!(FULL - e.value(1035) < (FULL - 10_000) / 50);
 
@@ -163,6 +164,7 @@ impl Rig {
                 mixer: mixer(),
                 brightness: s.brightness,
                 ripples: s.ripples,
+                frame_seen: true,
                 activity: 0,
                 dim_after: 10,
                 idle_percent: 0,
@@ -319,4 +321,148 @@ fn the_default_idle_percent_is_light_not_brightness() {
     // 6% of the light is about a third of the perceived brightness.
     let p = leds::idle_level(0);
     assert!((FULL * 30 / 100..FULL * 33 / 100).contains(&p), "{p}");
+}
+
+#[test]
+fn the_dim_starts_at_the_idle_limit_and_lands_after_the_fade_time() {
+    let mut r = Rig::new(true);
+    r.input.dim_after = 1;
+    r.run(MIN);
+    let awake = r.total();
+    // Up to the limit nothing has moved; the screen's fade starts from the same moment.
+    assert_eq!(r.t, MIN);
+    r.run(DIM_MS / 2);
+    let mid = r.total();
+    r.run(DIM_MS / 2);
+    let landed = r.total();
+    r.run(2000);
+    assert!(mid < awake && mid > landed, "{awake} > {mid} > {landed}");
+    assert!(landed.abs_diff(r.total()) <= 4, "landed at the fade time: {landed} vs {}", r.total());
+}
+
+/// A host frame with these volumes, as the app sends it.
+fn host_frame(volumes: [u8; 4], second_page: bool) -> HostMsg {
+    HostMsg::Frame(Frame {
+        levels: [0; 4],
+        volumes,
+        mutes: 0,
+        selected: 255,
+        mixer_keys: true,
+        mic_muted: false,
+        playing: false,
+        second_page,
+    })
+}
+
+/// One host report through the pad's state, then into the lights' input as the firmware does.
+fn feed(r: &mut Rig, s: &mut State<u64>, msg: HostMsg) {
+    s.handle(msg, r.t);
+    r.input.alive = s.host_alive(r.t);
+    r.input.mixer.volume = s.mixer.volume;
+    r.input.mixer.second_page = s.mixer.second_page;
+    r.input.frame_seen = s.frame_seen;
+}
+
+/// Every channel byte of every LED within `tol` of the other frame's.
+fn near(a: &Bytes, b: &Bytes, tol: u8) -> bool {
+    a.iter().zip(b.iter()).all(|(x, y)| x.abs_diff(*y) <= tol)
+}
+
+fn lum(b: &Bytes, led: usize) -> u32 {
+    let (x, y, z) = rgb(b, led);
+    x as u32 + y as u32 + z as u32
+}
+
+#[test]
+fn a_volume_change_shows_the_fader_on_its_column_for_the_readout_time() {
+    let mut s = State::new(0u64);
+    let mut r = Rig::new(false);
+    feed(&mut r, &mut s, host_frame([50; 4], false));
+    r.run(1500);
+    let rest = r.last;
+
+    feed(&mut r, &mut s, host_frame([50, 50, 100, 50], false));
+    let moved = r.t;
+    r.run(300);
+    // Column 2's three meter LEDs (2, 6, 10) fill to full; the sound is silent.
+    for led in [2, 6, 10] {
+        assert!(lum(&r.last, led) > lum(&rest, led) * 3, "led {led}: {} vs {}", lum(&r.last, led), lum(&rest, led));
+    }
+    // The other columns and the mute row do not move.
+    for led in [0, 1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 14, 15] {
+        assert!(lum(&r.last, led).abs_diff(lum(&rest, led)) <= 3, "led {led} moved");
+    }
+    // It holds for the readout time, then glides back down to the meter.
+    r.run(moved + POPUP_MS - 20 - r.t);
+    assert!(lum(&r.last, 2) > lum(&rest, 2) * 3, "still the fader just before the readout ends");
+    let after = r.run(100);
+    assert!(lum(&after[after.len() - 1], 2) < lum(&after[0], 2), "the release starts");
+    for w in after.windows(2) {
+        assert!(lum(&w[0], 2) <= lum(&w[1], 2) + 12, "glides, no jump");
+    }
+    r.run(2000);
+    assert!(near(&r.last, &rest, 2), "back to the meter");
+}
+
+#[test]
+fn the_first_frame_from_a_new_host_shows_no_fader() {
+    let mut s = State::new(0u64);
+    let mut r = Rig::new(false);
+    // The app sends its settings before its first frame: the host is there, its volumes not yet.
+    feed(&mut r, &mut s, HostMsg::Heartbeat);
+    r.run(1500);
+    let before = r.last;
+    feed(&mut r, &mut s, host_frame([70, 80, 55, 30], false));
+    r.run(300);
+    assert!(near(&r.last, &before, 2), "the pad's boot volumes are not a change");
+
+    // The host goes away for longer than its timeout and comes back with other volumes.
+    r.run(4000);
+    feed(&mut r, &mut s, HostMsg::Heartbeat);
+    r.run(1500);
+    let back = r.last;
+    feed(&mut r, &mut s, host_frame([10, 20, 30, 40], false));
+    r.run(300);
+    assert!(near(&r.last, &back, 2), "the last host's volumes are not a change");
+
+    // The next change is one.
+    feed(&mut r, &mut s, host_frame([10, 20, 90, 40], false));
+    r.run(300);
+    assert!(lum(&r.last, 2) > lum(&back, 2) * 2);
+}
+
+#[test]
+fn page_two_rests_the_meter_rows_and_keeps_the_mute_row() {
+    let mut s = State::new(0u64);
+    let mut r = Rig::new(false);
+    feed(&mut r, &mut s, host_frame([50; 4], false));
+    r.input.mixer.mutes = 0b0010;
+    r.input.mixer.selected = 3;
+    r.input.mixer.level = [200, 200, 120, 40];
+    r.run(1500);
+    let one = r.last;
+
+    feed(&mut r, &mut s, host_frame([50; 4], true));
+    r.run(1500);
+    let two = r.last;
+    // The meter rows of the unmuted channels rest at one even ice level, whatever plays and
+    // whichever has focus.
+    let rest = rgb(&two, 0);
+    for led in [0, 2, 3, 4, 6, 7, 8, 10, 11] {
+        let (a, b, c) = rgb(&two, led);
+        assert!(a.abs_diff(rest.0) <= 1 && b.abs_diff(rest.1) <= 1 && c.abs_diff(rest.2) <= 1, "led {led}");
+        assert!(lum(&two, led) < lum(&one, led), "led {led} rests below its meter");
+    }
+    assert!(rest.2 > rest.0, "ice: blue above red");
+    // The mute row and the muted channel stay as on page 1.
+    for led in [12, 13, 14, 15] {
+        assert!(lum(&two, led).abs_diff(lum(&one, led)) <= 30, "mute row led {led}");
+    }
+    let (red, _, blue) = rgb(&two, 5);
+    assert!(red > blue, "the muted column stays amber");
+
+    // A turned knob on page 2 leaves the rest alone.
+    feed(&mut r, &mut s, host_frame([50, 50, 100, 50], true));
+    r.run(300);
+    assert!(lum(&r.last, 2).abs_diff(lum(&two, 2)) <= 3);
 }

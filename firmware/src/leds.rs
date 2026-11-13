@@ -39,6 +39,7 @@ pub async fn run(_pin: Output<'static>) {
             mixer: s.mixer,
             brightness: s.brightness,
             ripples: s.ripples,
+            frame_seen: s.frame_seen,
             activity: s.activity,
             dim_after: s.lights_dim_min,
             idle_percent: s.lights_idle_percent,

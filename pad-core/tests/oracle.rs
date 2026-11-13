@@ -1501,6 +1501,7 @@ fn the_lights_keep_the_same_meters() {
                     mixer: new_mixer(&mixer),
                     brightness,
                     ripples: ripples.map(|r| r.map(|r| pad_core::state::Ripple { at: r.at, row: r.row, col: r.col })),
+                    frame_seen: true,
                     activity,
                     dim_after,
                     idle_percent: 0,
