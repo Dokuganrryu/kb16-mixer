@@ -166,6 +166,9 @@ VOCABULARY = [
     ("now", r"now", "use AT THIS TIME, or delete it"),
     ("already", r"already", "use NO OTHER or IN PROGRESS, or delete it"),
     ("still", r"still", "use STAY or CONTINUE"),
+    # "NOT YET VERIFIED" is a status label (see docs/glossary.md).
+    ("yet", r"yet(?! verified)", "use AT THIS TIME or BUT"),
+    ("leave", r"leav(e|es|ing)", "use KEEP, LET ... STAY or GO"),
     ("instead", r"instead", "use ALTERNATIVE or IN PLACE OF"),
     ("any", r"any", "use ALL, EACH, ONE or A"),
     ("every", r"every", "use ALL, EACH or INTERVAL"),

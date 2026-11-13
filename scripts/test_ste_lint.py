@@ -151,8 +151,11 @@ class Vocabulary(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(len(self.found(text)), 1)
 
-    def test_not_tested_is_the_status_label(self):
-        self.assertEqual(self.found("Windows 10 is not tested."), [])
+    def test_status_labels_pass(self):
+        self.assertEqual(self.found("Windows 10 is not tested. The status is NOT YET VERIFIED."), [])
+
+    def test_yet_and_leave_fail(self):
+        self.assertEqual(len(self.found("Nobody ran it yet. Leave the box.")), 2)
 
     def test_two_word_entry_fails(self):
         self.assertEqual(self.found("Turn on the switch."), ["turn on/off: use START, STOP or SET"])
