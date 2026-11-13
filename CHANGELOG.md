@@ -5,6 +5,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The
 
 ## [Unreleased]
 
+### Added
+
+- A CI job `msrv` checks each crate with the oldest Rust version that its `Cargo.toml` gives in `rust-version`.
+- A weekly workflow runs `cargo deny` for the four crates on `main`, so a new advisory shows without a push.
+
+### Fixed
+
+- The firmware sends a knob release again when the USB bus did not accept it. Before, a lost release could make a tap into a hold.
+- The flash wait limit comes from the longest page erase (40 ms) with a margin of 2: 1,440,000 polls. It was 1,000,000.
+- After a crash while Focus is on, each live session gets its own level back. Before, all sessions of one program got one level.
+- After a crash while you hold **Talk**, the app sets the mute state of the microphone back at the next start.
+
+### Changed
+
+- The documents say that a local build of the firmware does not give the bytes of the CI build. To examine a release, use `SHA256SUMS` and the attestation.
+
 ## [0.2.0] - 2026-11-13
 
 This is the first public version. It is a pre-release.
