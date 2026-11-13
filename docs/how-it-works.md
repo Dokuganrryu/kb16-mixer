@@ -149,7 +149,7 @@ The screen goes off and the key lights dim after a number of minutes without act
 - After three times `lights_dim_min` (at most 240 minutes), the key lights fade off in 2 seconds. When `lights_dim_min` is 0 (no timer), they also do not go off.
 - After activity, the lights come back in 0.15 seconds.
 
-Firmware up to the draft release 0.1.0 dims the lights only to approximately 14 % of their light. It does not turn them off.
+Firmware before version 0.2.0 dims the lights only to approximately 14 % of their light. It does not turn them off.
 
 Activity is one of these:
 
@@ -255,7 +255,7 @@ A key with a hold or a double tap also gets those actions from this loop.
 
 The worker loop waits with a timeout. It wakes up at the next time limit of a gesture. Thus the gestures do not use a thread or a timer of their own.
 
-For a knob hold, the app must get the knob release (`KNOB_UP`) from the pad. Firmware up to the draft release 0.1.0 does not send it. With that firmware, each knob press is a tap, or a double tap, but not a hold. The app finds the new firmware at its first knob release.
+For a knob hold, the app must get the knob release (`KNOB_UP`) from the pad. Firmware before version 0.2.0 does not send it. With that firmware, each knob press is a tap, or a double tap, but not a hold. The app finds the new firmware at its first knob release.
 It reads the volume state of Windows again at intervals of 1.5 seconds.
 It sends the settings, names, logo name and key table on connect, after a config change, and at intervals of 30 seconds.
 

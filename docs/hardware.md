@@ -80,7 +80,7 @@ The QMK layout puts the knob push buttons at matrix positions (0,4), (1,4) and (
 In this project, knob 1 is the small left knob, knob 2 is the small right knob, and knob 3 is the large knob.
 On the wire, the knobs have the numbers 0, 1 and 2.
 
-In mixer mode, the firmware sends a message to the app for each push and each release of a knob button (`PRESS`, `KNOB_UP`). The firmware of the draft release 0.1.0 sends only the push. See [protocol.md](protocol.md#pad-to-app).
+In mixer mode, the firmware sends a message to the app for each push and each release of a knob button (`PRESS`, `KNOB_UP`). Firmware before version 0.2.0 sends only the push. See [protocol.md](protocol.md#pad-to-app).
 
 ## Memory map
 
@@ -97,7 +97,7 @@ In mixer mode, the firmware sends a message to the app for each push and each re
 `scripts/build-firmware.sh` rejects an image that is larger than `0x1D400` bytes (117 KB).
 Thus the image cannot overlap the name page or the crash log.
 
-The image of version 0.1.0 is approximately 51 KB. A local build and the CI build are not equal in size. The CI build is approximately 64 bytes larger, because the file paths in the panic messages use a different path separator.
+The image of version 0.2.0 is approximately 53 KB. A local build and the CI build are not equal in size. The CI build is approximately 64 bytes larger, because the file paths in the panic messages use a different path separator.
 
 ### Flash guard
 
@@ -178,11 +178,11 @@ The top-left key check occurs before the firmware sets the clocks. It reads PB14
 
 The firmware sends its version as the release number of its USB device (`bcdDevice`). The value comes from `firmware/Cargo.toml`.
 
-The format is `0xJJMN` in binary-coded decimal, for version JJ.M.N. For example, version 0.1.0 is `0x0010`.
+The format is `0xJJMN` in binary-coded decimal, for version JJ.M.N. For example, version 0.2.0 is `0x0020`.
 Thus the major version can be 0–99, and the minor and patch versions can be 0–9. The build stops for a version that does not fit.
 Builds before version 0.1.0 had no version, and sent `0x0300`. The top right of the settings window then shows "Pad firmware: an early build without a version.", and `--check` shows "firmware unknown (an early build)".
 
-The current firmware also has the version 0.1.0, but it is not the image of the draft release 0.1.0. It sends knob releases and reads the idle light byte. The version number does not show this difference.
+The internal version 0.1.0 (`0x0010`) does not send knob releases, and it ignores the idle light byte. Version 0.2.0 (`0x0020`) sends knob releases and reads the idle light byte.
 
 ## Crash log
 

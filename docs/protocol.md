@@ -108,7 +108,7 @@ The pad shows a popup for 1.3 seconds. For the idle timers, a popup is not activ
 The app sends `255` for a setting of `0` (no timer) in the config file. It sends at most `240` minutes, and a brightness of at least `1`.
 The pad uses an `idle_led_percent` above 100 as 100.
 
-Byte 19 came after the draft release 0.1.0. Firmware from before it ignores the byte. An app from before it sends `0`, so the pad uses its default.
+Byte 19 came in version 0.2.0. Earlier firmware ignores the byte. An earlier app sends `0`, so the pad uses its default.
 
 ### `0x21` FRAME
 
@@ -234,7 +234,7 @@ One `TURN` message is one detent.
 
 The pad sends `PRESS` when you push a knob down. While the app is present, it also sends `KNOB_UP` when you release the knob.
 The app uses the time between `PRESS` and `KNOB_UP` to find a hold.
-Firmware up to the draft release 0.1.0 does not send `KNOB_UP`. Thus the app must not wait for it. The app then uses each `PRESS` as a press and a release together: a tap or a double tap, but not a hold.
+Firmware before version 0.2.0 does not send `KNOB_UP`. Thus the app must not wait for it. The app then uses each `PRESS` as a press and a release together: a tap or a double tap, but not a hold.
 
 The pad sends `KEY_DOWN` and `KEY_UP` only for keys of the type `Host`.
 
@@ -247,12 +247,13 @@ The firmware sends its version as the release number of its USB device (`bcdDevi
 |---|---|
 | JJ.M.N | `0xJJMN` in binary-coded decimal |
 | 0.1.0 | `0x0010` |
+| 0.2.0 | `0x0020` |
 | 12.3.4 | `0x1234` |
 
 The major version can be 0–99. The minor and patch versions can be 0–9. A version that does not fit stops the build.
 `device_release()` ignores a pre-release part (for example `-beta`).
 
-The firmware that sends `KNOB_UP` and reads byte 19 also has the version 0.1.0. Thus the version does not tell it from the draft release 0.1.0.
+Version 0.2.0 is the first firmware that sends `KNOB_UP` and reads byte 19. Thus the version tells it from the internal version 0.1.0.
 
 ## Decode rules
 

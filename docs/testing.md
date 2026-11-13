@@ -134,7 +134,7 @@ For all the steps, read the workflow file. The workflow file is correct if this 
 
 ## Release build
 
-`.github/workflows/release.yml` runs when somebody pushes a version tag (for example `v0.1.0`).
+`.github/workflows/release.yml` runs when somebody pushes a version tag (for example `v0.2.0`).
 It checks the versions, `CHANGELOG.md` and the tag. It then builds the firmware image and the app.
 It makes a draft pre-release with one zip file, `SHA256SUMS` and a build attestation. It does not publish the release.
 See [releasing.md](releasing.md).
@@ -145,16 +145,18 @@ This table records the tests on a pad. The only test pad is one KB16-01 rev2 wit
 "VERIFIED" means that a person did the action on the pad and saw the result.
 "NOT YET VERIFIED" means that nobody did the action on a pad. Automated tests can cover the logic.
 
+The test pad has the firmware of the internal version 0.1.0. At this time, nobody did a test of version 0.2.0 on a pad.
+
 | Feature | How it was verified | Date | Firmware version | Status |
 |---|---|---|---|---|
-| Knob volume for each channel | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before 0.1.0 | VERIFIED |
-| Mute row | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before 0.1.0 | VERIFIED |
-| Key light and screen output | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before 0.1.0 | VERIFIED |
-| Recovery with the top-left key at plug-in | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before 0.1.0 | VERIFIED |
+| Knob volume for each channel | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
+| Mute row | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
+| Key light and screen output | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
+| Recovery with the top-left key at plug-in | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
 | Key pages | | | | NOT YET VERIFIED |
-| Knob hold to select one program (only with firmware after the draft 0.1.0) | | | | NOT YET VERIFIED |
+| Knob hold to select one program (only with firmware 0.2.0 or later) | | | | NOT YET VERIFIED |
 | Knob tap to mute, and a knob double tap | | | | NOT YET VERIFIED |
-| Knob press with the draft 0.1.0 firmware: each press is a tap | | | | NOT YET VERIFIED |
+| Knob press with the firmware of the internal version 0.1.0: each press is a tap | | | | NOT YET VERIFIED |
 | Hold and double tap on keys (`[keys_hold]`, `[keys_double]`) | | | | NOT YET VERIFIED |
 | The app follows a change of the Windows default output device | | | | NOT YET VERIFIED |
 | A chosen output device (`[audio] output`), and the change to the Windows default while it is disconnected | | | | NOT YET VERIFIED |
