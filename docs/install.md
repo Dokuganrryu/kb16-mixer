@@ -42,7 +42,7 @@ The backup (step 5) comes after the driver (step 4). Without the [WinUSB](glossa
 | A DOIO KB16-01 **rev2** pad | Step 2 tells you how to examine it. |
 | A USB cable that carries data | Some cables carry only power. |
 | Windows 11 (Windows 10 is not tested) | |
-| The release zip `kb16-mixer-0.1.0-windows-x64.zip` and the file `SHA256SUMS` | The **Releases** page of this repository on GitHub (planned) |
+| The release zip `kb16-mixer-0.1.0-windows-x64.zip` and the file `SHA256SUMS` | The [Releases page](https://github.com/Dokuganrryu/kb16-mixer/releases) of this repository on GitHub, after the release of 0.1.0 |
 | `dfu-util` 0.11 | https://dfu-util.sourceforge.net. It is not part of this project. |
 | The QMK driver installer (or Zadig) | https://github.com/qmk/qmk_driver_installer/releases. It is not part of this project. |
 | Administrator rights | One time only, for the driver in step 4. The app and `flash.ps1` run without them. |
@@ -60,7 +60,7 @@ Some steps tell you to open PowerShell in a folder. Do this:
 
 ### 1.1 Download the release
 
-1. Open the **Releases** page of this repository.
+1. Open the [Releases page](https://github.com/Dokuganrryu/kb16-mixer/releases) of this repository.
 2. Download `kb16-mixer-0.1.0-windows-x64.zip`.
 3. Download `SHA256SUMS`.
 
