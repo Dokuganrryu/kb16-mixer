@@ -103,7 +103,8 @@ cargo deny --manifest-path app/Cargo.toml --config deny.toml check
 
 Do the same for `protocol`, `pad-core` and `firmware`.
 The check accepts only the licences that `scripts/about.toml` accepts, and only crates from crates.io. It rejects the crates for network access.
-`deny.toml` ignores one advisory, RUSTSEC-2026-0110. It tells that the `bare-metal` crate has no maintainer. The firmware gets that crate through `cortex-m` 0.7.10, and no newer release exists.
+
+`deny.toml` ignores one advisory, RUSTSEC-2026-0110. This advisory says that the `bare-metal` crate has no maintainer. The firmware gets that crate through `cortex-m` 0.7.10. No newer release of `cortex-m` exists.
 
 Dependabot updates only the GitHub Actions (see `.github/dependabot.yml`). It does not update the crates, for two reasons:
 
@@ -154,6 +155,7 @@ The test pad has the firmware of the internal version 0.1.0. At this time, nobod
 | Key light and screen output | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
 | Recovery with the top-left key at plug-in | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
 | Key pages | | | | NOT YET VERIFIED |
+| Physical knob order: knob 1 is the small knob on the left, knob 2 the small knob on the right, knob 3 the large knob | | | | NOT YET VERIFIED |
 | Knob hold to select one program (only with firmware 0.2.0 or later) | | | | NOT YET VERIFIED |
 | Knob tap to mute, and a knob double tap | | | | NOT YET VERIFIED |
 | Knob press with the firmware of the internal version 0.1.0: each press is a tap | | | | NOT YET VERIFIED |

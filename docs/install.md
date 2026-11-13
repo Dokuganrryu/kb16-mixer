@@ -413,10 +413,14 @@ These are the default settings. Page 1 is the mixer page. Each key column belong
 |---|---|
 | Play a sound, for example music in a browser. | The key lights in the **Media** column show the sound level. |
 | Turn knob 2 (the small knob on the right). | The volume of the **Media** channel changes by 2 % for each step. The screen shows the volume. |
-| Push knob 2. | The knob selects one program in the channel. The next turns change only that program. Push again to select the next program. After 8 seconds without a touch, the knob controls the full channel again. |
+| Tap knob 2: push it and release it in less than 350 ms. | The **Media** channel is muted. Tap again to unmute. |
+| Hold knob 2 down for 350 ms. | The knob selects one program in the channel. The next turns change only that program. Hold again to select the next program. After 8 seconds without a touch, the knob controls the full channel again. This needs firmware 0.2.0 or later. |
 | Push a key in the bottom row. | The channel of that column is muted. Its lights become amber. Push again to unmute. |
 | Push the top-left key. | The pad changes to page 2 (a number pad). The screen shows `KEYS`. Push again to go back to `MIXER`. |
 
 Knob 1 (small, left) controls **Chat**. Knob 3 (the large knob) controls **Game**.
+
+> **NOTE:** The knob positions in this step ("right", "left") come from the settings file. At this time, nobody did a test of the physical knob order on a pad. If knob 2 changes a different channel, record it in an issue. See [testing.md](testing.md#verified-on-the-pad).
+
 To change the channels, the programs in them and the keys, click the tray icon. See [configuration.md](configuration.md).
 For all the controls, see [How to use the pad](../README.md#how-to-use-the-pad).
