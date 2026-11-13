@@ -13,6 +13,7 @@ If your problem is not here, open an issue. Paste the output of `kb16-mixer.exe 
 - [Messages of flash.ps1](#messages-of-flashps1)
 - [The bootloader and dfu-util](#the-bootloader-and-dfu-util)
 - [The pad after the flash](#the-pad-after-the-flash)
+- [The app](#the-app)
 - [Knobs, lights and sound](#knobs-lights-and-sound)
 - [Windows warnings](#windows-warnings)
 
@@ -38,6 +39,7 @@ If your problem is not here, open an issue. Paste the output of `kb16-mixer.exe 
 |---|---|
 | The pad is still in the bootloader after a flash or a backup. | Disconnect the pad. Connect it again. |
 | The pad goes back to the bootloader after each connection. The firmware possibly did not start. | Flash the firmware again. See [install.md](install.md#6-flash-the-firmware). |
+| The firmware crashed at three starts in a row. It then keeps the pad in the bootloader. | See [The pad stays in the bootloader after three crashed starts](#the-pad-stays-in-the-bootloader-after-three-crashed-starts). |
 
 ### pad: `WARN  A pad with other firmware is connected (USB D010:1601, product "...")`
 
@@ -87,6 +89,13 @@ If your problem is not here, open an issue. Paste the output of `kb16-mixer.exe 
 | Cause | Fix |
 |---|---|
 | The Windows audio service does not run. | Restart the PC. If the line stays, paste the report into an issue. |
+
+### autostart: `OK    Start with Windows is off.`
+
+| Cause | Fix |
+|---|---|
+| The `autostart` line only tells the state of **Start with Windows**. It always shows `OK`, never `WARN` or `FAIL` (`app/src/check.rs`). `off` is the default. | To start the app with Windows, set **Start with Windows** to on, on the **Pad** tab. See [The settings window](configuration.md#the-settings-window). |
+| The line ends with `This copy does not change it (KB16_MIXER_DIR is set).` | This copy uses its own settings folder. It does not write the registry. This is correct for a test copy. |
 
 ## Messages of flash.ps1
 
@@ -148,6 +157,16 @@ Other users of this pad report these errors. This project did not see them.
 | The pad is still in the bootloader (Device Manager shows `Maple 003`). | Flash again. See [install.md](install.md#6-flash-the-firmware). |
 | The write did not finish, and the firmware does not start. | Put the pad into the bootloader and flash again. If the top-left key does not work, see [A firmware that does not start at all](flashing.md#a-firmware-that-does-not-start-at-all). This case was not tested. |
 
+### The pad stays in the bootloader after three crashed starts
+
+After a crash (a panic or a hard fault), the firmware starts again. After three crashed starts in a row, the firmware keeps the pad in the bootloader. This prevents a loop of crashes. Nobody did a test of this on the pad. See [hardware.md](hardware.md#how-the-firmware-uses-the-bootloader).
+
+| Cause | Fix |
+|---|---|
+| The firmware image is damaged or incorrect. | Flash the firmware of the release again. Before you flash, compare its SHA-256 value with `SHA256SUMS`. See [install.md](install.md#6-flash-the-firmware). |
+| The firmware crashes at start on your pad. | Read the crash log. See [hardware.md](hardware.md#crash-log). Open an issue. Paste the 1 KB of the crash log and the firmware version into it. |
+| You want the stock firmware back. | Write your backup back. See [stock-firmware.md](stock-firmware.md). |
+
 ### The top of the screen is cut off
 
 | Cause | Fix |
@@ -159,6 +178,24 @@ Other users of this pad report these errors. This project did not see them.
 | Cause | Fix |
 |---|---|
 | The target program needs administrator rights. | This is correct. See [faq.md](faq.md#why-does-an-open-key-ask-for-administrator-rights). |
+
+## The app
+
+### The app shows no tray icon, or the app stops
+
+The app writes its problems to `log.txt` in the settings folder: `%APPDATA%\kb16-mixer\log.txt`. To open the folder, type `%APPDATA%\kb16-mixer` in the address bar of File Explorer. Each line starts with the time in seconds since 1970-01-01 (UTC).
+
+| Cause | Fix |
+|---|---|
+| Windows shows the icon only in the overflow area of the taskbar. | Click the arrow (`^`) near the clock. To show the icon all the time, open **Settings > Personalization > Taskbar > Other system tray icons**. Set the entry of the app to on. |
+| A copy of the app runs already. A second copy for the same settings folder stops at once, without a message and without a line in `log.txt`. | Use the icon of the copy that runs. Or stop that copy in Task Manager, then start the app again. |
+| `log.txt` has a line `tray failed: ...` or `could not create the hidden window: ...`. Windows did not make the tray icon. | Sign out of Windows and sign in again. Then start the app. If the line comes back, open an issue. |
+| `log.txt` has a line `crash: ...`. The app stopped because of a defect. | Open an issue. Paste the `crash:` line and the output of `kb16-mixer.exe --check` into it. |
+| `log.txt` has a line `audio init failed: ...`. The app runs, but it cannot change the volume. | Restart the PC. Then run `kb16-mixer.exe --check`, and read the `audio` line. |
+| `log.txt` has a line `hidapi init failed: ...`. The app runs, but it cannot find the pad. | Restart the PC. If the line comes back, open an issue. |
+| `log.txt` has a line `config problem at start, using defaults: ...`. | The app runs with the default settings. Repair `config.toml`. See [Error messages](configuration.md#error-messages). |
+
+> **CAUTION:** `log.txt` can hold program names and file paths, for example from an `open:` key. Do not paste the full file into an issue. Copy only the applicable lines. Remove names and paths from them.
 
 ## Knobs, lights and sound
 
