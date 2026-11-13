@@ -600,10 +600,83 @@ impl<T: Time> Screen<T> {
     }
 }
 
+/// An unchanged run inside a page longer than this is cheaper to skip than to send: a second
+/// window costs a 6-byte address command and a new transfer, about as much as 10 columns.
+const SPAN_GAP: usize = 10;
+
+/// The changed columns of display page `page` (0..=3): the first and the last column, both
+/// included, where `buf` differs from `sent`, or `None` when the page is unchanged. Both are
+/// frames of 512 bytes in panel order, without the I2C control byte (`&fb.buf[1..]`).
+pub fn dirty_span(page: u8, buf: &[u8], sent: &[u8]) -> Option<(u8, u8)> {
+    let [first, second] = dirty_spans(page, buf, sent);
+    Some((first?.0, second.or(first)?.1))
+}
+
+/// Like `dirty_span`, but split in two where the unchanged gap between changed columns is
+/// longer than `SPAN_GAP`: then the second span is `Some`. The split is at the longest gap.
+pub fn dirty_spans(page: u8, buf: &[u8], sent: &[u8]) -> [Option<(u8, u8)>; 2] {
+    const COLS: usize = W as usize;
+    let page = page as usize;
+    let (Some(a), Some(b)) = (buf.as_chunks::<COLS>().0.get(page), sent.as_chunks::<COLS>().0.get(page)) else {
+        return [None; 2];
+    };
+    let mut changed = (0..COLS).filter(|&x| a[x] != b[x]);
+    let Some(first) = changed.next() else { return [None; 2] };
+    // The last changed column, and the longest unchanged run between two changed columns.
+    let (mut last, mut gap) = (first, (0, first, first));
+    for x in changed {
+        if x - last - 1 > gap.0 {
+            gap = (x - last - 1, last, x);
+        }
+        last = x;
+    }
+    if gap.0 > SPAN_GAP {
+        [Some((first as u8, gap.1 as u8)), Some((gap.2 as u8, last as u8))]
+    } else {
+        [Some((first as u8, last as u8)), None]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use kb16_mixer_protocol::NOTICE;
+
+    fn frames(changed: &[usize]) -> ([u8; 512], [u8; 512]) {
+        let mut buf = [0u8; 512];
+        for &i in changed {
+            buf[i] = 1;
+        }
+        (buf, [0u8; 512])
+    }
+
+    #[test]
+    fn dirty_span_finds_the_first_and_last_changed_column_of_one_page() {
+        let (buf, sent) = frames(&[128 + 5, 128 + 90, 3 * 128 + 127]);
+        assert_eq!(dirty_span(0, &buf, &sent), None);
+        assert_eq!(dirty_span(1, &buf, &sent), Some((5, 90)));
+        assert_eq!(dirty_span(2, &buf, &sent), None);
+        assert_eq!(dirty_span(3, &buf, &sent), Some((127, 127)));
+        assert_eq!(dirty_span(4, &buf, &sent), None, "no such page");
+        assert_eq!(dirty_span(0, &buf[..100], &sent), None, "a short frame has no page");
+        let (buf, sent) = frames(&[0, 127]);
+        assert_eq!(dirty_span(0, &buf, &sent), Some((0, 127)));
+    }
+
+    #[test]
+    fn dirty_spans_split_only_when_the_gap_is_over_ten_columns() {
+        let (buf, sent) = frames(&[20, 31]); // a gap of 10: one span
+        assert_eq!(dirty_spans(0, &buf, &sent), [Some((20, 31)), None]);
+        let (buf, sent) = frames(&[20, 32]); // a gap of 11: two
+        assert_eq!(dirty_spans(0, &buf, &sent), [Some((20, 20)), Some((32, 32))]);
+        // Split at the longest gap.
+        let (buf, sent) = frames(&[2, 14, 15, 60, 61, 64]);
+        assert_eq!(dirty_spans(0, &buf, &sent), [Some((2, 15)), Some((60, 64))]);
+        assert_eq!(dirty_span(0, &buf, &sent), Some((2, 64)));
+        let (buf, sent) = frames(&[7]);
+        assert_eq!(dirty_spans(0, &buf, &sent), [Some((7, 7)), None]);
+        assert_eq!(dirty_spans(1, &buf, &sent), [None, None]);
+    }
 
     #[test]
     fn a_glide_lands_exactly_without_overshoot_or_a_limit_cycle() {
