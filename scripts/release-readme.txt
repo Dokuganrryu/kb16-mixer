@@ -31,12 +31,18 @@ Quick steps
    image. This value must be the same as the line for kb16-mixer-firmware.bin.
 2. Put the pad into the bootloader. The full guide tells you how.
 3. Install the bootloader driver one time only.
-4. Run flash.ps1 with -Backup. It makes a backup of the stock firmware, then
-   it writes the new firmware.
-5. Unplug the pad.
-6. Plug the pad in again.
-7. Start kb16-mixer.exe.
-8. In a command prompt in this folder, run "kb16-mixer.exe --check | more".
+4. Make a backup of the stock firmware. This command writes nothing to the
+   pad. In PowerShell in this folder, run:
+   powershell -ExecutionPolicy Bypass -File .\flash.ps1 -Backup .\stock-backup.bin -DryRun
+5. Make sure that the output shows "backup: 122880 bytes" and
+   "DRY RUN complete". Write down the SHA-256 value of the backup.
+   Copy stock-backup.bin to a second place.
+6. Flash the firmware. Type YES when the script asks:
+   powershell -ExecutionPolicy Bypass -File .\flash.ps1
+7. Unplug the pad.
+8. Plug the pad in again.
+9. Start kb16-mixer.exe.
+10. In a command prompt in this folder, run "kb16-mixer.exe --check | more".
 
 Full guide
 ----------
