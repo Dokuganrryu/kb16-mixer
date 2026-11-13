@@ -118,9 +118,39 @@ When the PC suspends the USB bus (the PC sleeps or is off), the lights and the s
 On the mixer screen, a line under the names means that the microphone is muted.
 A short vertical mark at the right edge means that page 2 is active.
 
+### Screen motion
+
+The screen moves between its states. These times are in `pad-core/src/oled.rs`:
+
+- The meters move smoothly between segments. They go up fast and come down more slowly. A meter waits approximately 0.2 seconds before it drops by one segment, so a level on a segment edge does not flicker.
+- A readout comes in from below in 0.1 seconds and pushes the mixer screen up. When the readout ends, it goes down again in 0.07 seconds. A new readout during this motion continues from the current position.
+- When the page changes, the screen slides in from the side of the new page in 0.14 seconds. Page 2 comes from the right, and page 1 comes from the left. The `MIXER` or `KEYS` notice comes in with the slide.
+- A change back to the earlier page in less than 1.5 seconds moves the screen by 4 pixels only. This occurs, for example, when you release a held page key.
+- When the mute of a channel changes, the channel name shows inverted for 0.2 seconds.
+- The screen does not go off at once. It fades out in 0.8 seconds. Then it goes off. When it comes on again, it fades in in 0.12 seconds.
+
+The pictures in `docs/images/` show the screens at rest. Nobody did a test of the motion on a pad.
+
+### Light motion
+
+The key lights also move smoothly. These values are in `pad-core/src/leds.rs`:
+
+- Each light glides to its new level. It goes up fast (approximately 35 ms) and down slowly (approximately 250 ms). A mute changes the colour to amber in approximately 60 ms.
+- The brightness uses a gamma curve of 2.4, so equal steps of `brightness` look approximately equal.
+- The firmware dithers the 8-bit LED values in quarter steps over time. Thus the light can change in steps that are smaller than one LED step.
+- The dither pattern repeats at 50 Hz or faster, and it changes the light by 1/16 of a step or less. Nobody did a test for flicker on a pad.
+
 ## Idle rule
 
 The screen goes off and the key lights dim after a number of minutes without activity (`screen_off_min`, `lights_dim_min`).
+
+- The screen fades out in the last 0.8 seconds of `screen_off_min`. Thus it goes off at the same time as before.
+- The key lights fade down in 0.7 seconds to 6 % of their usual light. The setting `[lights] idle_percent` changes this value.
+- After three times `lights_dim_min` (at most 240 minutes), the key lights fade off in 2 seconds. When `lights_dim_min` is 0 (no timer), they also do not go off.
+- After activity, the lights come back in 0.15 seconds.
+
+Firmware up to the draft release 0.1.0 dims the lights only to approximately 14 % of their light. It does not turn them off.
+
 Activity is one of these:
 
 - A key press or a knob turn.
@@ -132,7 +162,7 @@ The app sets sound as audible when all of these conditions apply:
 
 - A program plays above approximately −40 dBFS, after its own volume and mute. The microphone does not count.
 - The sound continues for at least 1 second. A short notification sound does not count.
-- The default output device is not muted.
+- The output device of that program is not muted.
 
 The audible state ends after 2.5 seconds of quiet. Thus a short pause between two songs does not end it.
 The meters always show the raw levels, before the volume and mute of each program.
@@ -211,6 +241,21 @@ Otherwise the worker looks for a change at intervals of 200 ms. An open micropho
 
 The worker handles key presses and releases one at a time, in the order in which they arrived (`app/src/keys.rs`).
 Thus a quick release and press of **Talk** cannot put the microphone in an incorrect state.
+A key with a hold or a double tap also gets those actions from this loop.
+
+### Tap, hold and double tap
+
+`app/src/gesture.rs` finds a tap, a hold or a double tap from the press and the release of a knob or a key. These are the rules:
+
+- When a button has no hold and no double tap, a press is a tap at once.
+- A hold occurs while the button is down, 350 ms after the press. The release then does nothing.
+- When a button has a hold, a tap is a release before 350 ms.
+- When a button has a double tap, a tap waits 280 ms after the release for a second press. The second press is the double tap.
+- A knob turn while the knob is down cancels the press.
+
+The worker loop waits with a timeout. It wakes up at the next time limit of a gesture. Thus the gestures do not use a thread or a timer of their own.
+
+For a knob hold, the app must get the knob release (`KNOB_UP`) from the pad. Firmware up to the draft release 0.1.0 does not send it. With that firmware, each knob press is a tap, or a double tap, but not a hold. The app finds the new firmware at its first knob release.
 It reads the volume state of Windows again at intervals of 1.5 seconds.
 It sends the settings, names, logo name and key table on connect, after a config change, and at intervals of 30 seconds.
 
@@ -219,10 +264,10 @@ It sends the settings, names, logo name and key table on connect, after a config
 | Direction | Contents |
 |---|---|
 | App to pad | Live frame: level of each channel, volume of each channel, mute bits, the channel that has Focus, and flags (mixer keys, microphone muted, audible sound, page 2) |
-| App to pad | Settings: number of channels, channel colors, light brightness, screen offset, idle minutes |
+| App to pad | Settings: number of channels, channel colors, light brightness, screen offset, idle minutes, idle light percent |
 | App to pad | Channel names (6 bytes each), the logo name (10 bytes), popups for the screen, the key table, heartbeat |
 | App to pad | The bootloader command. It holds the fixed marker `BOOT`. The marker is not a secret. It only prevents a restart from a random message. |
-| Pad to app | Knob turn (one detent), knob press, mixer key press, mixer key release |
+| Pad to app | Knob turn (one detent), knob press, knob release, mixer key press, mixer key release |
 
 Typed keys do not travel over raw HID. The app does not send key presses.
 See [protocol.md](protocol.md) for the byte layout.
@@ -240,7 +285,7 @@ Thus the balance between the programs stays, also at 0 % and at 100 %.
 
 ### One program
 
-A knob press can select one program in the channel. A turn then changes only that program. The other programs keep their sound:
+A knob hold (the default `pick` action) can select one program in the channel. A turn then changes only that program. The other programs keep their sound:
 
 | New level of the program | Result |
 |---|---|
@@ -252,7 +297,7 @@ The list of programs contains each program that has an audio session in the chan
 After 8 seconds without a touch on the knob, or when the selected program stops, the knob goes back to the full channel.
 If the channel has no program, the screen shows `No app in <channel>`.
 
-A knob on `master`, `mic` or `focused` has no program list. A press shows only the level.
+A knob on `master`, `mic` or `focused` has no program list. A `pick` shows only the level. A tap (the default `mute` action) mutes the knob target.
 
 ### Changes in Windows
 
@@ -305,7 +350,7 @@ The app ignores the "System Sounds" session.
 | Volume and mute of each audio session (one slider in the volume mixer) | Core Audio `ISimpleAudioVolume` | Read and write |
 | Peak level of each audio session (for the meters and the idle rule) | Core Audio `IAudioMeterInformation` | Read |
 | Level and mute of the default communications microphone (if Windows has none, the default microphone) | Core Audio `IAudioEndpointVolume` | Read and write |
-| Level and mute of the default output device (write only for a knob set to `master`) | Core Audio `IAudioEndpointVolume` | Read and write |
+| Level and mute of the output device: the Windows default, or the device in `[audio] output` (write only for a knob set to `master` or `system`) | Core Audio `IAudioEndpointVolume` | Read and write |
 | Names of running programs, and their parent process | Toolhelp process snapshot (`CreateToolhelp32Snapshot`) | Read |
 | The process of the foreground window (for `focused` and Move) | `GetForegroundWindow`, `GetWindowThreadProcessId` | Read |
 | The pad, through its raw HID interface, and its USB release number. The app uses only an interface with the product string `KB16 Mixer`, so it does not talk to a pad with the stock firmware. | hidapi | Read and write |

@@ -233,7 +233,7 @@ idle_percent = 0
 
 | Setting | Default | Range | Meaning |
 |---|---|---|---|
-| `idle_percent` | `0` | 0–100 | The light that the key lights keep when they dim, in percent of their normal light. 0 = the pad default (6 %). |
+| `idle_percent` | `0` | 0–100 | The light that the key lights keep when they dim, in percent of their usual light. 0 = the pad default (6 %). |
 
 A value above 100 becomes 100. A negative value, a fraction or a value in quotes is an error.
 

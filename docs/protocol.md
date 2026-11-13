@@ -103,7 +103,7 @@ The pad shows a popup for 1.3 seconds. For the idle timers, a popup is not activ
 | 16 | `oled_top_plus_one` | Screen offset in pixel rows, plus one. 0 = pad default (3). The pad uses at most 6. |
 | 17 | `screen_off_min` | Minutes without activity before the screen goes off. 0 = pad default (10). 255 = never. |
 | 18 | `lights_dim_min` | Minutes without activity before the lights dim. 0 = pad default (10). 255 = never. |
-| 19 | `idle_led_percent` | Light that the dimmed lights keep, in percent of the normal light (1–100). 0 = pad default (6). |
+| 19 | `idle_led_percent` | Light that the dimmed lights keep, in percent of the usual light (1–100). 0 = pad default (6). |
 
 The app sends `255` for a setting of `0` (no timer) in the config file. It sends at most `240` minutes, and a brightness of at least `1`.
 The pad uses an `idle_led_percent` above 100 as 100.
