@@ -117,6 +117,7 @@ fn settings(screen_off_min: u8, lights_dim_min: u8) -> HostMsg {
         oled_top_plus_one: 0,
         screen_off_min,
         lights_dim_min,
+        idle_led_percent: 0,
     })
 }
 

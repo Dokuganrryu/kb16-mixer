@@ -7,11 +7,13 @@
 //! host -> pad
 //!   [D1 00]                                        heartbeat
 //!   [D1 10 knob vol muted name[16]]                popup on the OLED (vol 255 = text only)
-//!   [D1 20 n r0 g0 b0 .. r3 g3 b3 bright top+1 screen dim]
+//!   [D1 20 n r0 g0 b0 .. r3 g3 b3 bright top+1 screen dim idle%]
 //!                                                  channel colors; LED brightness (byte 15);
 //!                                                  OLED top margin + 1 (byte 16); minutes of
 //!                                                  quiet before the screen turns off (17) and
-//!                                                  the lights dim (18). 0 = default, 255 = never
+//!                                                  the lights dim (18). 0 = default, 255 = never.
+//!                                                  Byte 19: percent of normal brightness the
+//!                                                  dimmed lights keep, 1..=100; 0 = default
 //!   [D1 21 lvl0..3 vol0..3 mutes sel flags]        live frame, ~30 per second
 //!   [D1 22 name0[6] .. name3[6]]                   channel names
 //!   [D1 23 first (kind a b) x8]                    what 8 keys do, starting at key `first`
@@ -155,6 +157,10 @@ pub struct Settings {
     pub screen_off_min: u8,
     /// Minutes of quiet before the lights dim; 0 = pad default, [`NEVER`] = never.
     pub lights_dim_min: u8,
+    /// Brightness the dimmed lights keep, in percent of the normal level (1..=100); 0 = pad
+    /// default. Added after the first release: an older host leaves the byte zero, and older
+    /// firmware ignores it.
+    pub idle_led_percent: u8,
 }
 
 /// Live levels, faders and mute state.
@@ -220,6 +226,7 @@ impl HostMsg {
                 r[16] = s.oled_top_plus_one;
                 r[17] = s.screen_off_min;
                 r[18] = s.lights_dim_min;
+                r[19] = s.idle_led_percent;
             }
             HostMsg::Frame(f) => {
                 r[1] = id::FRAME;
@@ -284,6 +291,7 @@ impl HostMsg {
                     oled_top_plus_one: r[16],
                     screen_off_min: r[17],
                     lights_dim_min: r[18],
+                    idle_led_percent: r[19],
                 })
             }
             id::FRAME => {
@@ -462,6 +470,7 @@ mod tests {
             oled_top_plus_one: 4,
             screen_off_min: NEVER,
             lights_dim_min: 30,
+            idle_led_percent: 6,
         }));
         for flags in 0..16u8 {
             host_roundtrip(HostMsg::Frame(Frame {
@@ -522,9 +531,11 @@ mod tests {
             oled_top_plus_one: 4,
             screen_off_min: 255,
             lights_dim_min: 10,
+            idle_led_percent: 40,
         })
         .encode();
-        assert_eq!(&s[..19], &[0xD1, 0x20, 2, 0xAA, 0xBB, 0xCC, 1, 2, 3, 0, 0, 0, 0, 0, 0, 9, 4, 255, 10]);
+        assert_eq!(&s[..20], &[0xD1, 0x20, 2, 0xAA, 0xBB, 0xCC, 1, 2, 3, 0, 0, 0, 0, 0, 0, 9, 4, 255, 10, 40]);
+        assert!(s[20..].iter().all(|&b| b == 0));
 
         let f = HostMsg::Frame(Frame {
             levels: [1, 2, 3, 4],
@@ -572,6 +583,31 @@ mod tests {
         let Some(HostMsg::Popup(back)) = HostMsg::decode(&r) else { panic!() };
         assert!(back.is_notice());
         assert!(!Popup { knob: 0, volume: 100, muted: false, name: [0; POPUP_LEN] }.is_notice());
+    }
+
+    /// A host from before byte 19 existed sends it as zero (or cuts the report short): the
+    /// pad then reads "default", never a stray percentage.
+    #[test]
+    fn settings_from_an_older_host_mean_default_idle_lights() {
+        let mut old = [0u8; 19];
+        old.copy_from_slice(&[0xD1, 0x20, 4, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 166, 4, 255, 30]);
+        for report in [&old[..], &[&old[..], &[0u8; 13][..]].concat()[..]] {
+            let Some(HostMsg::Settings(s)) = HostMsg::decode(report) else { panic!() };
+            assert_eq!(s.idle_led_percent, 0);
+            assert_eq!((s.brightness, s.oled_top_plus_one, s.screen_off_min, s.lights_dim_min), (166, 4, 255, 30));
+        }
+        for pct in [0, 1, 6, 100, 255] {
+            let s = Settings {
+                channels: 4,
+                colors: [[0; 3]; CHANNELS],
+                brightness: 0,
+                oled_top_plus_one: 0,
+                screen_off_min: 0,
+                lights_dim_min: 0,
+                idle_led_percent: pct,
+            };
+            assert_eq!(host_roundtrip(HostMsg::Settings(s))[19], pct);
+        }
     }
 
     #[test]
