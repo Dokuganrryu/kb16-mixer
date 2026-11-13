@@ -23,6 +23,7 @@
 //! pad -> host
 //!   [D1 01 knob delta]   knob turned          [D1 02 knob 0]    knob pressed
 //!   [D1 03 row col]      key pressed          [D1 04 row col]   key released
+//!   [D1 05 knob 0]       knob let go (newer firmware only; older apps ignore the id)
 //! flags: bit0 = keys belong to the mixer, bit1 = mic muted, bit2 = programme audio is playing,
 //!        bit3 = the second key page is active.
 //! ```
@@ -73,6 +74,7 @@ pub mod id {
     pub const PRESS: u8 = 0x02;
     pub const KEY_DOWN: u8 = 0x03;
     pub const KEY_UP: u8 = 0x04;
+    pub const KNOB_UP: u8 = 0x05;
     pub const POPUP: u8 = 0x10;
     pub const SETTINGS: u8 = 0x20;
     pub const FRAME: u8 = 0x21;
@@ -355,6 +357,11 @@ pub enum PadMsg {
         row: u8,
         col: u8,
     },
+    /// The knob's push button let go. Firmware from before this message never sends it, so a
+    /// host must not wait for it.
+    KnobUp {
+        knob: u8,
+    },
 }
 
 impl PadMsg {
@@ -364,6 +371,7 @@ impl PadMsg {
             PadMsg::Press { knob } => (id::PRESS, knob, 0),
             PadMsg::KeyDown { row, col } => (id::KEY_DOWN, row, col),
             PadMsg::KeyUp { row, col } => (id::KEY_UP, row, col),
+            PadMsg::KnobUp { knob } => (id::KNOB_UP, knob, 0),
         };
         let mut r = [0u8; REPORT_LEN];
         r[..4].copy_from_slice(&[MAGIC, id, a, b]);
@@ -380,6 +388,7 @@ impl PadMsg {
             id::PRESS => PadMsg::Press { knob: r[2] },
             id::KEY_DOWN => PadMsg::KeyDown { row: r[2], col: r[3] },
             id::KEY_UP => PadMsg::KeyUp { row: r[2], col: r[3] },
+            id::KNOB_UP => PadMsg::KnobUp { knob: r[2] },
             _ => return None,
         })
     }
@@ -507,6 +516,7 @@ mod tests {
             PadMsg::Press { knob: 1 },
             PadMsg::KeyDown { row: 3, col: 0 },
             PadMsg::KeyUp { row: 0, col: 3 },
+            PadMsg::KnobUp { knob: 2 },
         ] {
             assert_eq!(PadMsg::decode(&m.encode()), Some(m));
         }
@@ -572,6 +582,7 @@ mod tests {
         assert_eq!(&PadMsg::Press { knob: 2 }.encode()[..4], &[0xD1, 0x02, 2, 0]);
         assert_eq!(&PadMsg::KeyDown { row: 3, col: 1 }.encode()[..4], &[0xD1, 0x03, 3, 1]);
         assert_eq!(&PadMsg::KeyUp { row: 3, col: 1 }.encode()[..4], &[0xD1, 0x04, 3, 1]);
+        assert_eq!(&PadMsg::KnobUp { knob: 1 }.encode()[..4], &[0xD1, 0x05, 1, 0]);
     }
 
     /// A notice must reach the pad as the text-only value, never as a clamped percentage.
@@ -640,6 +651,7 @@ mod tests {
         assert_eq!(PadMsg::decode(&[0xD1, 0x01, 0]), None, "too short");
         assert_eq!(PadMsg::decode(&[0xD2, 0x01, 0, 1]), None);
         assert_eq!(PadMsg::decode(&[0xD1, 0x09, 0, 1]), None);
+        assert_eq!(PadMsg::decode(&[0xD1, 0x05, 2, 0]), Some(PadMsg::KnobUp { knob: 2 }));
     }
 
     /// xorshift64*: small, deterministic, no dependency.
@@ -679,7 +691,7 @@ mod tests {
                 r[0] = MAGIC;
             }
             if i % 4 != 0 {
-                let ids = [0x00, 0x01, 0x02, 0x03, 0x04, 0x10, 0x20, 0x21, 0x22, 0x23, 0x24, 0x7F];
+                let ids = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x10, 0x20, 0x21, 0x22, 0x23, 0x24, 0x7F];
                 r[1] = ids[(rng.next() % ids.len() as u64) as usize];
             }
             if r[1] == id::BOOTLOADER && i % 3 == 0 {

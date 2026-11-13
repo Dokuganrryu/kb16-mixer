@@ -181,7 +181,8 @@ impl<T: Time> Router<T> {
             },
             // Not in the 4x5 matrix: the scan never sends it.
             Event::Key { row, col, .. } if row >= 4 || col > 4 => Action::Nothing,
-            // Knob push buttons act on the press only.
+            // The app times knob holds from press to release; without it a knob acts on the press.
+            Event::Key { row, col: 4, pressed: false } if alive => Action::Host(PadMsg::KnobUp { knob: row }),
             Event::Key { col: 4, pressed: false, .. } => Action::Nothing,
             Event::Key { row, col: 4, pressed: true } if alive => Action::Host(PadMsg::Press { knob: row }),
             Event::Key { row, col: 4, pressed: true } => match row {

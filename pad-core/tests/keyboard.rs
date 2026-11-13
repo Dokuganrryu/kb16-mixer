@@ -164,7 +164,8 @@ fn with_the_app_knobs_and_host_keys_go_to_the_app() {
         Action::Host(PadMsg::Turn { knob: 0, delta: -1 })
     );
     assert_eq!(r.route(key(1, 4, true), true, true, &HOST, 0), Action::Host(PadMsg::Press { knob: 1 }));
-    assert_eq!(r.route(key(1, 4, false), true, true, &HOST, 0), Action::Nothing);
+    assert_eq!(r.route(key(1, 4, false), true, true, &HOST, 0), Action::Host(PadMsg::KnobUp { knob: 1 }));
+    assert_eq!(r.route(key(1, 4, false), false, true, &HOST, 0), Action::Nothing, "no app: press only");
     assert_eq!(r.route(key(2, 3, true), true, true, &HOST, 0), Action::HostDown { row: 2, col: 3 });
     assert_eq!(r.route(key(2, 3, false), true, true, &HOST, 0), Action::HostUp { row: 2, col: 3 });
 }
