@@ -1,32 +1,117 @@
 //! What the 16 key lights show, one 200 Hz frame at a time (index = row * 4 + col). The
 //! firmware's `leds.rs` clocks the bytes out to the WS2812 chain.
 //!
-//! The look is deliberately quiet: one soft tint per channel, loudness shown as brightness,
-//! and amber as the only accent (muted). Brightness is perceptual (gamma 2) and resolved to
-//! 9 bits: the extra half step alternates every frame, i.e. at 100 Hz, which the eye cannot
-//! see, so slow fades do not step.
+//! The look is deliberately quiet: one near-white tint per channel, loudness shown as
+//! brightness, and amber as the only accent (muted).
+//!
+//! How a frame is made, and why:
+//! - `render_*` picks a target per LED: a perceptual brightness (16 bit) and a colour. Colours
+//!   are linear light (what the LED emits, per channel, 0..=255), so a crossfade between two
+//!   colours mixes them as light does. Brightness is perceptual, so equal steps look equal.
+//! - Each LED glides to its target: exponential smoothing with a quick attack (~35 ms) and a
+//!   slow release (~250 ms), so a meter that the host updates ~30 times a second moves at the
+//!   full 200 Hz without steps. The smoothing state keeps 24 bits; every step moves at least
+//!   one unit and never past the target, so it is monotone and lands exactly.
+//! - Gamma 2.4 (a 65-point table) turns brightness into light.
+//! - Idle dimming and the fade-in after a mode change are eased curves in time.
+//! - The 8-bit LEDs get temporal dithering: the light is resolved to a quarter of a step and
+//!   the remainder carries to the next frame, so slow fades near black do not stair-step.
 
 use crate::Time;
 use crate::assets::SIN;
 use crate::state::{Mixer, NCH, RIPPLES, Ripple, past};
+use kb16_mixer_protocol::NEVER;
 
 pub const N: usize = 16;
 /// One frame for the chain: green, red, blue per LED.
 pub type Bytes = [u8; N * 3];
-/// Total current cap: sum of all 8-bit channels (about 45% of full white, ~430 mA).
-const POWER_CAP: u32 = (N as u32) * 255 * 3 * 9 / 20;
+/// Full scale of brightness and of light, 16 bit.
+const FULL: u32 = 0xFFFF;
+/// Total current cap, as a sum of 16-bit channel values: about 45% of all 48 channels at full,
+/// ~430 mA for 16 WS2812 at ~20 mA per channel. With the MCU and the screen that stays inside
+/// the 500 mA a USB 2 port promises.
+const POWER_CAP: u32 = (N as u32) * FULL * 3 * 9 / 20;
 const FADE_MS: u64 = 700;
 const RIPPLE_MS: u64 = 520;
-/// How low the lights settle once nothing has played or been touched for a while. It scales
-/// light output (after gamma), so it has to be this low to read as dimmed at full brightness.
-const IDLE_DIM: u32 = 35; // of 255
+/// Idle easing: down to the dim level, down to off, and back up on any touch or sound.
+const DIM_MS: u64 = 700;
+const OFF_MS: u64 = 2000;
+const WAKE_MS: u64 = 150;
+/// How much light the dimmed lights keep, in percent of normal, unless the host sets it.
+/// Light, not perceived brightness: 6% of the light looks like about a third as bright, which
+/// reads as clearly dimmed but alive.
+pub const DEFAULT_IDLE_PERCENT: u8 = 6;
+/// The lights go off after this many times the dim time, at most `OFF_CAP_MIN` minutes.
+const OFF_FACTOR: u32 = 3;
+const OFF_CAP_MIN: u32 = 240;
 
+/// Smoothing per 5 ms frame, as a fraction of 65536 of the way to the target: 1 - e^(-5/tau).
+const ATTACK: u64 = 8724; // tau 35 ms
+const RELEASE: u64 = 1297; // tau 250 ms
+const RECOLOUR: u64 = 5243; // tau 60 ms: a mute turns amber quickly, but never jumps
+
+// Colours, linear light per channel. The WS2812 blue die is the most efficient, so a raw
+// (255, 255, 255) already looks cold; these values are chosen against that.
+/// Muted: the one accent. Mostly red with a little green reads as warm amber on the LED; the
+/// trace of blue keeps it from turning orange at low brightness.
 const AMBER: [u8; 3] = [255, 70, 12];
+/// No PC app: ice white, the base of the whole look.
 const ICE: [u8; 3] = [185, 212, 255];
+/// Channel colours whose component is below this (linear) are not lifted to one step when the
+/// LED is nearly dark, so amber stays warm instead of turning white.
+const LIFT_MIN: u32 = 64 << 8;
+
+/// Perceptual 0..=65536 (64 steps of 1024) to linear light 0..=65535: round(65535 * x^2.4).
+const GAMMA: [u16; 65] = [
+    0, 3, 16, 42, 84, 144, 223, 324, 446, 591, 761, 957, 1179, 1429, 1707, 2015, 2352, 2721, 3121, 3553, 4019, 4518,
+    5052, 5621, 6225, 6866, 7544, 8259, 9012, 9804, 10635, 11506, 12417, 13368, 14361, 15396, 16473, 17592, 18755,
+    19962, 21212, 22507, 23847, 25233, 26664, 28142, 29666, 31237, 32856, 34523, 36238, 38002, 39815, 41678, 43590,
+    45552, 47566, 49630, 51745, 53912, 56131, 58403, 60727, 63104, 65535,
+];
+
+/// Perceptual brightness (0..=65535) to linear light (0..=65535). Monotone; 0 and full exact.
+pub fn gamma(p: u32) -> u32 {
+    if p >= FULL {
+        return FULL;
+    }
+    let (i, frac) = ((p >> 10) as usize, p & 1023);
+    let (a, b) = (GAMMA[i] as u32, GAMMA[i + 1] as u32);
+    a + (((b - a) * frac) >> 10)
+}
+
+/// The brightness whose light is `lin`: the largest `p` with `gamma(p) <= lin`.
+pub fn ungamma(lin: u32) -> u32 {
+    let (mut lo, mut hi) = (0, FULL);
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if gamma(mid) <= lin { lo = mid } else { hi = mid - 1 }
+    }
+    lo
+}
+
+/// 0..=65536 progress of `ms` through `dur`.
+fn progress(ms: u64, dur: u64) -> u64 {
+    ms.min(dur) * 65536 / dur
+}
+
+/// Slow in, slow out: 3t^2 - 2t^3, in and out 0..=65536.
+fn smoothstep(t: u64) -> u64 {
+    (t * t * (3 * 65536 - 2 * t)) >> 32
+}
+
+/// Quick start, gentle landing: 1 - (1 - t)^2. A wake must answer at once.
+fn ease_out(t: u64) -> u64 {
+    65536 - (((65536 - t) * (65536 - t)) >> 16)
+}
 
 /// Sine in 0..=255 for a phase in 0..=255.
 fn wave(phase: u32) -> u32 {
     SIN[(phase & 0xFF) as usize] as u32
+}
+
+/// 0..=255 points of brightness to 16 bit.
+const fn pt(points: u32) -> u32 {
+    points * 257
 }
 
 fn isqrt(v: u32) -> u32 {
@@ -41,19 +126,19 @@ fn isqrt(v: u32) -> u32 {
     r
 }
 
+/// One frame's targets.
 struct Frame {
-    /// Linear RGB per LED, 0..=65025.
-    px: [[u32; 3]; N],
+    /// Perceptual brightness, 0..=65535.
+    bright: [u32; N],
+    /// Linear colour; `None` keeps the colour the LED has, so a light that goes out fades in
+    /// its own colour.
+    colour: [Option<[u8; 3]>; N],
 }
 
 impl Frame {
-    /// `bright` is perceptual 0..=255; gamma 2 turns it linear.
     fn put(&mut self, led: usize, c: [u8; 3], bright: u32) {
-        let b = bright.min(255);
-        let lin = b * b;
-        for (p, &c) in self.px[led].iter_mut().zip(c.iter()) {
-            *p = c as u32 * lin / 255;
-        }
+        self.bright[led] = bright.min(FULL);
+        self.colour[led] = Some(c);
     }
 }
 
@@ -77,6 +162,14 @@ fn bloom<T: Time>(ripples: &[Option<Ripple<T>>; RIPPLES], now: T, row: u32, col:
     best
 }
 
+// Brightness levels in points (0..=255, perceptual). Rows 0..=2 are the meter, row 3 the mute
+// keys. Focus lifts its channel a little, never with a new colour, so the pad stays one family.
+const METER_FLOOR: u32 = 115;
+const METER_FLOOR_FOCUS: u32 = 141;
+const SWELL: u32 = 26;
+const MUTE_KEY: u32 = 144;
+const MUTE_KEY_FOCUS: u32 = 220;
+
 fn render_mixer<T: Time>(
     f: &mut Frame,
     m: &Mixer,
@@ -94,25 +187,24 @@ fn render_mixer<T: Time>(
         let tint = m.colors[col];
         let muted = m.mutes & (1 << col) != 0;
         let sel = col as u8 == m.selected;
-        let glow = bloom(ripples, now, row, col as u32) * 90 / 255;
+        let glow = pt(bloom(ripples, now, row, col as u32) * 90 / 255);
 
         if muted {
-            // The one accent: a low amber that breathes very slowly.
+            // A low amber that breathes very slowly (~3.6 s), the mute key a little brighter.
             let breath = wave((ms / 14) as u32);
-            let b = if row == 3 { 135 + breath * 55 / 255 } else { 62 + breath * 14 / 255 };
-            f.put(led, AMBER, b + glow);
+            let b = if row == 3 { 150 + breath * 50 / 255 } else { 79 + breath * 14 / 255 };
+            f.put(led, AMBER, pt(b) + glow);
             continue;
         }
         if row == 3 {
-            f.put(led, tint, if sel { 215 } else { 128 } + glow);
+            f.put(led, tint, pt(if sel { MUTE_KEY_FOCUS } else { MUTE_KEY }) + glow);
             continue;
         }
         // Meter: row 2 is the bottom segment, row 0 the top. The whole pad swells with the sound.
-        let floor = if sel { 124 } else { 98 } + swell * 26 / 255;
+        let floor = pt(if sel { METER_FLOOR_FOCUS } else { METER_FLOOR }) + swell * SWELL / 255;
         let seg = 2 - row;
-        let level = disp[col] >> 8;
-        let fill = (level * 3).saturating_sub(seg * 255).min(255);
-        f.put(led, tint, floor + (255 - floor) * fill / 255 + glow);
+        let fill = (disp[col] * 3).saturating_sub(seg * 0xFF00).min(0xFF00);
+        f.put(led, tint, floor + (FULL - floor) * fill / 0xFF00 + glow);
     }
 }
 
@@ -123,7 +215,7 @@ fn render_idle<T: Time>(f: &mut Frame, ripples: &[Option<Ripple<T>>; RIPPLES], n
         let (row, col) = ((led / 4) as u32, (led % 4) as u32);
         let swell = wave((ms / 24) as u32 + (row + col) * 22); // ~6 s
         let glow = bloom(ripples, now, row, col) * 90 / 255;
-        f.put(led, ICE, 104 + swell * 78 / 255 + glow);
+        f.put(led, ICE, pt(121 + swell * 69 / 255 + glow));
     }
 }
 
@@ -135,25 +227,108 @@ pub struct Input<T> {
     pub ripples: [Option<Ripple<T>>; RIPPLES],
     pub activity: T,
     pub dim_after: u8,
+    /// Light the dimmed LEDs keep, in percent of normal; 0 = [`DEFAULT_IDLE_PERCENT`].
+    pub idle_percent: u8,
+}
+
+/// Minutes of quiet before the lights go off: three times the dim time, at most four hours,
+/// never before they dim.
+pub fn off_after(dim_after: u8) -> u8 {
+    if dim_after == NEVER {
+        return NEVER;
+    }
+    let d = dim_after as u32;
+    (d * OFF_FACTOR).min(OFF_CAP_MIN).max(d) as u8
+}
+
+/// The perceptual level the dimmed lights sit at.
+pub fn idle_level(percent: u8) -> u32 {
+    let pct = if percent == 0 { DEFAULT_IDLE_PERCENT } else { percent.min(100) };
+    ungamma(FULL * pct as u32 / 100)
+}
+
+/// A level that eases from one value to another over time; a new target starts from wherever
+/// the level is, so an interrupted fade never jumps.
+#[derive(Clone, Copy)]
+pub struct Ease<T> {
+    from: u32,
+    to: u32,
+    since: T,
+}
+
+impl<T: Time> Ease<T> {
+    pub fn new(level: u32, now: T) -> Ease<T> {
+        Ease { from: level, to: level, since: now }
+    }
+
+    /// The level now: up with an ease-out over `WAKE_MS`, down with a smoothstep over `DIM_MS`,
+    /// or over `OFF_MS` when going dark.
+    pub fn value(&self, now: T) -> u32 {
+        let ms = now.ms_since(self.since);
+        let (from, to) = (self.from as u64, self.to as u64);
+        if to >= from {
+            (from + (((to - from) * ease_out(progress(ms, WAKE_MS))) >> 16)) as u32
+        } else {
+            let dur = if to == 0 { OFF_MS } else { DIM_MS };
+            (from - (((from - to) * smoothstep(progress(ms, dur))) >> 16)) as u32
+        }
+    }
+
+    pub fn aim(&mut self, to: u32, now: T) {
+        if to != self.to {
+            self.from = self.value(now);
+            self.to = to;
+            self.since = now;
+        }
+    }
+}
+
+/// One exponential smoothing step from `cur` toward `target`: at least one unit, never past it.
+pub fn glide(cur: u32, target: u32, k: u64) -> u32 {
+    let step = |d: u32| (((d as u64 * k) >> 16) as u32).clamp(1, d);
+    if target > cur {
+        cur + step(target - cur)
+    } else if target < cur {
+        cur - step(cur - target)
+    } else {
+        cur
+    }
+}
+
+/// One LED channel's light (0..=65535) to an 8-bit value, with the remainder carried in `err`
+/// (quarter steps). Above 16 steps the dither uses quarter steps: a pattern repeats at least at
+/// 50 Hz and swings 1/16 or less, which nobody sees. From 2 to 16 steps it uses half steps
+/// (100 Hz). Below 2 steps a one-step swing would be a large share of the light, so it rounds.
+pub fn dither(lin: u32, err: &mut u8) -> u8 {
+    let q = (lin.min(FULL) * 1020) >> 16; // quarter steps, 0..=1019
+    if q < 8 {
+        *err = 0;
+        return ((q + 2) >> 2) as u8;
+    }
+    let (v, e) = if q < 64 { (q & !1, *err as u32 & 2) } else { (q, *err as u32) };
+    let acc = v + e;
+    *err = (acc & 3) as u8;
+    (acc >> 2) as u8
 }
 
 /// Everything the lights remember from one frame to the next.
 pub struct Lights<T> {
-    /// Meter ballistics, 8.8 fixed point.
+    /// Meter ballistics, 8.8 fixed point. The screen's meters use them too.
     disp: [u32; NCH],
     /// Overall loudness envelope, 8.8.
     swell: u32,
     mode_alive: bool,
     mode_since: T,
-    parity: bool,
-    /// Idle dimming envelope, 8.8.
-    dim: u32,
+    /// Idle dimming, perceptual 0..=65535 (full = awake).
+    dim: Ease<T>,
     dark: bool,
-    /// Previous frame before quantising.
-    last_px: [[u32; 3]; N],
+    /// Smoothed perceptual brightness per LED, 16.8 fixed point.
+    bright: [u32; N],
+    /// Smoothed linear colour per LED, 8.8 fixed point.
+    colour: [[u32; 3]; N],
+    /// Dither remainder per LED channel, in quarter steps.
+    err: [[u8; 3]; N],
     last_bytes: Bytes,
-    /// Frames in a row with no change.
-    still: u32,
     /// Frames since the LEDs were last written.
     unsent: u32,
 }
@@ -165,12 +340,13 @@ impl<T: Time> Lights<T> {
             swell: 0,
             mode_alive: false,
             mode_since: now,
-            parity: false,
-            dim: 255 << 8,
+            dim: Ease::new(FULL, now),
             dark: false,
-            last_px: [[0; 3]; N],
+            bright: [0; N],
+            colour: [ICE.map(|c| (c as u32) << 8); N],
+            // Staggered so that LEDs at the same level do not step on the same frame.
+            err: core::array::from_fn(|i| core::array::from_fn(|c| ((i + c) & 3) as u8)),
             last_bytes: [0; N * 3],
-            still: 0,
             unsent: 0,
         }
     }
@@ -199,13 +375,15 @@ impl<T: Time> Lights<T> {
 
     /// One frame. Returns the bytes to send, or `None` when the LEDs already show them.
     pub fn frame(&mut self, now: T, s: &Input<T>) -> Option<Bytes> {
-        let idle = past(now.ms_since(s.activity), s.dim_after);
-        let dim_target = if idle { IDLE_DIM << 8 } else { 255 << 8 };
-        if self.dim < dim_target {
-            self.dim = (self.dim + 600).min(dim_target); // back up in ~0.4 s
+        let quiet = now.ms_since(s.activity);
+        let dim_target = if past(quiet, off_after(s.dim_after)) {
+            0
+        } else if past(quiet, s.dim_after) {
+            idle_level(s.idle_percent)
         } else {
-            self.dim -= (self.dim - dim_target).min(40); // down over ~6 s
-        }
+            FULL
+        };
+        self.dim.aim(dim_target, now);
         if s.alive != self.mode_alive {
             self.mode_alive = s.alive;
             self.mode_since = now;
@@ -231,41 +409,53 @@ impl<T: Time> Lights<T> {
             self.swell -= (self.swell - loudest) / 48;
         }
 
-        let mut f = Frame { px: [[0; 3]; N] };
+        let mut f = Frame { bright: [0; N], colour: [None; N] };
         if s.alive {
-            render_mixer(&mut f, &s.mixer, &self.disp, self.swell >> 8, &s.ripples, now);
+            render_mixer(&mut f, &s.mixer, &self.disp, self.swell, &s.ripples, now);
         } else {
             render_idle(&mut f, &s.ripples, now);
         }
 
-        // Fade in after a mode change, then the master brightness.
-        let env = (now.ms_since(self.mode_since).min(FADE_MS) * 255 / FADE_MS) as u32;
-        let master = s.brightness as u32 * env / 255 * (self.dim >> 8) / 255;
+        // Master level, perceptual: brightness setting x fade-in after a mode change x idle.
+        let fade = smoothstep(progress(now.ms_since(self.mode_since), FADE_MS)) as u32;
+        let master = gamma((((pt(s.brightness as u32) * fade) >> 16) * self.dim.value(now)) >> 16);
 
-        // A picture that has stopped moving needs no half steps and no refresh: the LEDs
-        // hold their colour, so the bus (and the interrupts-off window) can rest.
-        let scaled = f.px.map(|px| px.map(|v| v * master / 255));
-        self.still = if scaled == self.last_px { self.still + 1 } else { 0 };
-        self.last_px = scaled;
-        let moving = self.still < 20;
-
-        self.parity = !self.parity;
-        let mut out = [[0u8; 3]; N];
+        let mut light = [[0u32; 3]; N];
         let mut total = 0u32;
-        for (o, px) in out.iter_mut().zip(scaled.iter()) {
-            for (o, &v) in o.iter_mut().zip(px.iter()) {
-                // 9-bit value; while moving, the half step shows on alternate frames.
-                let v9 = (v + 64) >> 7;
-                let half = if moving { v9 & 1 & self.parity as u32 } else { v9 & 1 };
-                let v = ((v9 >> 1) + half).min(255);
-                *o = v as u8;
-                total += v;
+        let targets = f.bright.iter().zip(f.colour.iter());
+        let state = self.bright.iter_mut().zip(self.colour.iter_mut());
+        for (light, ((&target, want), (bright, colour))) in light.iter_mut().zip(targets.zip(state)) {
+            let k = if target << 8 > *bright { ATTACK } else { RELEASE };
+            *bright = glide(*bright, target << 8, k);
+            if let Some(c) = want {
+                for (cur, &t) in colour.iter_mut().zip(c.iter()) {
+                    *cur = glide(*cur, (t as u32) << 8, RECOLOUR);
+                }
+            }
+            let lin = (gamma(*bright >> 8) * master) >> 16;
+            for (l, &c) in light.iter_mut().zip(colour.iter()) {
+                // 8.8 colour to a 16-bit fraction (255 -> 65535); fits u32, no division.
+                *l = (lin * (c + (c >> 8))) >> 16;
+                total += *l;
             }
         }
-        if total > POWER_CAP {
-            for px in out.iter_mut() {
-                for c in px.iter_mut() {
-                    *c = (*c as u32 * POWER_CAP / total) as u8;
+
+        // Over the cap, everything scales down together (16-bit fraction, one division a frame).
+        let cap = if total > POWER_CAP { POWER_CAP as u64 * 65536 / total as u64 } else { 65536 };
+        let mut out = [[0u8; 3]; N];
+        for ((o, l), (err, colour)) in out.iter_mut().zip(light.iter()).zip(self.err.iter_mut().zip(self.colour.iter()))
+        {
+            for ((o, &l), e) in o.iter_mut().zip(l.iter()).zip(err.iter_mut()) {
+                let l = ((l as u64 * cap) >> 16) as u32;
+                *o = dither(l, e);
+            }
+            // Nearly dark, one channel can round to a step while the others round to nothing,
+            // and a white key glows blue. Any lit LED shows one step of each colour it has.
+            if o.iter().any(|&v| v > 0) {
+                for (v, &c) in o.iter_mut().zip(colour.iter()) {
+                    if c >= LIFT_MIN {
+                        *v = (*v).max(1);
+                    }
                 }
             }
         }

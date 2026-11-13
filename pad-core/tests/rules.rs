@@ -210,6 +210,7 @@ fn light_at(to: u64, activity: impl Fn(u64) -> u64) -> u32 {
             ripples: s.ripples,
             activity: activity(t),
             dim_after: s.lights_dim_min,
+            idle_percent: s.lights_idle_percent,
         };
         if let Some(b) = lights.frame(t, &input) {
             last = b;

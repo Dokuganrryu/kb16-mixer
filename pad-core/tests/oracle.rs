@@ -16,6 +16,13 @@
 //! `old::keyboard` is compared only where its answer was right: up to six keys, each with its
 //! own non-zero usage. The cases where it was wrong are pinned in
 //! `tests/keyboard.rs`.
+//!
+//! The LED bytes differ on purpose too. The old lights stepped visibly while audio played:
+//! a meter jumped with each host frame (~30 Hz), and 9-bit gamma-2 output left large steps near
+//! black. The new lights glide per LED, use gamma 2.4 and dither in quarter steps, dim much
+//! further when idle and then go off (see `pad_core::leds`; pinned in `tests/lights.rs`). So
+//! `old::leds` is compared only for the meter ballistics, which the screen draws and which did
+//! not change.
 
 use kb16_mixer_protocol::{HostMsg, LOGO_NAME_LEN, NEVER, NOTICE};
 use pad_core::Time;
@@ -1421,7 +1428,7 @@ fn random_mixer(rng: &mut Rng) -> old::state::Mixer {
 }
 
 #[test]
-fn the_lights_send_the_same_bytes() {
+fn the_lights_keep_the_same_meters() {
     use old::state::{RIPPLES, Ripple};
     use pad_core::leds::{Input, Lights};
     let mut rng = Rng(0x00C0_FFEE_0000_1234);
@@ -1476,11 +1483,11 @@ fn the_lights_send_the_same_bytes() {
             now.ticks += rng.below(30); // the second clock read, a little later
 
             let shared = old::leds::Shared { alive, mixer: &mixer, brightness, ripples: &ripples, activity, dim_after };
-            let a = o.step(suspended, wake, now, &shared, &mut meter);
+            o.step(suspended, wake, now, &shared, &mut meter);
 
             // As `firmware/src/leds.rs` does it.
-            let b = if suspended {
-                n.suspended()
+            if suspended {
+                n.suspended();
             } else {
                 n.resume(wake);
                 let input = Input {
@@ -1490,12 +1497,11 @@ fn the_lights_send_the_same_bytes() {
                     ripples: ripples.map(|r| r.map(|r| pad_core::state::Ripple { at: r.at, row: r.row, col: r.col })),
                     activity,
                     dim_after,
+                    idle_percent: 0,
                 };
-                let b = n.frame(now, &input);
+                n.frame(now, &input);
                 assert_eq!(meter, n.meters(), "frame {frame}");
-                b
-            };
-            assert_eq!(a, b, "frame {frame}");
+            }
         }
     }
 }

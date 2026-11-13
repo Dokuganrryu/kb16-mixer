@@ -41,6 +41,7 @@ pub async fn run(_pin: Output<'static>) {
             ripples: s.ripples,
             activity: s.activity,
             dim_after: s.lights_dim_min,
+            idle_percent: s.lights_idle_percent,
         });
         let bytes = lights.frame(now, &input);
         for (m, v) in METER.iter().zip(lights.meters()) {

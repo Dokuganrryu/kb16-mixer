@@ -53,6 +53,8 @@ pub struct State<T> {
     /// Minutes of quiet before the screen turns off, and before the lights dim (`NEVER` = stay on).
     pub screen_off_min: u8,
     pub lights_dim_min: u8,
+    /// Light the dimmed LEDs keep, in percent of normal; 0 = the lights' own default.
+    pub lights_idle_percent: u8,
     pub popup: Option<Popup<T>>,
     /// The last activity, for the idle rule (see `docs/how-it-works.md`).
     pub activity: T,
@@ -99,6 +101,7 @@ impl<T: Time> State<T> {
             oled_top: DEFAULT_OLED_TOP,
             screen_off_min: DEFAULT_IDLE_MIN,
             lights_dim_min: DEFAULT_IDLE_MIN,
+            lights_idle_percent: 0,
             popup: None,
             activity: boot,
             keys: [Key::Host; 16],
@@ -157,6 +160,7 @@ impl<T: Time> State<T> {
                     if c.oled_top_plus_one == 0 { DEFAULT_OLED_TOP } else { (c.oled_top_plus_one - 1).min(6) };
                 self.screen_off_min = if c.screen_off_min == 0 { DEFAULT_IDLE_MIN } else { c.screen_off_min };
                 self.lights_dim_min = if c.lights_dim_min == 0 { DEFAULT_IDLE_MIN } else { c.lights_dim_min };
+                self.lights_idle_percent = c.idle_led_percent.min(100);
             }
             HostMsg::Frame(f) => {
                 m.level = f.levels;
