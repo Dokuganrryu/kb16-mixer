@@ -279,6 +279,7 @@ pub fn settings_message(colors: &[[u8; 3]], cfg: &crate::config::Config) -> Repo
         screen_off_min: minutes(cfg.screen_off_min),
         lights_dim_min: minutes(cfg.lights_dim_min),
         idle_led_percent: cfg.idle_led_percent.min(100),
+        screen_style: 0,
     })
     .encode()
 }

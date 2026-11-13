@@ -163,6 +163,10 @@ pub struct Settings {
     /// default. Added after the first release: an older host leaves the byte zero, and older
     /// firmware ignores it.
     pub idle_led_percent: u8,
+    /// How the screen draws (0 = Classic, 1 = Lean, 2 = Numbers; the pad reads an unknown
+    /// value as 0). Added after byte 19: an older host leaves it zero, and older firmware
+    /// ignores it.
+    pub screen_style: u8,
 }
 
 /// Live levels, faders and mute state.
@@ -229,6 +233,7 @@ impl HostMsg {
                 r[17] = s.screen_off_min;
                 r[18] = s.lights_dim_min;
                 r[19] = s.idle_led_percent;
+                r[20] = s.screen_style;
             }
             HostMsg::Frame(f) => {
                 r[1] = id::FRAME;
@@ -294,6 +299,7 @@ impl HostMsg {
                     screen_off_min: r[17],
                     lights_dim_min: r[18],
                     idle_led_percent: r[19],
+                    screen_style: r[20],
                 })
             }
             id::FRAME => {
@@ -481,6 +487,7 @@ mod tests {
             screen_off_min: NEVER,
             lights_dim_min: 30,
             idle_led_percent: 6,
+            screen_style: 2,
         }));
         for flags in 0..16u8 {
             host_roundtrip(HostMsg::Frame(Frame {
@@ -543,10 +550,11 @@ mod tests {
             screen_off_min: 255,
             lights_dim_min: 10,
             idle_led_percent: 40,
+            screen_style: 1,
         })
         .encode();
-        assert_eq!(&s[..20], &[0xD1, 0x20, 2, 0xAA, 0xBB, 0xCC, 1, 2, 3, 0, 0, 0, 0, 0, 0, 9, 4, 255, 10, 40]);
-        assert!(s[20..].iter().all(|&b| b == 0));
+        assert_eq!(&s[..21], &[0xD1, 0x20, 2, 0xAA, 0xBB, 0xCC, 1, 2, 3, 0, 0, 0, 0, 0, 0, 9, 4, 255, 10, 40, 1]);
+        assert!(s[21..].iter().all(|&b| b == 0));
 
         let f = HostMsg::Frame(Frame {
             levels: [1, 2, 3, 4],
@@ -606,6 +614,7 @@ mod tests {
         for report in [&old[..], &[&old[..], &[0u8; 13][..]].concat()[..]] {
             let Some(HostMsg::Settings(s)) = HostMsg::decode(report) else { panic!() };
             assert_eq!(s.idle_led_percent, 0);
+            assert_eq!(s.screen_style, 0);
             assert_eq!((s.brightness, s.oled_top_plus_one, s.screen_off_min, s.lights_dim_min), (166, 4, 255, 30));
         }
         for pct in [0, 1, 6, 100, 255] {
@@ -617,8 +626,35 @@ mod tests {
                 screen_off_min: 0,
                 lights_dim_min: 0,
                 idle_led_percent: pct,
+                screen_style: 0,
             };
             assert_eq!(host_roundtrip(HostMsg::Settings(s))[19], pct);
+        }
+    }
+
+    /// A host from before byte 20 existed sends it as zero or cuts the report at 20 bytes:
+    /// the pad then draws the Classic screen.
+    #[test]
+    fn settings_from_an_older_host_mean_the_classic_screen() {
+        let mut old = [0u8; 20];
+        old.copy_from_slice(&[0xD1, 0x20, 4, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 166, 4, 255, 30, 25]);
+        for report in [&old[..], &[&old[..], &[0u8; 12][..]].concat()[..]] {
+            let Some(HostMsg::Settings(s)) = HostMsg::decode(report) else { panic!() };
+            assert_eq!(s.screen_style, 0);
+            assert_eq!(s.idle_led_percent, 25);
+        }
+        for style in [0, 1, 2, 3, 255] {
+            let s = Settings {
+                channels: 4,
+                colors: [[0; 3]; CHANNELS],
+                brightness: 0,
+                oled_top_plus_one: 0,
+                screen_off_min: 0,
+                lights_dim_min: 0,
+                idle_led_percent: 0,
+                screen_style: style,
+            };
+            assert_eq!(host_roundtrip(HostMsg::Settings(s))[20], style);
         }
     }
 

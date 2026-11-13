@@ -38,7 +38,7 @@ fn mixer(second_page: bool) -> Mixer {
 }
 
 fn input(alive: bool, mixer: Mixer, popup: Option<Popup<u64>>) -> Input<u64> {
-    Input { alive, mixer, popup, idle: 0, name: name::<LOGO_NAME_LEN>("KB16"), meters: [200, 120, 0, 60] }
+    Input { alive, mixer, popup, idle: 0, name: name::<LOGO_NAME_LEN>("KB16"), meters: [200, 120, 0, 60], style: 0 }
 }
 
 fn draw(input: &Input<u64>) -> Fb {

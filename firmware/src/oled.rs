@@ -143,6 +143,7 @@ pub async fn run(mut i2c: Bus) {
                 idle: now.ms_since(s.activity),
                 name: s.logo_name,
                 meters: [0; NCH], // read below, after any wait on the bus
+                style: s.screen_style,
             };
             (input, s.oled_top, s.screen_off_min)
         });

@@ -1587,6 +1587,7 @@ fn the_idle_logo_shows_at_the_same_times_with_the_same_letters() {
                 idle,
                 name,
                 meters: meter,
+                style: 0,
             };
             let b = screen.draw(&mut fb, now, since_boot, &input);
             assert_eq!(a, b);

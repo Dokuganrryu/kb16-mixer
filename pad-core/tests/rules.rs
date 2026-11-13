@@ -118,6 +118,7 @@ fn settings(screen_off_min: u8, lights_dim_min: u8) -> HostMsg {
         screen_off_min,
         lights_dim_min,
         idle_led_percent: 0,
+        screen_style: 0,
     })
 }
 
@@ -194,6 +195,18 @@ fn idle_minutes_come_from_the_settings() {
     // 0 means the pad default.
     s.handle(settings(0, 0), 0);
     assert_eq!((s.screen_off_min, s.lights_dim_min), (10, 10));
+}
+
+#[test]
+fn the_screen_style_comes_from_the_settings_and_unknown_styles_mean_classic() {
+    let mut s = State::new(0u64);
+    assert_eq!(s.screen_style, 0, "Classic before any settings");
+    for (sent, kept) in [(1, 1), (2, 2), (0, 0), (3, 0), (255, 0)] {
+        let HostMsg::Settings(mut c) = settings(0, 0) else { panic!() };
+        c.screen_style = sent;
+        s.handle(HostMsg::Settings(c), 0);
+        assert_eq!(s.screen_style, kept, "sent {sent}");
+    }
 }
 
 /// Light output (sum of all bytes) at `to`, for 5 ms frames from 0 with the last activity

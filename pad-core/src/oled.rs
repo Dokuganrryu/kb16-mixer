@@ -351,6 +351,8 @@ pub struct Input<T> {
     pub name: [u8; kb16_mixer_protocol::LOGO_NAME_LEN],
     /// Meter levels after the lights' ballistics, 0..=255.
     pub meters: [u8; NCH],
+    /// The screen style, one of `state::STYLE_*`.
+    pub style: u8,
 }
 
 /// The panel contrast for this frame: `want`, faded out with the lights over the `DIM_MS`
@@ -545,7 +547,7 @@ mod tests {
     }
 
     fn input(meters: [u8; NCH]) -> Input<u64> {
-        Input { alive: true, mixer: mixer(), popup: None, idle: 0, name: *b"KB16\0\0\0\0\0\0", meters }
+        Input { alive: true, mixer: mixer(), popup: None, idle: 0, name: *b"KB16\0\0\0\0\0\0", meters, style: 0 }
     }
 
     fn popup(at: u64, volume: u8, text: &[u8]) -> Option<Popup<u64>> {

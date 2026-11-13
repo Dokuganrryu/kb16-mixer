@@ -14,6 +14,10 @@ pub const RIPPLES: usize = 4;
 pub const DEFAULT_IDLE_MIN: u8 = 10;
 /// How long a readout stays after its last message, and a moved channel's lights show its fader.
 pub const POPUP_MS: u64 = 1300;
+/// Screen styles, as the settings report sends them.
+pub const STYLE_CLASSIC: u8 = 0;
+pub const STYLE_LEAN: u8 = 1;
+pub const STYLE_NUMBERS: u8 = 2;
 
 #[derive(Clone, Copy)]
 pub struct Popup<T> {
@@ -57,6 +61,8 @@ pub struct State<T> {
     pub lights_dim_min: u8,
     /// Light the dimmed LEDs keep, in percent of normal; 0 = the lights' own default.
     pub lights_idle_percent: u8,
+    /// How the screen draws: one of the `STYLE_*` values.
+    pub screen_style: u8,
     pub popup: Option<Popup<T>>,
     /// The host that is there has sent a frame, so `mixer.volume` is its own and not left over.
     pub frame_seen: bool,
@@ -106,6 +112,7 @@ impl<T: Time> State<T> {
             screen_off_min: DEFAULT_IDLE_MIN,
             lights_dim_min: DEFAULT_IDLE_MIN,
             lights_idle_percent: 0,
+            screen_style: STYLE_CLASSIC,
             popup: None,
             frame_seen: false,
             activity: boot,
@@ -167,6 +174,8 @@ impl<T: Time> State<T> {
                 self.screen_off_min = if c.screen_off_min == 0 { DEFAULT_IDLE_MIN } else { c.screen_off_min };
                 self.lights_dim_min = if c.lights_dim_min == 0 { DEFAULT_IDLE_MIN } else { c.lights_dim_min };
                 self.lights_idle_percent = c.idle_led_percent.min(100);
+                // A style this firmware does not know (from a newer app) falls back to Classic.
+                self.screen_style = if c.screen_style <= STYLE_NUMBERS { c.screen_style } else { STYLE_CLASSIC };
             }
             HostMsg::Frame(f) => {
                 m.level = f.levels;
