@@ -118,25 +118,25 @@ output = "default"
 #   apps = [...]        these apps (exe names, case-insensitive)
 #   target = "other"    every app no other channel claims (games land here)
 #   target = "focused"  whatever app is in front
-# Colors are soft tints of white on purpose; loudness shows as brightness.
+# Colors are tints of ice white that differ only in warmth; loudness shows as brightness.
 [[channel]]
 name = "Mic"
-color = "#dce6ff"
+color = "#e6dcd7"
 target = "mic"
 
 [[channel]]
 name = "Chat"
-color = "#c8d2ff"
+color = "#c8d7ff"
 apps = ["Discord.exe", "DiscordPTB.exe", "DiscordCanary.exe", "Teams.exe", "ms-teams.exe", "Zoom.exe", "TeamSpeak.exe", "ts3client_win64.exe", "Mumble.exe"]
 
 [[channel]]
 name = "Game"
-color = "#e6ecff"
+color = "#afcdff"
 target = "other"
 
 [[channel]]
 name = "Media"
-color = "#d2f0ff"
+color = "#d7def5"
 apps = ["Spotify.exe", "AppleMusic.exe", "TIDAL.exe", "foobar2000.exe", "MusicBee.exe", "vlc.exe", "mpv.exe",
         "chrome.exe", "firefox.exe", "msedge.exe", "brave.exe", "opera.exe", "opera_gx.exe", "vivaldi.exe", "arc.exe"]
 "##;
@@ -682,7 +682,7 @@ impl RawConfig {
         if self.channel.len() > 4 {
             return Err(format!("{} channels, the pad has 4 columns", self.channel.len()));
         }
-        let palette = [[220, 230, 255], [200, 210, 255], [230, 236, 255], [210, 240, 255]];
+        let palette = [[0xe6, 0xdc, 0xd7], [0xc8, 0xd7, 0xff], [0xaf, 0xcd, 0xff], [0xd7, 0xde, 0xf5]];
         let mut channels = Vec::new();
         for (i, c) in self.channel.into_iter().enumerate() {
             let shown = kb16_mixer_protocol::NAME_SHOWN;
