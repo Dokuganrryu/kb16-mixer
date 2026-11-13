@@ -9,9 +9,9 @@ For the definition of each term, see [glossary.md](glossary.md).
 | Test suite | Folder | What it checks | Runs in CI |
 |---|---|---|---|
 | Protocol tests | `protocol/` | The bytes of each message, encode and decode, the version format | Yes |
-| Firmware host tests | `pad-core/` | The firmware logic without hardware: key and knob decoding, the routing of keys and knobs, the keyboard report (`tests/keyboard.rs`), the idle rule, the lights, the screens, the flash guard and the order of its steps with a fake flash controller (`tests/flash.rs`), the name page and its write limit, the bootloader marks and their order | Yes |
+| Firmware host tests | `pad-core/` | The firmware logic without hardware: key and knob decoding, the routing of keys and knobs, the keyboard report (`tests/keyboard.rs`), the idle rule, the lights and their motion (`tests/lights.rs`), the screens (`tests/oracle.rs` compares only the screens at rest), the flash guard and the order of its steps with a fake flash controller (`tests/flash.rs`), the name page and its write limit, the bootloader marks and their order | Yes |
 | Firmware image check | `scripts/build-firmware.sh` | The vector table, the interrupts and the size of the firmware image | Yes |
-| App tests | `app/` | The config file, the trim rules, the key actions, the pad link, the settings rules | Yes |
+| App tests | `app/` | The config file, the trim rules, the key actions, the tap, hold and double-tap rules, the choice of the output device, the pad link, the settings rules | Yes |
 | Forbidden API test | `app/tests/forbidden_apis.rs` | The app source, `Cargo.toml` and `Cargo.lock` contain no hook, input injection, process access or network API | Yes |
 | End-to-end audio test | `app/tests/audio_e2e.rs` | The app with the Windows audio system itself | No |
 | Notices check | `scripts/third-party-notices.py` | `THIRD_PARTY_NOTICES.md` agrees with the dependencies | Yes |
@@ -152,7 +152,18 @@ This table records the tests on a pad. The only test pad is one KB16-01 rev2 wit
 | Key light and screen output | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before 0.1.0 | VERIFIED |
 | Recovery with the top-left key at plug-in | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before 0.1.0 | VERIFIED |
 | Key pages | | | | NOT YET VERIFIED |
-| Knob press to select one program | | | | NOT YET VERIFIED |
+| Knob hold to select one program (only with firmware after the draft 0.1.0) | | | | NOT YET VERIFIED |
+| Knob tap to mute, and a knob double tap | | | | NOT YET VERIFIED |
+| Knob press with the draft 0.1.0 firmware: each press is a tap | | | | NOT YET VERIFIED |
+| Hold and double tap on keys (`[keys_hold]`, `[keys_double]`) | | | | NOT YET VERIFIED |
+| The app follows a change of the Windows default output device | | | | NOT YET VERIFIED |
+| A chosen output device (`[audio] output`), and the change to the Windows default while it is disconnected | | | | NOT YET VERIFIED |
+| Smooth key lights while audio plays (glide, gamma 2.4, dither) | | | | NOT YET VERIFIED |
+| Idle dim of the key lights to `idle_percent`, and the lights off after three times `lights_dim_min` | | | | NOT YET VERIFIED |
+| The new channel tints (ice white) and amber for mute | | | | NOT YET VERIFIED |
+| Screen motion: gliding meters and the fade before the screen goes off | | | | NOT YET VERIFIED |
+| Screen motion: page slide and the 4-pixel nudge | | | | NOT YET VERIFIED |
+| Screen motion: the readout push and the mute flash | | | | NOT YET VERIFIED |
 | The idle rule and its thresholds | | | | NOT YET VERIFIED |
 | The logo name in flash | | | | NOT YET VERIFIED |
 | `open:` | | | | NOT YET VERIFIED |
