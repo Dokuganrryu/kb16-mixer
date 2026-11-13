@@ -64,7 +64,7 @@ This section lists the work of the quality rounds after the first two independen
 - `flash.ps1` waits for `kb16-mixer.exe --bootloader` and reads its exit code. Before, the message about the bootloader request could be incorrect.
 - `flash.ps1 -Backup <file> -DryRun` without a pad in the bootloader stops with `REFUSED`. Before, it showed "DRY RUN complete" and made no backup.
 - `flash.ps1` also looks for `dfu-util` in the `tools` folder of the repository root, as `flash.sh` does.
-- The keyboard: a key release frees only what that key pressed. Before, key A had `ctrl+c` and key B had `c`. A tap of B while you held A released Ctrl, and `c` repeated. A key with modifiers only holds its modifiers.
+- The keyboard: a key release frees only what that key pressed. Before, key A had `ctrl+c` and key B had `c`. A tap of B while you held A released Ctrl, and `c` repeated. A key with modifiers only holds its modifiers. The app does not send such a key, thus this change shows only with a different host program.
 - A `focused` channel or knob: when the desktop or the taskbar is in front, no program is in front. Before, the channel got all programs that Explorer started, and a knob turn set all of them to one level.
 - If the app cannot read the level of a session when Focus starts, it does not turn that session down. Before, it kept 100 % as the level and later set the program to 100 %.
 - The app writes `state.toml` to the disk before it renames the new file over the previous file.

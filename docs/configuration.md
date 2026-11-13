@@ -366,6 +366,7 @@ Rules:
 
 - Case is not important: `"F13"` and `"f13"` are the same.
 - One entry has one key and zero or more modifiers. `"a+b"` is not correct.
+- The app does not accept an entry that has only modifiers, for example `"ctrl+shift"`. Thus the app does not send such a key to the pad.
 - `"pause"` alone is the media key Play/Pause. With a modifier (for example `"ctrl+pause"`), it is the Pause key of the keyboard.
 
 ## Channels

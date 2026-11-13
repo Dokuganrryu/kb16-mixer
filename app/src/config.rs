@@ -802,6 +802,7 @@ mod tests {
         assert_eq!(parse_key(" None "), Ok(KeyAction::Nothing));
         assert!(parse_key("F25").is_err());
         assert!(parse_key("ctrl+").is_err());
+        assert!(parse_key("ctrl+shift").is_err(), "modifiers alone are not a key");
         assert!(parse_key("a+b").unwrap_err().contains("one key"));
         assert!(parse_key("mute|focus").unwrap_err().contains("media"));
         assert_eq!(parse_key(" Open:C:\\Tools\\OBS.exe "), Ok(KeyAction::Open("C:\\Tools\\OBS.exe".into())));
