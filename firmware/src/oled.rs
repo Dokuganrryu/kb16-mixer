@@ -10,7 +10,8 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Instant, Ticker, Timer};
 use pad_core::Time;
-use pad_core::oled::{FADE_MS, Fb, H, Input, SPLASH_MS, Screen, W, contrast, dirty_spans};
+use pad_core::leds::DIM_MS;
+use pad_core::oled::{Fb, H, Input, SPLASH_MS, Screen, W, contrast, dirty_spans};
 use pad_core::state::{DEFAULT_OLED_TOP, past};
 
 const ADDR: u8 = 0x3C;
@@ -149,7 +150,7 @@ pub async fn run(mut i2c: Bus) {
 
         // Sleep once the fade after the idle limit is over; any key, knob or app audio the host
         // hears wakes it.
-        let fade_done = past(input.idle.saturating_sub(FADE_MS as u64), off_after);
+        let fade_done = past(input.idle.saturating_sub(DIM_MS), off_after);
         let on = !state::suspended() && !(since_boot > SPLASH_MS && fade_done);
         if on {
             input.meters = core::array::from_fn(state::meter);
@@ -157,7 +158,7 @@ pub async fn run(mut i2c: Bus) {
             was_calm = calm;
 
             // Dim the panel on the idle logo to spare it, and fade it out after the idle limit.
-            let want = contrast(if calm { 0x30 } else { 0xCF }, input.idle, off_after, u64::MAX);
+            let want = contrast(if calm { 0x30 } else { 0xCF }, input.idle, off_after);
             if want != shown_contrast {
                 shown_contrast = want;
                 ready &= cmd(&mut i2c, &[0x81, want]).await;

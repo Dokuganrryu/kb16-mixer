@@ -11,7 +11,7 @@
 use crate::Time;
 use crate::assets::{BIG_COLS, BIG_OFF, LOGO_CHARS, LOGO_COLS, LOGO_GAP, LOGO_OFF, MID_COLS, MID_OFF, SIN};
 use crate::font::FONT5X7;
-use crate::leds::gamma;
+use crate::leds::{DIM_MS, gamma};
 use crate::state::{Mixer, NCH, POPUP_MS, Popup};
 use kb16_mixer_protocol::{NAME_SHOWN, NEVER, NOTICE};
 
@@ -24,8 +24,6 @@ const SCREENSAVER_MS: u64 = 45_000;
 const WIPE_MS: u64 = 900;
 /// A detent that cannot move the value past 0 or 100 shows an end stop for three 33 ms frames.
 const WALL_MS: u32 = 99;
-/// After the screen-off limit the panel fades out over this long, with the lights, then sleeps.
-pub const FADE_MS: u32 = 700;
 /// The SSD1306 control byte that says "display data follows".
 const DATA: u8 = 0x40;
 
@@ -355,14 +353,14 @@ pub struct Input<T> {
     pub meters: [u8; NCH],
 }
 
-/// The panel contrast for this frame: `want`, faded out with the lights over the `FADE_MS`
+/// The panel contrast for this frame: `want`, faded out with the lights over the `DIM_MS`
 /// after `off_min` minutes of quiet (a smoothstep through the lights' gamma), then 0.
 pub fn contrast(want: u8, idle: u64, off_min: u8) -> u8 {
     if off_min == NEVER {
         return want;
     }
-    let past = idle.saturating_sub(off_min as u64 * 60_000).min(FADE_MS as u64);
-    let t = past * 65536 / FADE_MS as u64;
+    let past = idle.saturating_sub(off_min as u64 * 60_000).min(DIM_MS);
+    let t = past * 65536 / DIM_MS;
     let eased = (t * t * (3 * 65536 - 2 * t)) >> 32;
     let left = (65536 - eased).min(0xFFFF) as u32;
     (want as u32 * gamma(left) / 0xFFFF) as u8
@@ -791,16 +789,16 @@ mod tests {
         let off = 60_000;
         assert_eq!(contrast(0x30, 0, 1), 0x30);
         assert_eq!(contrast(0x30, off, 1), 0x30, "full up to the limit");
-        assert_eq!(contrast(0xCF, off + FADE_MS as u64, 1), 0);
+        assert_eq!(contrast(0xCF, off + DIM_MS, 1), 0);
         assert_eq!(contrast(0xCF, off * 10, 1), 0);
         let mut last = 0xCF;
-        for idle in off..=off + FADE_MS as u64 {
+        for idle in off..=off + DIM_MS {
             let c = contrast(0xCF, idle, 1);
             assert!(c <= last, "monotone");
             last = c;
         }
         // Through the lights' gamma: half way in time is well under half the light.
-        assert!(contrast(0xCF, off + FADE_MS as u64 / 2, 1) < 0xCF / 4);
+        assert!(contrast(0xCF, off + DIM_MS / 2, 1) < 0xCF / 4);
         assert_eq!(contrast(0xCF, off * 10, NEVER), 0xCF, "never sleeps, never fades");
     }
 }
