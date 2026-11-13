@@ -396,7 +396,7 @@ impl PadMsg {
 
 /// The firmware's version as the USB device release number (bcdDevice): `0xJJMN` in binary-coded
 /// decimal for version JJ.M.N, so the PC can read it from the device list without opening the
-/// pad. Takes the crate version string ("0.1.0"); used in a `const`, a version that does not
+/// pad. Takes the crate version string ("0.2.0"); used in a `const`, a version that does not
 /// fit (major over 99, minor or patch over 9) stops the build.
 pub const fn device_release(version: &str) -> u16 {
     let v = version.as_bytes();
@@ -431,6 +431,7 @@ mod tests {
     #[test]
     fn the_firmware_version_travels_as_bcd() {
         assert_eq!(device_release("0.1.0"), 0x0010);
+        assert_eq!(device_release("0.2.0"), 0x0020);
         assert_eq!(device_release("12.3.4"), 0x1234);
         assert_eq!(device_release("1.0.9-beta"), 0x0109);
         for v in ["0.1.0", "12.3.4", "99.9.9", "1.0.0"] {
