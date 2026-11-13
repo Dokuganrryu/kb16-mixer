@@ -6,9 +6,10 @@ Do the steps in sequence. Each step tells you what to do, what you must see, and
 
 You flash firmware at your own risk. A flash can void the warranty of the pad.
 
-> **Status:** These steps are for the **planned first release, 0.1.0**. That release is not published yet.
-> Until it is published, build the files yourself. See [build-from-source.md](build-from-source.md).
-> The author did the flash, the driver installation and the app steps on one pad with Windows 11, with `dfu-util` and `scripts/flash.sh`.
+> **Status:** These steps are for version **0.2.0**, the first public release. It is a **pre-release**.
+> At this time, nobody did a test of version 0.2.0 on a pad.
+> If the release is not on the Releases page, build the files yourself. See [build-from-source.md](build-from-source.md).
+> The author did the flash, the driver installation and the app steps with earlier builds. The author used one pad with Windows 11, `dfu-util` and `scripts/flash.sh`.
 > The end-to-end flash with `flash.ps1` is **not tested** on the pad yet.
 > Automated tests run `flash.ps1` and `flash.sh` with a fake `dfu-util` and a stub app (`scripts/test_flash_scripts.py`). They examine each refusal. They do not use a pad. See [testing.md](testing.md#script-checks).
 > Windows 10 is **not tested**.
@@ -42,7 +43,7 @@ The backup (step 5) comes after the driver (step 4). Without the [WinUSB](glossa
 | A DOIO KB16-01 **rev2** pad | Step 2 tells you how to examine it. |
 | A USB cable that carries data | Some cables carry only power. |
 | Windows 11 (Windows 10 is not tested) | |
-| The release zip `kb16-mixer-0.1.0-windows-x64.zip` and the file `SHA256SUMS` | The [Releases page](https://github.com/Dokuganrryu/kb16-mixer/releases) of this repository on GitHub, after the release of 0.1.0 |
+| The release zip `kb16-mixer-0.2.0-windows-x64.zip` and the file `SHA256SUMS` | The [Releases page](https://github.com/Dokuganrryu/kb16-mixer/releases) of this repository on GitHub. The release has the mark **Pre-release**. |
 | `dfu-util` 0.11 | https://dfu-util.sourceforge.net. It is not part of this project. |
 | The QMK driver installer (or Zadig) | https://github.com/qmk/qmk_driver_installer/releases. It is not part of this project. |
 | Administrator rights | One time only, for the driver in step 4. The app and `flash.ps1` run without them. |
@@ -61,7 +62,7 @@ Some steps tell you to open PowerShell in a folder. Do this:
 ### 1.1 Download the release
 
 1. Open the [Releases page](https://github.com/Dokuganrryu/kb16-mixer/releases) of this repository.
-2. Download `kb16-mixer-0.1.0-windows-x64.zip`.
+2. Download `kb16-mixer-0.2.0-windows-x64.zip`.
 3. Download `SHA256SUMS`.
 
 The zip holds these files:
@@ -80,7 +81,7 @@ The zip holds these files:
 2. Run this command:
 
    ```powershell
-   Get-FileHash .\kb16-mixer-0.1.0-windows-x64.zip -Algorithm SHA256
+   Get-FileHash .\kb16-mixer-0.2.0-windows-x64.zip -Algorithm SHA256
    ```
 
 3. Open `SHA256SUMS` in a text editor. Find the line that ends with the name of the zip.
@@ -95,12 +96,12 @@ To examine only the zip in Git Bash or on Linux, run this command in the downloa
 sha256sum -c --ignore-missing SHA256SUMS
 ```
 
-The command must show `kb16-mixer-0.1.0-windows-x64.zip: OK`.
+The command must show `kb16-mixer-0.2.0-windows-x64.zip: OK`.
 
 If you use the GitHub CLI, you can also examine the [attestation](glossary.md#install-build-and-release). It tells where GitHub built the file:
 
 ```powershell
-gh attestation verify .\kb16-mixer-0.1.0-windows-x64.zip --repo Dokuganrryu/kb16-mixer
+gh attestation verify .\kb16-mixer-0.2.0-windows-x64.zip --repo Dokuganrryu/kb16-mixer
 ```
 
 The command must show that the verification succeeded. The attestation shows that GitHub Actions built the file from this repository.
@@ -394,8 +395,8 @@ The app does not start with Windows. To start it with Windows, set **Start with 
 **You see:** a report like this one. The numbers depend on your PC.
 
 ```text
-app        OK    kb16-mixer 0.1.0, settings in the default folder
-pad        OK    KB16 Mixer, firmware 0.1.0 (USB D010:1601)
+app        OK    kb16-mixer 0.2.0, settings in the default folder
+pad        OK    KB16 Mixer, firmware 0.2.0 (USB D010:1601)
 settings   OK    config.toml is valid (4 channels).
 autostart  OK    Start with Windows is off.
 audio      OK    2 output device(s), 3 app session(s), a microphone. Output: the Windows default.

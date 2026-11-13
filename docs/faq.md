@@ -128,7 +128,7 @@ See [Audio output](configuration.md#audio-output). Nobody did a test of this on 
 By default, a knob tap mutes or unmutes the knob target. A knob hold (350 ms) selects one program in the channel.
 You can change the two actions and add a double tap in `[knob_press]`. See [Knob presses](configuration.md#knob-presses).
 
-For the hold, the pad must have firmware that is newer than the draft release 0.1.0. With the draft firmware, each knob press is a tap.
+For the hold, the pad must have firmware 0.2.0 or later. With earlier firmware, each knob press is a tap.
 
 ## Why can `sha256sum -c SHA256SUMS` not find two files?
 

@@ -172,7 +172,7 @@ Other users of this pad report these errors. This project did not see them.
 
 | Cause | Fix |
 |---|---|
-| The pad has the firmware of the draft release 0.1.0. That firmware does not send the knob release. Thus the app uses each press as a tap. | Flash firmware that is newer than the draft release 0.1.0. At this time, you must build it from source. See [build-from-source.md](build-from-source.md). |
+| The pad has firmware from before version 0.2.0. That firmware does not send the knob release. Thus the app uses each press as a tap. | Flash the firmware of version 0.2.0 or later. See [install.md](install.md). |
 | `hold` in `[knob_press]` is not `"pick"`. | Set `hold = "pick"`. See [Knob presses](configuration.md#knob-presses). |
 | The knob turned before the hold time (350 ms). A turn cancels the press. | Hold the knob without a turn until the screen changes. Then turn it. |
 
@@ -194,7 +194,7 @@ Other users of this pad report these errors. This project did not see them.
 | Cause | Fix |
 |---|---|
 | The default dim level is 6 % of the usual light. | Set `[lights] idle_percent` to a different value from 1 to 100. See [Key lights](configuration.md#key-lights). |
-| The pad has the firmware of the draft release 0.1.0. That firmware ignores `idle_percent`. | Flash newer firmware. See [build-from-source.md](build-from-source.md). |
+| The pad has firmware from before version 0.2.0. That firmware ignores `idle_percent`. | Flash the firmware of version 0.2.0 or later. See [install.md](install.md). |
 
 ## Windows warnings
 

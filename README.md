@@ -6,7 +6,7 @@ KB16 Mixer is firmware and a small Windows tray app. They make the **DOIO KB16-0
 
 It is not a driver, and it does not route audio. The app uses no keyboard hooks and injects no input. It moves only the sliders of the Windows volume mixer.
 
-**Status: pre-release.** The first release will be 0.1.0. At this time, it has not published it. The author did tests on one pad with Windows 11. Not tested: Windows 10, other units, the Windows flasher on the pad, a return to the stock firmware. See [Status](#status).
+**Status: pre-release.** Version 0.2.0 is the first public release. It is a pre-release. At this time, nobody did a test of version 0.2.0 on a pad. The author did tests of earlier builds on one pad with Windows 11. Not tested: Windows 10, other units, the Windows flasher on the pad, a return to the stock firmware. See [Status](#status).
 
 > **Unofficial project.** It has no connection with DOIO, and DOIO does not endorse it. You flash firmware at your own risk. A flash can void the warranty of the pad.
 
@@ -51,7 +51,7 @@ The full check, with the steps, is in [docs/install.md](docs/install.md#2-examin
 
 ## Quick start
 
-At this time, the project has not published the first release. Until then, [build the files from source](docs/build-from-source.md).
+The first public release is 0.2.0. It is a pre-release. If it is not on the [Releases page](https://github.com/Dokuganrryu/kb16-mixer/releases), [build the files from source](docs/build-from-source.md).
 
 1. Download the release zip. Compare its SHA-256 value with `SHA256SUMS`. See [Get the files](docs/install.md#1-get-the-files).
 2. Do the checks of your pad. See [Examine your pad](docs/install.md#2-examine-your-pad).
@@ -117,7 +117,7 @@ This is page 2 (the keypad page) with the default settings:
 
 You can change the knob tap, hold and double tap in `[knob_press]`. A Mute key or an `open:` key can also have a hold and a double tap. See [Knob presses](docs/configuration.md#knob-presses).
 
-For a knob hold, the pad must have firmware that is newer than the draft release 0.1.0. With the firmware of the draft release, each knob press is a tap.
+For a knob hold, the pad must have firmware 0.2.0 or later. With earlier firmware, each knob press is a tap.
 
 When the app does not run, the keys type `1`–`0`, arrows, Enter and Backspace. Knob 1 sends Next, Previous and Play/Pause. Knob 2 sends Page Up, Page Down and Home. Knob 3 sends Volume up, Volume down and Mute. See [Keyboard mode](docs/configuration.md#keyboard-mode).
 
@@ -155,8 +155,8 @@ The project did its tests on one pad (KB16-01 rev2, Windows 11). This table show
 
 | Item | On the pad | Automated tests |
 |---|---|---|
-| Knob volume for each channel, the Mute row, key lights and screen (an earlier build, before 0.1.0) | VERIFIED |  |
-| Recovery with the top-left key at plug-in (an earlier build, before 0.1.0) | VERIFIED |  |
+| Knob volume for each channel, the Mute row, key lights and screen (an earlier build, before the internal version 0.1.0) | VERIFIED |  |
+| Recovery with the top-left key at plug-in (an earlier build, before the internal version 0.1.0) | VERIFIED |  |
 | Two key pages | NOT YET VERIFIED | yes |
 | Knob hold to select one program in a channel | NOT YET VERIFIED | yes |
 | Knob tap to mute, knob double tap, and hold and double tap on keys | NOT YET VERIFIED | yes |

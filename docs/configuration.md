@@ -202,8 +202,8 @@ Windows does not give the name of a device that is not connected. Thus the windo
 
 A value of `idle_percent` that is not in the list shows as the nearest entry. The value 6 shows as **Default (6%)**.
 
-The line below the buttons shows the version of the app, for example `KB16 mixer 0.1.0.`
-The top right of the window shows the firmware version, for example `Pad firmware 0.1.0.`, on each tab. If no pad is connected, it shows `Pad not connected.`
+The line below the buttons shows the version of the app, for example `KB16 mixer 0.2.0.`
+The top right of the window shows the firmware version, for example `Pad firmware 0.2.0.`, on each tab. If no pad is connected, it shows `Pad not connected.`
 
 ## Edit the file by hand
 
@@ -266,7 +266,7 @@ The lights fade down in 0.7 seconds. They fade off in 2 seconds. They come back 
 
 For the idle rule, see [how-it-works.md](how-it-works.md#idle-rule).
 
-Firmware up to the draft release 0.1.0 ignores `idle_percent`. It also uses an earlier brightness curve, so a `brightness` value looks a little different with it. Nobody did a test of these values on a pad.
+Firmware before version 0.2.0 ignores `idle_percent`. It also uses an earlier brightness curve, so a `brightness` value looks a little different with it. Nobody did a test of these values on a pad.
 
 ## Audio output
 
@@ -348,10 +348,10 @@ Rules:
 - When `double` has an action, a tap waits 280 ms for a second tap.
 - A turn of the knob before the hold time cancels the press. After the hold time, you can turn the knob while you hold it.
 
-> **NOTE:** For a hold, the pad must have firmware that is newer than the draft release 0.1.0. That firmware sends a message when you release the knob.
+> **NOTE:** For a hold, the pad must have firmware 0.2.0 or later. That firmware sends a message when you release the knob.
 
-With the firmware of the draft release 0.1.0, each press is a tap (or a double tap). The `hold` action then does not occur.
-Both firmware images show the version 0.1.0. To get the new firmware, build it from source. See [build-from-source.md](build-from-source.md).
+With firmware before version 0.2.0, each press is a tap (or a double tap). The `hold` action then does not occur.
+The release zip of version 0.2.0 contains the new firmware. See [install.md](install.md).
 
 ### One program in a channel
 
@@ -667,8 +667,8 @@ The report has one line for each topic: `app`, `pad`, `settings`, `autostart`, `
 A report from a pad that works can look like this:
 
 ```text
-app        OK    kb16-mixer 0.1.0, settings in the default folder
-pad        OK    KB16 Mixer, firmware 0.1.0 (USB D010:1601)
+app        OK    kb16-mixer 0.2.0, settings in the default folder
+pad        OK    KB16 Mixer, firmware 0.2.0 (USB D010:1601)
 settings   OK    config.toml is valid (4 channels).
 autostart  OK    Start with Windows is off.
 audio      OK    2 output device(s), 5 app session(s), a microphone. Output: the Windows default.
