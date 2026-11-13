@@ -3,6 +3,7 @@
 //! Record, 16-bit words: MAGIC, length, the name (LEN bytes, two per word), checksum. Anything
 //! that does not check out (a blank page, a torn write, a foreign layout) reads as `DEFAULT`.
 
+use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use kb16_mixer_protocol::LOGO_NAME_LEN as LEN;
 
 const MAGIC: u16 = 0x4E4D; // "NM"
@@ -67,4 +68,39 @@ pub fn decode(w: &[u16; WORDS]) -> [u8; LEN] {
 pub fn may_write(last: u32, writes: u8, now: u32) -> bool {
     // Wrapping, as in the release build that first shipped this rule.
     !((last != 0 && now.wrapping_sub(last) < MIN_GAP_S) || writes >= MAX_WRITES)
+}
+
+/// The write limit's memory since boot. The firmware keeps one in a `static` and asks it before
+/// every write, so the limit holds wherever the write comes from.
+pub struct Writes {
+    /// Seconds since boot of the last write, plus one (0 = none yet).
+    last: AtomicU32,
+    count: AtomicU8,
+}
+
+impl Default for Writes {
+    fn default() -> Writes {
+        Writes::new()
+    }
+}
+
+impl Writes {
+    pub const fn new() -> Writes {
+        Writes { last: AtomicU32::new(0), count: AtomicU8::new(0) }
+    }
+
+    /// The record to write for `name` at `now` (seconds since boot plus one), or `None` when
+    /// the name is not valid, is the one `stored` already, or the limit says no. A yes counts
+    /// as a write, whether or not the flash write then works: a failing page must not be
+    /// erased again and again.
+    pub fn admit(&self, name: &[u8; LEN], stored: &[u16; WORDS], now: u32) -> Option<[u16; WORDS]> {
+        let rec = record(name);
+        let (last, count) = (self.last.load(Ordering::Relaxed), self.count.load(Ordering::Relaxed));
+        if !valid(name) || *stored == rec || !may_write(last, count, now) {
+            return None;
+        }
+        self.last.store(now, Ordering::Relaxed);
+        self.count.store(count + 1, Ordering::Relaxed);
+        Some(rec)
+    }
 }

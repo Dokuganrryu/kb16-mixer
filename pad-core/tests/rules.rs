@@ -475,3 +475,47 @@ fn name_writes_are_rate_limited() {
     assert!(name::may_write(10, name::MAX_WRITES - 1, 1000));
     assert!(!name::may_write(10, name::MAX_WRITES, 1000));
 }
+
+/// What the firmware's `name::save` does: one `Writes` per power-up, asked before each write.
+#[test]
+fn a_name_is_written_at_most_once_a_minute_and_eight_times_per_power_up() {
+    let names: Vec<[u8; 10]> = (0..20u8)
+        .map(|i| {
+            let mut n = *b"DESK PC 00";
+            n[8] += i / 10;
+            n[9] += i % 10;
+            n
+        })
+        .collect();
+    let writes = name::Writes::new();
+    let mut stored = [0xFFFF; name::WORDS];
+    let mut written = vec![];
+    // A new name every 30 s for 20 minutes, as a host that keeps changing it would send.
+    for (i, n) in names.iter().enumerate() {
+        let now = 1 + i as u32 * 30;
+        if let Some(rec) = writes.admit(n, &stored, now) {
+            assert_eq!(rec, name::record(n));
+            stored = rec;
+            written.push(now);
+        }
+    }
+    // One write per minute (the one 30 s later waits), and the ninth never comes.
+    assert_eq!(written, [1, 61, 121, 181, 241, 301, 361, 421]);
+    assert_eq!(name::MAX_WRITES, 8);
+    assert_eq!(writes.admit(&names[0], &stored, 100_000), None);
+}
+
+#[test]
+fn a_name_that_is_stored_already_or_not_valid_costs_no_write() {
+    let writes = name::Writes::new();
+    let desk = *b"DESK PC\0\0\0";
+    let stored = name::record(&desk);
+    // Neither counts: the limit is untouched, so a new name goes through at once.
+    assert_eq!(writes.admit(&desk, &stored, 1), None);
+    assert_eq!(writes.admit(b"desk pc\0\0\0", &stored, 2), None);
+    assert_eq!(writes.admit(&[0; 10], &stored, 3), None);
+    assert!(writes.admit(&name::DEFAULT, &stored, 4).is_some());
+    // And the minute starts from that write.
+    assert_eq!(writes.admit(&desk, &name::record(&name::DEFAULT), 63), None);
+    assert!(writes.admit(&desk, &name::record(&name::DEFAULT), 64).is_some());
+}
