@@ -140,6 +140,14 @@ impl Fb {
         }
     }
 
+    /// The pill's edge only, 1 px wide, with the same cut corners.
+    fn outline(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        self.rect(x0 + 1, y0, x1 - 1, y0, true);
+        self.rect(x0 + 1, y1, x1 - 1, y1, true);
+        self.rect(x0, y0 + 1, x0, y1 - 1, true);
+        self.rect(x1, y0 + 1, x1, y1 - 1, true);
+    }
+
     /// One glyph column: bit n of `bits` sets (`x`, `y` + n) to `on`.
     fn col(&mut self, x: i32, y: i32, mut bits: u32, on: bool) {
         while bits != 0 {
@@ -347,16 +355,22 @@ fn draw_mixer(fb: &mut Fb, style: u8, m: &Mixer, cols: &[u8; NCH], peaks: &[u8; 
 }
 
 /// Classic and Lean: the name on L1..7, in a pill (L0..8) for the selected channel; a mute
-/// change flips that for a moment.
+/// change flips that for a moment. The selected channel keeps the pill's outline while it
+/// flashes, so the selection stays in view.
 fn pill_name(fb: &mut Fb, m: &Mixer, c: usize, flash: u8) {
     let x0 = c as i32 * 32;
     let name = trimmed(&m.names[c]);
     let name = &name[..name.len().min(NAME_SHOWN)];
-    if (c as u8 == m.selected) != (flash & 1 << c != 0) {
-        fb.pill(x0, 0, x0 + 30, 8);
-        fb.centred(x0, 1, name, false);
-    } else {
-        fb.centred(x0, 1, name, true);
+    match (c as u8 == m.selected, flash & 1 << c != 0) {
+        (true, false) | (false, true) => {
+            fb.pill(x0, 0, x0 + 30, 8);
+            fb.centred(x0, 1, name, false);
+        }
+        (true, true) => {
+            fb.outline(x0, 0, x0 + 30, 8);
+            fb.centred(x0, 1, name, true);
+        }
+        (false, false) => fb.centred(x0, 1, name, true),
     }
 }
 
@@ -1345,10 +1359,12 @@ mod tests {
             let muted = Input { mixer: Mixer { mutes: 0b0101, ..mixer() }, ..input(style, [0; NCH]) };
             let mut fb = Fb::new(3);
             screen.draw(&mut fb, ms, ms, &muted);
-            assert!(!fb.get(1, 0), "channel 0 (selected, in a pill) shows plain while it flashes");
+            // GAME is centred from x 4: x 2 is inside the pill, left of the letters.
+            assert!(fb.get(1, 0) && fb.get(0, 1) && !fb.get(0, 0), "channel 0 (selected) keeps the pill's outline");
+            assert!(!fb.get(2, 4) && lit_in(&fb, 4..=26, 1..=7), "hollow, with lit letters, while it flashes");
             assert!(screen.moving());
             let (fb, _) = run(&mut screen, ms + MUTE_FLASH_MS as u64, 1, &muted);
-            assert!(fb.get(1, 0), "and in its pill again after");
+            assert!(fb.get(1, 0) && fb.get(2, 4), "and in its filled pill again after");
             assert!(!screen.moving());
             assert_eq!(fb.buf, settled(&muted).buf);
         }
