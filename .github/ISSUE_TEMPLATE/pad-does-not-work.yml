@@ -62,7 +62,7 @@ body:
     id: source
     attributes:
       label: Release tag or git commit
-      description: Write the release tag (for example v0.2.0), or the git commit if you built from source.
+      description: Write the release tag (for example v0.3.0), or the git commit if you built from source.
   - type: checkboxes
     id: privacy
     attributes:

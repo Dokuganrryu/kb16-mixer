@@ -1,6 +1,6 @@
 """Builds the release zip of KB16 Mixer and its SHA256SUMS file.
 
-    python scripts/package-release.py --version 0.2.0 \
+    python scripts/package-release.py --version 0.3.0 \
         --exe app/target/release/kb16-mixer.exe \
         --firmware firmware/target/kb16-mixer-firmware.bin --out dist
 
@@ -127,7 +127,7 @@ def package(version: str, exe: Path, firmware: Path, out: Path, epoch: int, root
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("--version", required=True, help="release version, for example 0.2.0")
+    p.add_argument("--version", required=True, help="release version, for example 0.3.0")
     p.add_argument("--exe", required=True, type=Path, help="the built kb16-mixer.exe")
     p.add_argument("--firmware", required=True, type=Path, help="the built kb16-mixer-firmware.bin")
     p.add_argument("--out", required=True, type=Path, help="output folder")

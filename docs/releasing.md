@@ -40,7 +40,7 @@ To examine a release, use `SHA256SUMS` and the attestation. To examine an image 
    - `protocol/Cargo.toml`
 3. Run `cargo check` in each of the four crate folders. Cargo then writes the new versions into each `Cargo.lock`.
 4. In `CHANGELOG.md`, move the entries of the "Unreleased" section to a new section.
-5. Give the new section a heading with the version and the date, for example `## [0.2.0] - 2026-11-13`.
+5. Give the new section a heading with the version and the date, for example `## [0.3.0] - 2026-11-14`.
 6. Keep an empty "Unreleased" section above the new section.
 7. Use only full URLs for links in the new section. The section becomes the release notes, and a relative link does not work there.
 8. At the end of `CHANGELOG.md`, add a link definition for the new version. Change the `[Unreleased]` link to compare the new tag with `HEAD`.
@@ -52,8 +52,8 @@ The firmware sends its version as the USB release number. Thus the major version
 ### 2. Make the draft
 
 1. Update your local `main` branch.
-2. Make the tag on the merge commit: `git tag v0.2.0`.
-3. Push the tag: `git push origin v0.2.0`.
+2. Make the tag on the merge commit: `git tag v0.3.0`.
+3. Push the tag: `git push origin v0.3.0`.
 4. Open the **Actions** tab on GitHub. Find the "Release" run for the tag.
 5. Wait until all jobs of the run are green.
 
@@ -71,9 +71,9 @@ The workflow makes the zip, `SHA256SUMS` and the attestation. It then makes a dr
 1. Open the **Releases** page. Find the draft.
 2. Download the zip and `SHA256SUMS` from the draft.
 3. Open PowerShell in your download folder.
-4. Get the hash of the zip: `Get-FileHash .\kb16-mixer-0.2.0-windows-x64.zip -Algorithm SHA256`.
+4. Get the hash of the zip: `Get-FileHash .\kb16-mixer-0.3.0-windows-x64.zip -Algorithm SHA256`.
 5. Compare the hash with the line for the zip in `SHA256SUMS`. The two values must be the same. In Git Bash, `sha256sum -c --ignore-missing SHA256SUMS` does this check. It must show `OK` for the zip.
-6. Examine the attestation: `gh attestation verify .\kb16-mixer-0.2.0-windows-x64.zip --repo Dokuganrryu/kb16-mixer`.
+6. Examine the attestation: `gh attestation verify .\kb16-mixer-0.3.0-windows-x64.zip --repo Dokuganrryu/kb16-mixer`.
 7. Unzip the zip to a new folder.
 8. Get the hash of `kb16-mixer.exe` and of `firmware\kb16-mixer-firmware.bin` with `Get-FileHash`. Compare each hash with the line for the same file name in `SHA256SUMS`.
 9. Put a test pad into the bootloader. See [install.md](install.md).
@@ -101,7 +101,7 @@ A bad draft is not public. A published release is public. The repair is differen
 For a bad draft:
 
 1. Delete the draft on the **Releases** page.
-2. Delete the tag: `git push origin --delete v0.2.0`, then `git tag -d v0.2.0`.
+2. Delete the tag: `git push origin --delete v0.3.0`, then `git tag -d v0.3.0`.
 3. Correct the problem through a pull request.
 4. Make the tag again on the new commit on `main`.
 
