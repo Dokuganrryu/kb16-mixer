@@ -38,6 +38,8 @@ const EXIT_MS: u32 = 70;
 const _: () = assert!(EXIT_MS < ENTER_MS);
 /// How far a readout travels: far enough that it and the screen it pushes never overlap.
 const PUSH: i32 = 32;
+/// The time between two frames while the screen moves.
+const FRAME_MS: u32 = 33;
 /// A page change slides the screen sideways, in from the side of the new page.
 const SLIDE: i32 = 24;
 const SLIDE_MS: u32 = 140;
@@ -739,7 +741,12 @@ impl<T: Time> Screen<T> {
                 // The slide is the page's one entrance: the notice that names the page comes
                 // in with it, not with a push of its own.
                 Some(_) if fresh || sliding => self.push = Tween::rest(0),
-                Some(_) if self.push.to != 0 => self.push.retarget(clock, 0, ENTER_MS),
+                // From where it is now, but one frame into its motion: the first frame already
+                // shows the readout, never the screen beneath unchanged.
+                Some(_) if self.push.to != 0 => {
+                    let from = self.push.value(clock);
+                    self.push = Tween { from, to: 0, at: clock.wrapping_sub(FRAME_MS), dur: ENTER_MS };
+                }
                 None if !s.alive => self.push = Tween::rest(PUSH),
                 None if self.push.to != PUSH => self.push.retarget(clock, PUSH, EXIT_MS),
                 _ => {}
@@ -1171,7 +1178,10 @@ mod tests {
             let p = pop(ms);
             let mut fb = Fb::new(3);
             screen.draw(&mut fb, ms, ms, &p);
-            assert_eq!(screen.push.value(ms as u32), PUSH, "starts below");
+            // One frame into its motion: no frame shows the mixer unchanged.
+            let path: [i32; 4] = core::array::from_fn(|f| screen.push.value(ms as u32 + 33 * f as u32));
+            assert_eq!(path, [9, 1, 0, 0], "style {style}");
+            assert_ne!(fb.buf, settled(&base).buf, "style {style}: the first frame shows the readout");
             assert!(screen.moving());
             let entered = ms + ENTER_MS as u64;
             screen.draw(&mut fb, entered, entered, &p);
@@ -1185,8 +1195,9 @@ mod tests {
             let d = screen.push.value(mid as u32);
             assert!(d > 0 && d < PUSH);
             screen.draw(&mut fb, mid, mid, &pop(mid));
-            assert_eq!(screen.push.value(mid as u32), d, "carries on, not from the bottom");
-            assert!(screen.push.value((mid + 33) as u32) < d);
+            let back = screen.push.value(mid as u32);
+            assert!(back > 0 && back < d, "carries on from {d}, not from the bottom, one frame in: {back}");
+            assert!(screen.push.value((mid + 33) as u32) < back);
 
             // Let it go for good: it is out within the exit time, and the mixer is back as before.
             let end = mid + POPUP_MS;
