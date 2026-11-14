@@ -22,6 +22,8 @@ const FRAME: usize = (W * H / 8) as usize;
 const WINDOW: usize = 8 + 2;
 /// A popup draws at once, but never sooner than this after the last draw.
 const MIN_GAP: Duration = Duration::from_millis(8);
+/// The contrast `init` sets, and the one a busy screen shows.
+const INIT_CONTRAST: u8 = 0xCF;
 
 /// Signalled when a popup arrives, so its readout draws now and not at the next tick.
 pub static DRAW_NOW: Signal<CriticalSectionRawMutex, ()> = Signal::new();
@@ -41,7 +43,7 @@ async fn init(i2c: &mut Bus) -> bool {
     cmd(
         i2c,
         &[
-            0xAE, 0xD5, 0x80, 0xA8, 0x1F, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xD3, 0x00, 0xDA, 0x02, 0x81, 0xCF,
+            0xAE, 0xD5, 0x80, 0xA8, 0x1F, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xD3, 0x00, 0xDA, 0x02, 0x81, INIT_CONTRAST,
             0xD9, 0xF1, 0xDB, 0x20, 0xA4, 0xA6, 0x2E,
         ],
     )
@@ -105,8 +107,10 @@ pub async fn run(mut i2c: Bus) {
     let mut full = true;
     let mut panel_on = false;
     let mut screen = Screen::new(Tick::now());
-    let mut shown_contrast = 0u8;
+    // What `init` sets.
+    let mut shown_contrast = INIT_CONTRAST;
     let boot = Instant::now();
+    let mut woke = boot;
     let mut drawn = boot;
     let mut was_calm = false;
     let mut skip = false;
@@ -128,7 +132,7 @@ pub async fn run(mut i2c: Bus) {
             ready = init(&mut i2c).await;
             panel_on = false;
             full = true;
-            shown_contrast = 0;
+            shown_contrast = INIT_CONTRAST;
             continue;
         }
         Timer::at(drawn + MIN_GAP).await;
@@ -158,8 +162,10 @@ pub async fn run(mut i2c: Bus) {
             let calm = screen.draw(&mut fb, now, since_boot, &input);
             was_calm = calm;
 
-            // Dim the panel on the idle logo to spare it, and fade it out after the idle limit.
-            let want = contrast(if calm { 0x30 } else { 0xCF }, input.idle, off_after);
+            // Dim the panel on the idle logo to spare it, fade it out after the idle limit, and
+            // fade it in after it turns on (it turns on below, after this frame, at contrast 0).
+            let since_wake = if panel_on { now.0.saturating_duration_since(woke).as_millis() } else { 0 };
+            let want = contrast(if calm { 0x30 } else { INIT_CONTRAST }, input.idle, off_after, since_wake);
             if want != shown_contrast {
                 shown_contrast = want;
                 ready &= cmd(&mut i2c, &[0x81, want]).await;
@@ -170,6 +176,7 @@ pub async fn run(mut i2c: Bus) {
         // Display on only after the frame: a wake shows the new frame, never the one from before.
         if ready && on != panel_on {
             panel_on = on;
+            woke = Instant::now();
             // A wake sends the whole frame again, so a column the panel lost while off heals.
             full |= !on;
             ready = cmd(&mut i2c, &[if on { 0xAF } else { 0xAE }]).await;

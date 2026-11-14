@@ -40,7 +40,7 @@ const RIPPLE_MS: u64 = 520;
 /// pad goes quiet as one.
 pub const DIM_MS: u64 = 700;
 const OFF_MS: u64 = 2000;
-const WAKE_MS: u64 = 150;
+pub(crate) const WAKE_MS: u64 = 150;
 /// How much light the dimmed lights keep, in percent of normal, unless the host sets it.
 /// Light, not perceived brightness: 6% of the light looks like about a third as bright, which
 /// reads as clearly dimmed but alive.
@@ -94,17 +94,17 @@ pub fn ungamma(lin: u32) -> u32 {
 }
 
 /// 0..=65536 progress of `ms` through `dur`.
-fn progress(ms: u64, dur: u64) -> u64 {
+pub(crate) fn progress(ms: u64, dur: u64) -> u64 {
     ms.min(dur) * 65536 / dur
 }
 
 /// Slow in, slow out: 3t^2 - 2t^3, in and out 0..=65536.
-fn smoothstep(t: u64) -> u64 {
+pub(crate) fn smoothstep(t: u64) -> u64 {
     (t * t * (3 * 65536 - 2 * t)) >> 32
 }
 
 /// Quick start, gentle landing: 1 - (1 - t)^2. A wake must answer at once.
-fn ease_out(t: u64) -> u64 {
+pub(crate) fn ease_out(t: u64) -> u64 {
     65536 - (((65536 - t) * (65536 - t)) >> 16)
 }
 

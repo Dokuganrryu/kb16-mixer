@@ -17,7 +17,7 @@
 use crate::Time;
 use crate::assets::{BIG_COLS, BIG_OFF, LOGO_CHARS, LOGO_COLS, LOGO_GAP, LOGO_OFF, MID_COLS, MID_OFF, SIN};
 use crate::font::FONT5X7;
-use crate::leds::{DIM_MS, gamma};
+use crate::leds::{DIM_MS, WAKE_MS, ease_out, gamma, progress, smoothstep};
 use crate::state::{Mixer, NCH, POPUP_MS, Popup, STYLE_CLASSIC, STYLE_LEAN, STYLE_NUMBERS};
 use kb16_mixer_protocol::{NAME_SHOWN, NEVER, NOTICE};
 
@@ -614,16 +614,18 @@ fn glide(pos: u16, target: u16, div: u16) -> u16 {
 }
 
 /// The panel contrast for this frame: `want`, faded out with the lights over the `DIM_MS`
-/// after `off_min` minutes of quiet (a smoothstep through the lights' gamma), then 0.
-pub fn contrast(want: u8, idle: u64, off_min: u8) -> u8 {
-    if off_min == NEVER {
-        return want;
-    }
-    let past = idle.saturating_sub(off_min as u64 * 60_000).min(DIM_MS);
-    let t = past * 65536 / DIM_MS;
-    let eased = (t * t * (3 * 65536 - 2 * t)) >> 32;
-    let left = (65536 - eased).min(0xFFFF) as u32;
-    (want as u32 * gamma(left) / 0xFFFF) as u8
+/// after `off_min` minutes of quiet (a smoothstep through the lights' gamma), then 0. The
+/// panel turned on `since_wake` ms ago: it fades in with the lights' wake ease-out, so a wake
+/// does not snap on at full brightness.
+pub fn contrast(want: u8, idle: u64, off_min: u8, since_wake: u64) -> u8 {
+    let faded = if off_min == NEVER {
+        want as u32
+    } else {
+        let past = idle.saturating_sub(off_min as u64 * 60_000);
+        let left = (65536 - smoothstep(progress(past, DIM_MS))).min(0xFFFF) as u32;
+        want as u32 * gamma(left) / 0xFFFF
+    };
+    ((faded as u64 * ease_out(progress(since_wake, WAKE_MS))) >> 16) as u8
 }
 
 /// Everything the screen remembers from one frame to the next.
@@ -1007,19 +1009,37 @@ mod tests {
     #[test]
     fn the_contrast_fades_with_the_lights_after_the_limit() {
         let off = 60_000;
-        assert_eq!(contrast(0x30, 0, 1), 0x30);
-        assert_eq!(contrast(0x30, off, 1), 0x30, "full up to the limit");
-        assert_eq!(contrast(0xCF, off + DIM_MS, 1), 0);
-        assert_eq!(contrast(0xCF, off * 10, 1), 0);
+        let awake = WAKE_MS;
+        assert_eq!(contrast(0x30, 0, 1, awake), 0x30);
+        assert_eq!(contrast(0x30, off, 1, awake), 0x30, "full up to the limit");
+        assert_eq!(contrast(0xCF, off + DIM_MS, 1, awake), 0);
+        assert_eq!(contrast(0xCF, off * 10, 1, awake), 0);
         let mut last = 0xCF;
         for idle in off..=off + DIM_MS {
-            let c = contrast(0xCF, idle, 1);
+            let c = contrast(0xCF, idle, 1, awake);
             assert!(c <= last, "monotone");
             last = c;
         }
         // Through the lights' gamma: half way in time is well under half the light.
-        assert!(contrast(0xCF, off + DIM_MS / 2, 1) < 0xCF / 4);
-        assert_eq!(contrast(0xCF, off * 10, NEVER), 0xCF, "never sleeps, never fades");
+        assert!(contrast(0xCF, off + DIM_MS / 2, 1, awake) < 0xCF / 4);
+        assert_eq!(contrast(0xCF, off * 10, NEVER, awake), 0xCF, "never sleeps, never fades");
+    }
+
+    #[test]
+    fn the_contrast_fades_in_with_the_lights_on_a_wake() {
+        for off_min in [1, NEVER] {
+            assert_eq!(contrast(0xCF, 0, off_min, 0), 0, "the panel turns on dark");
+            assert_eq!(contrast(0xCF, 0, off_min, WAKE_MS), 0xCF, "full after the lights' wake time");
+            assert_eq!(contrast(0xCF, 0, off_min, 60_000), 0xCF);
+            let mut last = 0;
+            for ms in 0..=WAKE_MS {
+                let c = contrast(0xCF, 0, off_min, ms);
+                assert!(c >= last, "monotone");
+                last = c;
+            }
+            // Ease-out: a wake answers at once, so the first 33 ms frame is already bright.
+            assert!(contrast(0xCF, 0, off_min, 33) > 0xCF / 3);
+        }
     }
 
     fn mixer() -> Mixer {
