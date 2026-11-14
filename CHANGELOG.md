@@ -5,6 +5,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-14
+
+This is the first published version. It is a pre-release.
+
+Version 0.2.0 has only a draft release. Nobody published it. The firmware of 0.3.0 sends the version 0.3.0.
+
+The owner used a build of these changes on one pad before the release. Not tested: other units and Windows 10.
+
 ### Added
 
 - A CI job `msrv` checks each crate with the oldest Rust version that its `Cargo.toml` gives in `rust-version`.
@@ -163,5 +171,6 @@ The sections "Added", "Changed", "Removed" and "Fixed" list the work of the qual
 
 For the full list of hardware tests, see [docs/testing.md](https://github.com/Dokuganrryu/kb16-mixer/blob/v0.2.0/docs/testing.md#verified-on-the-pad).
 
-[Unreleased]: https://github.com/Dokuganrryu/kb16-mixer/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Dokuganrryu/kb16-mixer/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Dokuganrryu/kb16-mixer/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Dokuganrryu/kb16-mixer/releases/tag/v0.2.0
