@@ -111,29 +111,44 @@ When the PC suspends the USB bus (the PC sleeps or is off), the lights and the s
 | Screen | When |
 |---|---|
 | Logo with the name (default `KB16`) | For 1.8 seconds after start, in keyboard mode, and in mixer mode after 45 seconds without activity |
-| Mixer screen: one column for each channel (the name in capital letters, the volume as a number or `MUTE`, and a rail) | In mixer mode |
-| Readout: a name, the volume in large digits (or `Muted`) and a bar | For 1.3 seconds after a knob turn, a knob press or a mute |
+| Mixer screen: one column for each channel, in the screen style | In mixer mode |
+| Readout: a name, the volume and a bar, in the screen style | For 1.3 seconds after a knob turn, a knob press or a mute |
 | Notice: text only (for example `MIXER`, `KEYS`, `Focus Chat`, `Open failed`). A long notice uses a smaller font. | For 1.3 seconds |
 
-On the mixer screen, each rail shows the volume of its channel as a line of 1 pixel. The rail is 2 pixels thick as far as the live sound goes.
-An inverted name is the channel that has Focus.
-A short vertical mark at the left edge means that the microphone is muted. The pad does not know which channel is the microphone, so the mark shows for each mute of the microphone.
-A short vertical mark at the right edge means that page 2 is active.
+The `[screen] style` value in `config.toml` (or the settings window) sets the screen style. The default is `classic`.
 
-On the readout, the number uses the digits of the logo. For a muted channel, `Muted` replaces the number and the bar is hollow.
+| Style | Mixer column | Readout |
+|---|---|---|
+| `classic` | The name, a meter of 7 segments with a peak mark, a dotted fader and the volume in percent (or `MUTE`) | The name and the volume (or `MUTED`) in large letters, and a bar in a frame |
+| `lean` | The name, a solid fader on a thin track, and a meter line of 1 pixel. A muted channel shows `MUTE`. | The name in small letters, the volume in large digits, and a bar without a frame |
+| `numbers` | The name in capital letters, the volume as a number (or `MUTE`), and a rail | The name and the volume (or `Muted`) in large letters, and a bar without a frame |
+
+In `classic` and `lean`, a filled pill around a name shows the channel that has Focus. A line under the names means that the microphone is muted. A short mark at the right edge means that page 2 is active.
+
+In `numbers`, an inverted name is the channel that has Focus. Each rail shows the volume of its channel as a line of 1 pixel. The rail is 2 pixels thick as far as the live sound goes.
+A short vertical mark at the left edge means that the microphone is muted. A short vertical mark at the right edge means that page 2 is active.
+The pad does not know which channel is the microphone, so the microphone mark shows for each mute of the microphone.
+
+For a muted channel, the bar of the readout is hollow.
 A knob turn at 0 or 100 cannot change the volume. Then a short end stop shows at that end of the bar for 0.1 seconds.
 
 ### Screen changes
 
-The screen does not move between its states. These times are in `pad-core/src/oled.rs`:
+All three styles use the same motion. These times are in `pad-core/src/oled.rs`:
 
-- A readout, a notice, a page change and a mute show in the frame of their message.
-- The live sound on a rail goes up at once. It comes down with the key lights. A half pixel of hysteresis stops a flicker at a pixel edge.
+- A readout pushes the screen up and comes in from below in 0.1 seconds. The motion starts fast and stops gently. The readout shows on the first frame.
+- When the readout time ends, the readout goes down and the screen comes back in 0.07 seconds. A new readout during this motion starts from the current position.
+- When the volume changes while the readout shows, the number changes at once. The bar moves to the new value in a few frames.
+- The meters go up at once. They come down after a short hold, and they move in small steps.
+- A page change moves the screen sideways in 0.14 seconds. Page 2 comes in from the right, and page 1 comes in from the left. The `MIXER` or `KEYS` notice comes in with this motion.
+- A page change back in less than 1.5 seconds only moves the screen 4 pixels. This occurs when you release a held page key, or when you push a page key two times quickly. The app then sends no `MIXER` or `KEYS` notice.
+- In `classic` and `lean`, a mute change inverts the name of that channel for 0.2 seconds. The channel that has Focus then shows only the outline of its pill. If a readout covers the screen, this change waits until the readout goes.
+- After you change the style, the next frame shows the new style without motion.
 - After the screen-off limit, the screen fades out in 0.7 seconds, together with the key lights. Then it goes off.
-- When the screen comes on again, the firmware sends the full picture first. Then it starts the screen at full contrast. Thus no previous picture or noise shows.
+- When the screen comes on again, the firmware sends the full picture first. Then it starts the screen at zero contrast, and the contrast increases to full in 0.15 seconds, together with the key lights. Thus no previous picture or noise shows.
 - The logo comes in from the left in 0.9 seconds, after start and when the screensaver starts. Then its streak crosses it one time. One period of its wave is approximately 9 seconds.
 
-The pictures in `docs/images/` show the screens at rest. Nobody did a test of these changes on a pad.
+The unit tests in `pad-core/src/oled.rs` check these motions frame by frame. The pictures in `docs/images/` show the screens at rest. Nobody did a visual check of these changes on a pad.
 
 ### Light motion
 
