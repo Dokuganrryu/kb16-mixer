@@ -722,11 +722,11 @@ impl<T: Time> Screen<T> {
         let (cols, meters_moving) = self.meters(style, &s.mixer, &s.meters, fresh);
         // Numbers inverts the label for Focus only; it still follows the mutes, so a later
         // switch to another style does not flash a change it saw long ago.
-        let flash = self.mute_flash(clock, s) * (style != STYLE_NUMBERS) as u8;
+        let popup = s.popup.filter(|p| s.alive && now.ms_since(p.at) < POPUP_MS);
+        let flash = self.mute_flash(clock, s, popup.is_some()) * (style != STYLE_NUMBERS) as u8;
         self.page_change(clock, s, fresh);
         fb.left = self.slide.value(clock);
         let mut moving = fb.left != 0;
-        let popup = s.popup.filter(|p| s.alive && now.ms_since(p.at) < POPUP_MS);
         self.end_stop(clock, popup);
 
         fb.clear();
@@ -834,13 +834,14 @@ impl<T: Time> Screen<T> {
         (cols, moving)
     }
 
-    /// The channels whose name shows inverted because their mute just changed.
-    fn mute_flash(&mut self, ms: u32, s: &Input<T>) -> u8 {
+    /// The channels whose name shows inverted because their mute just changed. While a readout
+    /// covers the mixer (`covered`), a flash waits: it plays in full when the mixer comes back.
+    fn mute_flash(&mut self, ms: u32, s: &Input<T>, covered: bool) -> u8 {
         let changed = self.mutes.map_or(0, |m| m ^ s.mixer.mutes);
         self.mutes = s.alive.then_some(s.mixer.mutes);
         let mut flash = 0;
         for (c, at) in self.mute_at.iter_mut().enumerate() {
-            if changed & 1 << c != 0 {
+            if changed & 1 << c != 0 || (covered && at.is_some_and(|t| ms.wrapping_sub(t) < MUTE_FLASH_MS)) {
                 *at = Some(ms);
             }
             if s.alive && at.is_some_and(|t| ms.wrapping_sub(t) < MUTE_FLASH_MS) {
@@ -1357,6 +1358,32 @@ mod tests {
         let muted = Input { mixer: Mixer { mutes: 0b0101, ..mixer() }, ..input(STYLE_NUMBERS, [0; NCH]) };
         assert_eq!(frame(&mut screen, ms, &muted).buf, settled(&muted).buf);
         assert!(!screen.moving());
+    }
+
+    #[test]
+    fn a_mute_flash_under_a_readout_plays_when_the_mixer_comes_back() {
+        for style in [STYLE_CLASSIC, STYLE_LEAN] {
+            let mut screen = Screen::new(T0);
+            let (_, ms) = run(&mut screen, T0, 2, &input(style, [0; NCH]));
+            // MUSIC (channel 1, not selected) mutes, and its readout comes up.
+            let muted = Input { mixer: Mixer { mutes: 0b0110, ..mixer() }, ..input(style, [0; NCH]) };
+            let covered = Input { popup: popup(ms, 55, b"MUSIC"), ..muted };
+            let mut t = ms;
+            while t < ms + POPUP_MS {
+                frame(&mut screen, t, &covered);
+                t += 33;
+            }
+            // The readout times out and leaves; the mixer beneath shows the flash, in a pill.
+            let gone = ms + POPUP_MS;
+            frame(&mut screen, gone, &covered);
+            let fb = frame(&mut screen, gone + EXIT_MS as u64, &covered);
+            assert!(fb.get(33, 0), "style {style}: the flash plays once the mixer is back");
+            assert!(screen.moving());
+            let fb = frame(&mut screen, gone + MUTE_FLASH_MS as u64, &covered);
+            assert!(!fb.get(33, 0), "style {style}: for 200 ms");
+            assert!(!screen.moving());
+            assert_eq!(fb.buf, settled(&muted).buf, "style {style}");
+        }
     }
 
     #[test]
