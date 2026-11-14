@@ -299,14 +299,7 @@ fn draw_logo(fb: &mut Fb, age: u64, name: &[u8]) {
     }
     let streak = (age.min(10_000) / 5) as i32 - 30;
     if streak < W + 40 {
-        for y in 0..H {
-            for x in 0..W {
-                let d = x - streak - y / 2;
-                if (0..4).contains(&d) || d == 6 {
-                    fb.px(x, y, false);
-                }
-            }
-        }
+        draw_streak(fb, streak);
     }
     // The wave breaks where a letter reaches down into it (J, Q).
     let low: [bool; W as usize] = core::array::from_fn(|x| (24..30).any(|y| fb.get(x as i32, y)));
@@ -321,6 +314,19 @@ fn draw_logo(fb: &mut Fb, age: u64, name: &[u8]) {
     let reveal = (age.min(WIPE_MS) * 130 / WIPE_MS) as i32;
     if reveal < W - 1 {
         fb.rect(reveal + 1, -fb.top, W - 1, H - 1, false);
+    }
+}
+
+/// The light streak at `streak`: a dark band 4 px wide and a 1 px line after a 2 px gap,
+/// slanted one column per two rows. Only its own columns are visited on each row.
+fn draw_streak(fb: &mut Fb, streak: i32) {
+    for y in 0..H {
+        let x = streak + y / 2;
+        for d in [0, 1, 2, 3, 6] {
+            if (0..W).contains(&(x + d)) {
+                fb.px(x + d, y, false);
+            }
+        }
     }
 }
 
@@ -1579,6 +1585,40 @@ mod tests {
         let mut expected = Fb::new(3);
         expected.write(Font::Big, (W - Font::Big.width(short)) / 2, 7, short);
         assert_eq!(settled(&with_popup(STYLE_CLASSIC, popup(T0, NOTICE, short))).buf, expected.buf);
+    }
+
+    /// A frame with every pixel set at random, its offsets set too.
+    fn noise(seed: u32, top: i32, left: i32) -> Fb {
+        let mut fb = Fb::new(top);
+        fb.left = left;
+        let mut x = seed | 1;
+        for b in fb.buf[1..].iter_mut() {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            *b = x as u8;
+        }
+        fb
+    }
+
+    #[test]
+    fn the_streak_clears_the_same_pixels_as_a_scan_of_the_whole_frame() {
+        for streak in -40..W + 40 {
+            for (top, left) in [(0, 0), (3, 0), (3, -24), (6, 24)] {
+                let mut want = noise((streak + 47) as u32, top, left);
+                let mut got = noise((streak + 47) as u32, top, left);
+                for y in 0..H {
+                    for x in 0..W {
+                        let d = x - streak - y / 2;
+                        if (0..4).contains(&d) || d == 6 {
+                            want.px(x, y, false);
+                        }
+                    }
+                }
+                draw_streak(&mut got, streak);
+                assert_eq!(got.buf, want.buf, "streak {streak}, top {top}, left {left}");
+            }
+        }
     }
 
     #[test]
