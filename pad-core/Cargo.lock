@@ -4,11 +4,11 @@ version = 4
 
 [[package]]
 name = "kb16-mixer-pad-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "kb16-mixer-protocol",
 ]
 
 [[package]]
 name = "kb16-mixer-protocol"
-version = "0.2.0"
+version = "0.3.0"

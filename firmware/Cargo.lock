@@ -640,7 +640,7 @@ checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "kb16-mixer-firmware"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
@@ -657,14 +657,14 @@ dependencies = [
 
 [[package]]
 name = "kb16-mixer-pad-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "kb16-mixer-protocol",
 ]
 
 [[package]]
 name = "kb16-mixer-protocol"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "lazy_static"
