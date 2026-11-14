@@ -58,7 +58,7 @@ This project does not include `dfu-util`, a driver installer or a driver.
    ```
 
    To flash a different image, give its path: `sh scripts/flash.sh path/to/image.bin`.
-3. If the script shows `REFUSED`, it did not write. The image is empty, too large, or does not start with a stack pointer in RAM and a reset vector in the firmware area. The limit is `0x1D400` bytes (117 KB). The image of version 0.2.0 is approximately 53 KB.
+3. If the script shows `REFUSED`, it did not write. The image is empty, too large, or does not start with a stack pointer in RAM and a reset vector in the firmware area. The limit is `0x1D400` bytes (117 KB). The image of version 0.3.0 is approximately 57 KB.
 4. If the script shows "pad told to enter its bootloader", go to step 6.
 5. If the script shows "waiting for the bootloader", do these steps:
    1. Disconnect the pad.

@@ -11,7 +11,7 @@ The order and the content can change.
 
 ## Done
 
-- **A release with the new firmware.** Version 0.2.0 has the firmware that sends knob releases. Its version lets `--check` tell it from the internal version 0.1.0.
+- **A release with the new firmware.** Version 0.3.0 is the first published release. Its firmware sends knob releases and has the three screen styles. Its version lets `--check` tell it from earlier firmware.
 - **Motion on the pad, and knob gestures.** The key lights move smoothly along set curves, not with spring physics. The screen has three styles. Its readouts, meters and pages move, and it fades with the lights. A knob has a tap, a hold and a double tap. The app follows the Windows default output device. See [how-it-works.md](how-it-works.md#screen-changes).
   On 2026-11-14, the pad owner approved the screen motion on the pad. Nobody did a test of the other functions on a pad. For the knob hold, the pad must have firmware 0.2.0 or later.
 - **A new look for the settings window.** The window stays a plain Win32 window, with a new style: dark and light themes, smooth rounded controls and short animations. See [design/settings-ui.md](design/settings-ui.md).
