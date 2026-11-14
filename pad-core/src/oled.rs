@@ -124,10 +124,25 @@ impl Fb {
         }
     }
 
+    /// Sets the box from (`x0`, `y0`) to (`x1`, `y1`), both included, one byte per column and
+    /// display page instead of one pixel at a time.
     fn rect(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, on: bool) {
-        for y in y0..=y1 {
-            for x in x0..=x1 {
-                self.px(x, y, on);
+        let (x0, x1) = ((x0 + self.left).max(0), (x1 + self.left).min(W - 1));
+        let (y0, y1) = ((y0 + self.top).max(0), (y1 + self.top).min(H - 1));
+        if x0 > x1 || y0 > y1 {
+            return;
+        }
+        for page in y0 / 8..=y1 / 8 {
+            let lo = (y0 - page * 8).max(0);
+            let hi = (y1 - page * 8).min(7);
+            let mask = (0xFFu8 << lo) & (0xFFu8 >> (7 - hi));
+            let row = 1 + (page * W) as usize;
+            for b in &mut self.buf[row + x0 as usize..=row + x1 as usize] {
+                if on {
+                    *b |= mask;
+                } else {
+                    *b &= !mask;
+                }
             }
         }
     }
@@ -1617,6 +1632,32 @@ mod tests {
                 }
                 draw_streak(&mut got, streak);
                 assert_eq!(got.buf, want.buf, "streak {streak}, top {top}, left {left}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_rect_sets_the_same_pixels_as_one_px_at_a_time() {
+        let mut seed = 1u32;
+        for (top, left) in [(0, 0), (3, 0), (6, -24), (-2, 30)] {
+            for x0 in (-5..W + 5).step_by(7) {
+                for y0 in -9..H + 2 {
+                    for (w, h) in [(0, 0), (1, 1), (3, 9), (40, 2), (200, 40), (-2, 3)] {
+                        for on in [true, false] {
+                            seed += 1;
+                            let (x1, y1) = (x0 + w, y0 + h);
+                            let mut want = noise(seed, top, left);
+                            let mut got = noise(seed, top, left);
+                            for y in y0..=y1 {
+                                for x in x0..=x1 {
+                                    want.px(x, y, on);
+                                }
+                            }
+                            got.rect(x0, y0, x1, y1, on);
+                            assert_eq!(got.buf, want.buf, "({x0},{y0})..({x1},{y1}) top {top} left {left}");
+                        }
+                    }
+                }
             }
         }
     }
