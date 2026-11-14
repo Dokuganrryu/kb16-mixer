@@ -141,7 +141,7 @@ A new security advisory can give an error for an unchanged commit. The weekly ru
 
 ## Release build
 
-`.github/workflows/release.yml` runs when somebody pushes a version tag (for example `v0.2.0`).
+`.github/workflows/release.yml` runs when somebody pushes a version tag (for example `v0.3.0`).
 It checks the versions, `CHANGELOG.md` and the tag. It then builds the firmware image and the app.
 It makes a draft pre-release with one zip file, `SHA256SUMS` and a build attestation. It does not publish the release.
 See [releasing.md](releasing.md).
@@ -152,7 +152,7 @@ This table records the tests on a pad. The only test pad is one KB16-01 rev2 wit
 "VERIFIED" means that a person did the action on the pad and saw the result.
 "NOT YET VERIFIED" means that nobody did the action on a pad. Automated tests can cover the logic.
 
-On 2026-11-14, the pad owner used a build of the branch `screen-styles` (version 0.2.0 and the unreleased changes) on the test pad. The owner approved its screen. There is no written test record. Nobody did a test of the published version 0.2.0 on a pad.
+On 2026-11-14, the pad owner used a build of the branch `screen-styles` (version 0.2.0 and the changes of 0.3.0) on the test pad. The owner approved its screen. There is no written test record.
 
 | Feature | How it was verified | Date | Firmware version | Status |
 |---|---|---|---|---|
@@ -160,7 +160,7 @@ On 2026-11-14, the pad owner used a build of the branch `screen-styles` (version
 | Mute row | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
 | Key light and screen output | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
 | Recovery with the top-left key at plug-in | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
-| The screen and its motion (readout, meters, page change, mute flash) | Manual use on the pad by the pad owner, who approved the screen. There is no written test record. | 2026-11-14 | A build of the branch `screen-styles` (0.2.0 and the unreleased changes) | VERIFIED |
+| The screen and its motion (readout, meters, page change, mute flash) | Manual use on the pad by the pad owner, who approved the screen. There is no written test record. | 2026-11-14 | A build of the branch `screen-styles` (0.2.0 and the changes of 0.3.0) | VERIFIED |
 | Key pages | | | | NOT YET VERIFIED |
 | Physical knob order: knob 1 is the small knob on the left, knob 2 the small knob on the right, knob 3 the large knob | | | | NOT YET VERIFIED |
 | Knob hold to select one program (only with firmware 0.2.0 or later) | | | | NOT YET VERIFIED |

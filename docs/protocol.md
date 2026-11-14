@@ -110,7 +110,7 @@ The app sends `255` for a setting of `0` (no timer) in the config file. It sends
 The pad uses an `idle_led_percent` above 100 as 100.
 
 Byte 19 came in version 0.2.0. Earlier firmware ignores the byte. An earlier app sends `0`, so the pad uses its default.
-Byte 20 came after version 0.2.0. Firmware 0.2.0 ignores the byte. An app of version 0.2.0 sends `0`, so the pad uses Classic.
+Byte 20 came in version 0.3.0. Firmware 0.2.0 ignores the byte. An app of version 0.2.0 sends `0`, so the pad uses Classic.
 
 ### `0x21` FRAME
 
@@ -252,12 +252,13 @@ The firmware sends its version as the release number of its USB device (`bcdDevi
 | JJ.M.N | `0xJJMN` in binary-coded decimal |
 | 0.1.0 | `0x0010` |
 | 0.2.0 | `0x0020` |
+| 0.3.0 | `0x0030` |
 | 12.3.4 | `0x1234` |
 
 The major version can be 0–99. The minor and patch versions can be 0–9. A version that does not fit stops the build.
 `device_release()` ignores a pre-release part (for example `-beta`).
 
-Version 0.2.0 is the first firmware that sends `KNOB_UP` and reads byte 19. Thus the version tells it from the internal version 0.1.0.
+Version 0.2.0 is the first firmware that sends `KNOB_UP` and reads byte 19. Thus the version tells it from the internal version 0.1.0. Version 0.3.0 is the first firmware that reads byte 20.
 
 ## Decode rules
 
