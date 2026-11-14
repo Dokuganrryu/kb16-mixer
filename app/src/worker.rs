@@ -34,6 +34,10 @@ const SAVE_AFTER: Duration = Duration::from_secs(3);
 const LINK_RETRY: Duration = Duration::from_secs(1);
 /// Without a Mic channel, the microphone's mute (for the screen's mark) is read this often.
 const MIC_CHECK: Duration = Duration::from_millis(1500);
+/// A page change this soon after the last one is a peek (a held page key let go) or a quick
+/// return: the pad only nudges its screen, so no notice names the page. As the pad's
+/// `PEEK_WINDOW_MS`.
+const PEEK_WINDOW: Duration = Duration::from_millis(1500);
 
 /// What the worker shares with the main thread.
 pub struct Shared {
@@ -129,6 +133,8 @@ struct Worker {
     pad_present: bool,
     link_tried: Instant,
     meta_sent: Option<Instant>,
+    /// When the key page last changed.
+    page_changed: Option<Instant>,
     last_frame: Report,
     last_tick: Instant,
     last_active: Instant,
@@ -159,6 +165,7 @@ impl Worker {
             pad_present: false,
             link_tried: Instant::now(),
             meta_sent: None,
+            page_changed: None,
             last_frame: [0; 32],
             last_tick: Instant::now(),
             last_active: Instant::now(),
@@ -442,7 +449,9 @@ impl Worker {
             for m in pad::key_messages(cfg, page) {
                 self.link.send(&m);
             }
-            popup = Some(Show::Notice(if page == 0 { "MIXER" } else { "KEYS" }.into()));
+            if let Some(text) = page_notice(page, &mut self.page_changed, Instant::now()) {
+                popup = Some(Show::Notice(text.into()));
+            }
         }
         if let Some(show) = popup {
             self.link.send(&pad::popup_message(&show));
@@ -726,9 +735,29 @@ impl keys::Hands for Desk<'_> {
     }
 }
 
+/// The notice that names the new key page, unless the last page change was a moment ago.
+fn page_notice(page: usize, last: &mut Option<Instant>, now: Instant) -> Option<&'static str> {
+    let quick = last.is_some_and(|t| now.saturating_duration_since(t) < PEEK_WINDOW);
+    *last = Some(now);
+    (!quick).then_some(if page == 0 { "MIXER" } else { "KEYS" })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_peek_or_a_quick_return_shows_no_page_notice() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut last = None;
+        assert_eq!(page_notice(1, &mut last, t0), Some("KEYS"), "the first change");
+        assert_eq!(page_notice(0, &mut last, t0 + ms(400)), None, "a held page key let go");
+        assert_eq!(page_notice(1, &mut last, t0 + ms(400) + ms(1499)), None, "still soon after the last change");
+        let later = t0 + ms(400) + ms(1499) + PEEK_WINDOW;
+        assert_eq!(page_notice(0, &mut last, later), Some("MIXER"), "a page change after a pause");
+        assert_eq!(PEEK_WINDOW, ms(1500));
+    }
 
     #[test]
     fn the_fast_rate_lasts_three_seconds_after_activity_or_while_audio_plays() {
