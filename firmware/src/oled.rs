@@ -22,7 +22,7 @@ const FRAME: usize = (W * H / 8) as usize;
 const WINDOW: usize = 8 + 2;
 /// A popup draws at once, but never sooner than this after the last draw.
 const MIN_GAP: Duration = Duration::from_millis(8);
-/// The contrast `init` sets, and the one a busy screen shows.
+/// The contrast `init` sets (0x81, 0xCF), and the one a busy screen shows.
 const INIT_CONTRAST: u8 = 0xCF;
 
 /// Signalled when a popup arrives, so its readout draws now and not at the next tick.
@@ -43,7 +43,7 @@ async fn init(i2c: &mut Bus) -> bool {
     cmd(
         i2c,
         &[
-            0xAE, 0xD5, 0x80, 0xA8, 0x1F, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xD3, 0x00, 0xDA, 0x02, 0x81, INIT_CONTRAST,
+            0xAE, 0xD5, 0x80, 0xA8, 0x1F, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xD3, 0x00, 0xDA, 0x02, 0x81, 0xCF,
             0xD9, 0xF1, 0xDB, 0x20, 0xA4, 0xA6, 0x2E,
         ],
     )
