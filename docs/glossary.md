@@ -38,7 +38,7 @@ The documents follow ASD-STE100 Simplified Technical English. STE lets a documen
 | knob target | What a knob controls: a channel, one program in a channel, the master volume, the microphone, the foreground program, or the channel that has Focus. |
 | master volume | The volume of the output device: the default output device of Windows, or the device in `[audio] output`. |
 | output device | A speaker or a headset that Windows plays sound on. By default, the app uses the default output device of Windows and follows it when it changes. |
-| meter | The live level that the pad shows for a channel: on the screen, the thick part of the rail, and on the key lights. |
+| meter | The live level that the pad shows for a channel: on the screen, a meter in each column (the thick part of the rail in the `numbers` style), and on the key lights. |
 | audible | A program plays sound above approximately −40 dBFS for at least 1 second. See [how-it-works.md](how-it-works.md#idle-rule). |
 
 ## Keys and actions
@@ -80,6 +80,7 @@ The documents follow ASD-STE100 Simplified Technical English. STE lets a documen
 | popup | A message that shows text on the screen for 1.3 seconds. A popup is a readout or a notice. |
 | readout | A popup with a name, a value and a bar, for example after a knob turn. |
 | notice | A popup with text only, for example `Open failed`. |
+| screen style | How the pad draws the mixer screen and the readout: `classic` (the default), `lean` or `numbers`. See [configuration.md](configuration.md#screen-style). |
 | activity | A key press, a knob turn, or audible sound. A popup is not activity. |
 | idle | The state after some minutes without activity. The screen goes off and the key lights dim. After a longer time without activity, the key lights go off. |
 | logo name | The name on the logo screen, 1 to 10 characters. The default is `KB16`. The pad keeps it in the name page. |

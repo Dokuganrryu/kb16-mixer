@@ -9,7 +9,7 @@ For the definition of each term, see [glossary.md](glossary.md).
 | Test suite | Folder | What it checks | Runs in CI |
 |---|---|---|---|
 | Protocol tests | `protocol/` | The bytes of each message, encode and decode, the version format | Yes |
-| Firmware host tests | `pad-core/` | The firmware logic without hardware: key and knob decoding, the routing of keys and knobs, the keyboard report (`tests/keyboard.rs`), the idle rule, the lights and their motion (`tests/lights.rs`), the screens (`tests/oracle.rs` compares only the screens at rest), the flash guard and the order of its steps with a fake flash controller (`tests/flash.rs`), the name page and its write limit, the bootloader marks and their order | Yes |
+| Firmware host tests | `pad-core/` | The firmware logic without hardware: key and knob decoding, the routing of keys and knobs, the keyboard report (`tests/keyboard.rs`), the idle rule, the lights and their motion (`tests/lights.rs`), the screens (`tests/oracle.rs` compares the Classic screens at rest and the logo with the earlier code), the flash guard and the order of its steps with a fake flash controller (`tests/flash.rs`), the name page and its write limit, the bootloader marks and their order | Yes |
 | Firmware image check | `scripts/build-firmware.sh` | The vector table, the interrupts and the size of the firmware image | Yes |
 | App tests | `app/` | The config file, the trim rules, the key actions, the tap, hold and double-tap rules, the choice of the output device, the pad link, the settings rules | Yes |
 | Forbidden API test | `app/tests/forbidden_apis.rs` | The app source, `Cargo.toml` and `Cargo.lock` contain no hook, input injection, process access or network API | Yes |
@@ -152,7 +152,7 @@ This table records the tests on a pad. The only test pad is one KB16-01 rev2 wit
 "VERIFIED" means that a person did the action on the pad and saw the result.
 "NOT YET VERIFIED" means that nobody did the action on a pad. Automated tests can cover the logic.
 
-The test pad has the firmware of the internal version 0.1.0. At this time, nobody did a test of version 0.2.0 on a pad.
+On 2026-11-14, the pad owner used a build of the branch `screen-styles` (version 0.2.0 and the unreleased changes) on the test pad. The owner approved its screen. There is no written test record. Nobody did a test of the published version 0.2.0 on a pad.
 
 | Feature | How it was verified | Date | Firmware version | Status |
 |---|---|---|---|---|
@@ -160,6 +160,7 @@ The test pad has the firmware of the internal version 0.1.0. At this time, nobod
 | Mute row | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
 | Key light and screen output | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
 | Recovery with the top-left key at plug-in | Manual use on the pad. There is no written test record. | Before 2026-11-11 (no exact date in the record) | An earlier build, before the internal version 0.1.0 | VERIFIED |
+| The screen and its motion (readout, meters, page change, mute flash) | Manual use on the pad by the pad owner, who approved the screen. There is no written test record. | 2026-11-14 | A build of the branch `screen-styles` (0.2.0 and the unreleased changes) | VERIFIED |
 | Key pages | | | | NOT YET VERIFIED |
 | Physical knob order: knob 1 is the small knob on the left, knob 2 the small knob on the right, knob 3 the large knob | | | | NOT YET VERIFIED |
 | Knob hold to select one program (only with firmware 0.2.0 or later) | | | | NOT YET VERIFIED |
@@ -171,8 +172,9 @@ The test pad has the firmware of the internal version 0.1.0. At this time, nobod
 | Smooth key lights while audio plays (glide, gamma 2.4, dither) | | | | NOT YET VERIFIED |
 | Idle dim of the key lights to `idle_percent`, and the lights off after three times `lights_dim_min` | | | | NOT YET VERIFIED |
 | The new channel tints (ice white) and amber for mute | | | | NOT YET VERIFIED |
-| The new mixer screen: capital names, numbers, rails, the Focus pill, the microphone mark | | | | NOT YET VERIFIED |
+| The `numbers` screen style: capital names, numbers, rails, the Focus pill, the microphone mark | | | | NOT YET VERIFIED |
 | The readout in large digits, `Muted`, and the end stop at 0 and 100 | | | | NOT YET VERIFIED |
+| The **Screen style** select changes the screen of the pad at once | | | | NOT YET VERIFIED |
 | The volume on the meter lights for 1.3 seconds after a knob turn | | | | NOT YET VERIFIED |
 | Page 2 lights: dim, even meter lights, the mute row unchanged | | | | NOT YET VERIFIED |
 | The firmware sends only the changed columns of the screen: no tearing, no column that does not update | | | | NOT YET VERIFIED |

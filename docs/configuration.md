@@ -13,6 +13,7 @@ For the definition of each term, see [glossary.md](glossary.md).
 - [Edit the file by hand](#edit-the-file-by-hand)
 - [General settings](#general-settings)
 - [Key lights](#key-lights)
+- [Screen style](#screen-style)
 - [Audio output](#audio-output)
 - [Knobs](#knobs)
 - [Keys and pages](#keys-and-pages)
@@ -183,6 +184,7 @@ To add or remove a channel, edit the config file. See [Channels](#channels).
 | Control | Values | Config setting |
 |---|---|---|
 | **Name on the screen** | 1 to 10 letters, digits or spaces. Press Enter or leave the box to apply it. | `name` |
+| **Screen style** | Classic, Lean or Numbers | `[screen] style` |
 | **Light brightness** | A slider, 10 % to 100 % | `brightness` |
 | **Knob step** | 1, 2, 3, 5 or 10 % per click | `step` |
 | **Focus turns the others down to** | Almost silent (10 %), A quarter (25 %), Half (50 %), Three quarters (75 %) | `duck` |
@@ -195,6 +197,7 @@ To add or remove a channel, edit the config file. See [Channels](#channels).
 | **Open config file** | Opens `config.toml` in Notepad | |
 | **Open settings folder** | Opens the settings folder in Explorer | |
 
+The **Name on the screen**, **Screen style**, **Screen shift** and **Screen off after** controls are on the **Screen** card.
 The **Knob step**, **Focus turns the others down to** and **Output device** controls are on the **Sound** card.
 
 The window reads the list of output devices when it opens and when you open the list.
@@ -267,6 +270,25 @@ The lights fade down in 0.7 seconds. They fade off in 2 seconds. They come back 
 For the idle rule, see [how-it-works.md](how-it-works.md#idle-rule).
 
 Firmware before version 0.2.0 ignores `idle_percent`. It also uses an earlier brightness curve, so a `brightness` value looks a little different with it. Nobody did a test of these values on a pad.
+
+## Screen style
+
+The `[screen]` table is optional. It sets how the pad draws the mixer screen and the readout.
+
+```toml
+[screen]
+style = "classic"
+```
+
+| Setting | Default | Values | Meaning |
+|---|---|---|---|
+| `style` | `"classic"` | `"classic"`, `"lean"`, `"numbers"` | The screen style. For a description of each style, see [how-it-works.md](how-it-works.md#screens). |
+
+The app ignores upper case and lower case, and spaces before and after the word. A file without `[screen]` uses `"classic"`.
+A different word, or a value that is not in quotes, is an error.
+
+The pad changes to the new style at once, without motion.
+The published firmware 0.2.0 ignores `style` and always draws its own screen. Nobody did a test of this case on a pad.
 
 ## Audio output
 
@@ -617,6 +639,9 @@ The fourth column has no channel. Its `mute` and `focus` keys would do nothing. 
 | `[keys_hold] row1 key 2: a hold or double tap needs a key whose tap is mute, open: or none` | The tap of that key in `[keys]` is a different action. |
 | `[keys_double] row1: a list of 4 keys` | The row is not a list. |
 | `[lights] idle_percent: a whole number from 0 to 100` | The value is negative, a fraction, or in quotes. |
+| `[screen] style = "...": "classic", "lean" or "numbers"` | The style is not a known word. |
+| `[screen] style: text in quotes, such as "none"` | The style is not in quotes. |
+| `[screen] is not a table` | `screen` has a value that is not a table. |
 | `[audio] output = "...": "default" or a device id from the settings window` | The value is not `"default"` and not a device ID. |
 | `[knob_press] is not a table` | The name of a table has a value that is not a table. |
 | `[knob_press.knob1] tap: text in quotes, such as "none"` | The value is not in quotes. |

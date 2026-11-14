@@ -83,6 +83,8 @@ The window does not grow. When a tab must hold more controls, the layout moves o
   It shows only on the Keys tab.
 - **Channels**: one card for each channel.
 - **Pad**: four cards: **Screen**, **Sound**, **Lights** and **System**.
+  **Screen** holds the logo name, the screen style, the screen shift and the screen-off time.
+  The **Screen** card (376 x 164 px) and the **Sound** card (376 x 132 px, at y 228) have a bottom margin of 4 px.
   **Sound** holds the knob step, the Focus level and the output device.
   **Lights** holds the brightness, the dim time and the idle level (**Dim lights to**).
 

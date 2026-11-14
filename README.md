@@ -28,14 +28,15 @@ It is not a driver, and it does not route audio. The app uses no keyboard hooks 
 ## What the pad shows
 
 The screen has 128 x 32 pixels. The firmware code drew these pictures (`pad-core/examples/render_oled.rs`), at four times the size.
-The pictures show the screens at rest. They do not show the fades of the screen.
+The pictures show the screens at rest, in the default screen style, `classic`. They do not show the motion of the screen.
+The styles `lean` and `numbers` are also available. See [the screen style](docs/configuration.md#screen-style).
 
 | Screen | When the pad shows it |
 |---|---|
 | ![The logo screen: the name KB16 in large letters](docs/images/oled-logo.png) | The logo with the name (default `KB16`). For 1.8 seconds after start, in keyboard mode, and after 45 seconds without activity. |
-| ![The mixer screen: four columns GAME, MUSIC, CHAT and WEB with the values 80, 55 and 30 and a rail under each; GAME is in an inverted pill, and CHAT shows MUTE](docs/images/oled-mixer.png) | The mixer screen, while the app runs. Each column shows a channel: the name, the volume as a number, and a rail that becomes thicker with the sound. An inverted name is the channel that has Focus. `MUTE` shows a muted channel. |
-| ![A readout: Music, 64 in large digits, and a bar](docs/images/oled-popup.png) | A readout for 1.3 seconds after a knob turn, a knob press or a mute: the name, the volume and a bar |
-| ![A muted readout: Music, Muted, and a hollow bar](docs/images/oled-muted.png) | The readout of a muted channel: `Muted` and a hollow bar |
+| ![The mixer screen: four columns GAME, MUSIC, CHAT and WEB, each with a meter of segments, a fader and the volume in percent (80 %, 55 % and 30 %); GAME is in a filled pill, and CHAT shows MUTE](docs/images/oled-mixer.png) | The mixer screen, while the app runs. Each column shows a channel: the name, a meter of the live sound, a fader and the volume in percent. A filled pill around a name shows the channel that has Focus. `MUTE` shows a muted channel. |
+| ![A readout: Music and 64% in large letters, and a bar in a frame](docs/images/oled-popup.png) | A readout for 1.3 seconds after a knob turn, a knob press or a mute: the name, the volume and a bar |
+| ![A muted readout: Music and MUTED in large letters, and a dotted bar in a frame](docs/images/oled-muted.png) | The readout of a muted channel: `MUTED` and a dotted bar |
 | ![A notice: Config loaded](docs/images/oled-notice.png) | A notice for 1.3 seconds, for example `Config loaded` |
 | ![The mixer screen with a short mark at the right edge](docs/images/oled-page2.png) | The mixer screen while page 2 is active. A short mark is at the right edge. The meter lights stay dim on page 2. |
 
@@ -162,7 +163,8 @@ The project did its tests on one pad (KB16-01 rev2, Windows 11). This table show
 | Knob hold to select one program in a channel | NOT YET VERIFIED | yes |
 | Knob tap to mute, knob double tap, and hold and double tap on keys | NOT YET VERIFIED | yes |
 | The app follows the Windows default output device, or uses a chosen device | NOT YET VERIFIED | yes (the logic only) |
-| Light and screen motion, the idle dim and off of the lights, and the new channel tints | NOT YET VERIFIED | yes (the logic only) |
+| Screen motion (a build of 2026-11-14, approved by the pad owner, with no written test record) | VERIFIED | yes (the logic only) |
+| The screen style setting, light motion, the idle dim and off of the lights, and the new channel tints | NOT YET VERIFIED | yes (the logic only) |
 | Volume balance (trim) rules, and Focus with several audio sessions of one program | NOT YET VERIFIED | yes |
 | The feel of Focus, Talk and Move | NOT YET VERIFIED | yes (the logic only) |
 | Idle rule (screen off and lights dim only after no sound and no touch) | NOT YET VERIFIED | yes |

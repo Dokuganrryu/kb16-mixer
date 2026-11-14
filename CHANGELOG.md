@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The
 
 - A CI job `msrv` checks each crate with the oldest Rust version that its `Cargo.toml` gives in `rust-version`.
 - A weekly workflow runs `cargo deny` for the four crates on `main`, so a new advisory shows without a push.
+- The setting `[screen] style` and the **Screen style** select on the **Pad** tab choose the screen style. The app sends it in byte 20 of the settings message. Firmware 0.2.0 ignores this byte.
 
 ### Fixed
 
@@ -19,13 +20,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The
 
 ### Changed
 
-- The mixer screen is new: capital names, the volume as a number, and a thin rail that becomes thicker with the sound. A short mark at the left edge shows a muted microphone.
-- The readout shows the volume in large digits, or `Muted` with a hollow bar. A turn past 0 or 100 shows a short end stop.
-- The screen does not move between its states. A readout, a notice, a page change and a mute show in the frame of their message.
-- The screen fades out in 0.7 seconds after the screen-off limit, together with the key lights. It comes on again at full contrast without a fade.
+- The screen has three styles: `classic` (the default), `lean` and `numbers`. `classic` has the look of the screen of version 0.2.0. `numbers` shows capital names, the volume as a number, and a thin rail that becomes thicker with the sound.
+- All styles use the same motion. A readout pushes in and out, its bar glides to the value, the meters glide, and a page change slides the screen. In `classic` and `lean`, a mute change inverts the name for 0.2 seconds.
+- A turn past 0 or 100 shows a short end stop on the readout bar.
+- The screen fades out in 0.7 seconds after the screen-off limit, together with the key lights. It fades in again in 0.15 seconds.
 - The firmware sends only the changed columns of the screen. A new readout draws at once.
 - After a volume change, the meter lights of that channel show its volume for 1.3 seconds. On page 2, the meter lights stay dim and even.
-- The pictures in `docs/images/` show the new screens. A new picture shows a muted readout.
+- The pictures in `docs/images/` show the `classic` screens at rest. A new picture shows a muted readout.
+- `pad-core/examples/render_oled.rs` draws each style into a temporary folder, not into `docs/images/`.
 - The documents say that a local build of the firmware does not give the bytes of the CI build. To examine a release, use `SHA256SUMS` and the attestation.
 
 ## [0.2.0] - 2026-11-13

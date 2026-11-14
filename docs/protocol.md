@@ -104,11 +104,13 @@ The pad shows a popup for 1.3 seconds. For the idle timers, a popup is not activ
 | 17 | `screen_off_min` | Minutes without activity before the screen goes off. 0 = pad default (10). 255 = never. |
 | 18 | `lights_dim_min` | Minutes without activity before the lights dim. 0 = pad default (10). 255 = never. |
 | 19 | `idle_led_percent` | Light that the dimmed lights keep, in percent of the usual light (1–100). 0 = pad default (6). |
+| 20 | `screen_style` | Screen style: 0 = Classic, 1 = Lean, 2 = Numbers. The pad uses a value above 2 as 0. |
 
 The app sends `255` for a setting of `0` (no timer) in the config file. It sends at most `240` minutes, and a brightness of at least `1`.
 The pad uses an `idle_led_percent` above 100 as 100.
 
 Byte 19 came in version 0.2.0. Earlier firmware ignores the byte. An earlier app sends `0`, so the pad uses its default.
+Byte 20 came after version 0.2.0. Firmware 0.2.0 ignores the byte. An app of version 0.2.0 sends `0`, so the pad uses Classic.
 
 ### `0x21` FRAME
 

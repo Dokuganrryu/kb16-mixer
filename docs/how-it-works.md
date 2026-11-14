@@ -129,7 +129,7 @@ In `numbers`, an inverted name is the channel that has Focus. Each rail shows th
 A short vertical mark at the left edge means that the microphone is muted. A short vertical mark at the right edge means that page 2 is active.
 The pad does not know which channel is the microphone, so the microphone mark shows for each mute of the microphone.
 
-For a muted channel, the bar of the readout is hollow.
+For a muted channel, the readout shows a dotted bar in `classic` and a hollow bar in `lean` and `numbers`.
 A knob turn at 0 or 100 cannot change the volume. Then a short end stop shows at that end of the bar for 0.1 seconds.
 
 ### Screen changes
@@ -148,7 +148,7 @@ All three styles use the same motion. These times are in `pad-core/src/oled.rs`:
 - When the screen comes on again, the firmware sends the full picture first. Then it starts the screen at zero contrast, and the contrast increases to full in 0.15 seconds, together with the key lights. Thus no previous picture or noise shows.
 - The logo comes in from the left in 0.9 seconds, after start and when the screensaver starts. Then its streak crosses it one time. One period of its wave is approximately 9 seconds.
 
-The unit tests in `pad-core/src/oled.rs` check these motions frame by frame. The pictures in `docs/images/` show the screens at rest. Nobody did a visual check of these changes on a pad.
+The unit tests in `pad-core/src/oled.rs` check these motions frame by frame. The pictures in `docs/images/` show the `classic` screens at rest. On 2026-11-14, the pad owner used this motion on the pad and approved it. There is no written test record.
 
 ### Light motion
 
